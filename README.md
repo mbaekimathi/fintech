@@ -60,30 +60,39 @@ First time, create MySQL, create `~/FIN/.env` from `.env.example`, then in the P
 bash deploy.sh
 ```
 
-Or paste this (same as `deploy.sh`):
+Or paste this (same as `deploy.sh`). It works even when cPanel has already created files in `~/FIN`:
 
 ```bash
 cd ~/FIN
+REPO_URL="https://github.com/mbaekimathi/fintech.git"
 
 if [ -d .git ]; then
   echo "Repo already exists. Pulling latest..."
-  git remote set-url origin https://github.com/mbaekimathi/fintech.git
-  git pull origin main
+  git remote set-url origin "$REPO_URL"
+  git fetch origin main
+  git reset --hard origin/main
 else
-  echo "First time: cloning into this folder..."
-  git clone -b main https://github.com/mbaekimathi/fintech.git .
+  echo "First time: fetching into this existing folder..."
+  [ -f .env ] && cp -a .env .env.keep
+  git init
+  git remote add origin "$REPO_URL"
+  git fetch origin main
+  find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .env ! -name .env.keep -exec rm -rf {} +
+  git checkout -f -B main origin/main
+  [ -f .env.keep ] && mv -f .env.keep .env
 fi
+
 pip install -r requirements.txt
 python manage.py migrate
 python manage.py collectstatic --noinput
 mkdir -p tmp && touch tmp/restart.txt
 ```
 
-If `~/FIN` is empty the first run clones into it. Later runs only `git pull`. `.env` stays on the server and is never overwritten.
+`.env` is kept if you already created it. Later runs only fetch and reset to `main`.
 
 Python App settings:
 
-- Python 3.10 or 3.11
+- Python 3.11 or 3.12 (3.13 is newer than this Django 5.0 stack)
 - Application root = `~/FIN`
 - Startup file = `passenger_wsgi.py`
 - Entry point = `application`
