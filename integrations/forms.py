@@ -1,3 +1,5 @@
+import re
+
 from django import forms
 
 from integrations.daraja import apply_sandbox_to_instance
@@ -26,7 +28,6 @@ FIELD_WIDGETS = {
     "shortcode": forms.TextInput(attrs={"class": "field", "inputmode": "numeric"}),
     "org_shortcode": forms.TextInput(attrs={"class": "field", "inputmode": "numeric"}),
     "till_number": forms.TextInput(attrs={"class": "field", "inputmode": "numeric"}),
-    "paybill_account": forms.Select(attrs={"class": "select"}),
     "passkey": forms.TextInput(
         attrs={"class": "field secret-box", "autocomplete": "off", "spellcheck": "false"}
     ),
@@ -57,11 +58,25 @@ FIELD_WIDGETS = {
 
 
 class DarajaSetupForm(forms.ModelForm):
+    hub_paybill = forms.CharField(
+        label="Paybill number",
+        max_length=20,
+        required=False,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field",
+                "inputmode": "numeric",
+                "placeholder": "Your live paybill, e.g. 888555",
+                "autocomplete": "off",
+            }
+        ),
+        help_text="Type your Lipa Na M-Pesa paybill. Production uses this number. Sandbox fills 174379.",
+    )
+
     class Meta:
         model = DarajaConfig
         fields = (
             "environment",
-            "paybill_account",
             "shortcode",
             "org_shortcode",
             "till_number",
@@ -91,7 +106,6 @@ class DarajaSetupForm(forms.ModelForm):
         widgets = FIELD_WIDGETS
         labels = {
             "environment": "Daraja environment",
-            "paybill_account": "Hub paybill",
             "shortcode": "STK paybill shortcode",
             "org_shortcode": "Organization shortcode",
             "till_number": "Till number",
@@ -119,20 +133,19 @@ class DarajaSetupForm(forms.ModelForm):
             "b2b_remarks": "B2B remarks",
         }
         help_texts = {
-            "environment": "Sandbox auto-fills Safaricom test shortcode, passkey, initiator, and callback paths.",
-            "paybill_account": "The NEXUS paybill STK receipts should post into.",
-            "shortcode": "Sandbox STK uses 174379. Production uses your live Lipa Na M-Pesa shortcode.",
-            "org_shortcode": "From Daraja → Test credentials → Shortcode 1. Not the STK till 174379.",
+            "environment": "Sandbox uses Safaricom test values. Production is your live paybill, key, secret, and passkey.",
+            "shortcode": "Usually the same as your paybill. Sandbox STK uses 174379.",
+            "org_shortcode": "Party A for balance and payouts. Production is often the same paybill. Sandbox Shortcode 1 is 600996.",
             "till_number": "Needed for Buy Goods STK or till payouts when the till is not the same as the shortcode.",
-            "consumer_key": "From your Daraja app at developer.safaricom.co.ke. Unique to you — not auto-filled.",
+            "consumer_key": "From your Daraja app at developer.safaricom.co.ke. Use the production app for live money.",
             "consumer_secret": "From the same Daraja app. Leave blank to keep the secret already saved.",
             "passkey": "Sandbox uses Safaricom’s published test passkey. Production uses your live Lipa Na M-Pesa passkey.",
             "stk_transaction_type": "CustomerPayBillOnline collects into a paybill. CustomerBuyGoodsOnline collects into a till.",
             "stk_account_reference": "Shown on the customer’s STK prompt and stored against the ledger posting.",
             "stk_transaction_desc": "Short description sent with the STK prompt (max 13 characters is safest).",
-            "stk_callback_url": "HTTPS URL Safaricom calls after the customer enters PIN. On localhost, swap the host for an ngrok HTTPS URL and keep the path.",
-            "initiator_name": "Initiator Name (Shortcode 1) on the Daraja Test credentials page. Use the value your portal shows.",
-            "security_credential": "Initiator password from that same page. Paste plaintext — NEXUS encrypts it when calling Safaricom.",
+            "stk_callback_url": "HTTPS URL Safaricom calls after the customer enters PIN. Production: https://fin.richcom.co.ke/api/v1/daraja/stk/callback/",
+            "initiator_name": "Initiator username from Daraja. Production uses your live initiator, not testapi.",
+            "security_credential": "Initiator password. Paste plaintext — NEXUS encrypts it when calling Safaricom.",
             "result_url": "HTTPS URL Safaricom posts balance and payout results to.",
             "timeout_url": "HTTPS URL Safaricom posts if the request times out.",
             "balance_identifier_type": "Use paybill/organization shortcode (4) for a paybill float. Use till (2) for a till.",
@@ -151,9 +164,10 @@ class DarajaSetupForm(forms.ModelForm):
     def __init__(self, *args, request=None, **kwargs):
         self.request = request
         super().__init__(*args, **kwargs)
-        self.fields["paybill_account"].queryset = PaybillAccount.objects.filter(is_active=True)
-        self.fields["paybill_account"].required = False
-        self.fields["paybill_account"].empty_label = "Select a paybill account"
+        account = getattr(self.instance, "paybill_account", None)
+        self.fields["hub_paybill"].initial = (
+            (account.paybill_number if account else "") or (getattr(self.instance, "shortcode", "") or "")
+        )
         for name in SECRET_FIELDS:
             self.fields[name].required = False
         for name in (
@@ -164,16 +178,43 @@ class DarajaSetupForm(forms.ModelForm):
             "b2c_remarks",
             "b2c_occasion",
             "b2b_remarks",
+            "hub_paybill",
+            "shortcode",
+            "org_shortcode",
         ):
             self.fields[name].required = False
         self.fields["b2c_enabled"].required = False
         self.fields["b2b_enabled"].required = False
 
+    def clean_hub_paybill(self):
+        digits = re.sub(r"\D", "", self.cleaned_data.get("hub_paybill") or "")
+        if digits and len(digits) < 5:
+            raise forms.ValidationError("Enter a valid paybill number.")
+        return digits
+
     def clean_shortcode(self):
         return (self.cleaned_data.get("shortcode") or "").strip()
 
+    def clean_org_shortcode(self):
+        return (self.cleaned_data.get("org_shortcode") or "").strip()
+
     def clean_till_number(self):
         return (self.cleaned_data.get("till_number") or "").strip()
+
+    def _ensure_paybill(self, number: str) -> PaybillAccount:
+        account = PaybillAccount.objects.filter(paybill_number=number).order_by("id").first()
+        if account:
+            if not account.is_active:
+                account.is_active = True
+                account.save(update_fields=["is_active"])
+            return account
+        return PaybillAccount.objects.create(
+            paybill_number=number,
+            account_name=f"M-Pesa paybill {number}",
+            provider=PaybillAccount.Provider.MPESA,
+            is_active=True,
+            short_code_notes="Entered on Daraja setup",
+        )
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -185,6 +226,14 @@ class DarajaSetupForm(forms.ModelForm):
                         setattr(instance, field, getattr(stored, field))
         if instance.environment == DarajaConfig.Environment.SANDBOX:
             apply_sandbox_to_instance(instance, self.request, force=True)
+        else:
+            number = (self.cleaned_data.get("hub_paybill") or instance.shortcode or "").strip()
+            if number:
+                instance.paybill_account = self._ensure_paybill(number)
+                if not (instance.shortcode or "").strip():
+                    instance.shortcode = number
+                if not (instance.org_shortcode or "").strip():
+                    instance.org_shortcode = number
         if commit:
             instance.save()
             self.save_m2m()

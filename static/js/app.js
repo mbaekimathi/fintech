@@ -78,6 +78,7 @@ function initDarajaSetup() {
   };
 
   const sandboxValues = {
+    hub_paybill: defaults.shortcode,
     shortcode: defaults.shortcode,
     org_shortcode: defaults.org_shortcode,
     passkey: defaults.passkey,
@@ -112,10 +113,10 @@ function initDarajaSetup() {
     });
     setField("b2c_enabled", true);
     setField("b2b_enabled", true);
-    const paybillId = defaults.paybill_ids && defaults.paybill_ids[defaults.shortcode];
-    if (paybillId) setField("paybill_account", String(paybillId));
-    const guide = document.querySelector("[data-sandbox-guide]");
-    if (guide) guide.hidden = false;
+    const sandboxGuide = document.querySelector("[data-sandbox-guide]");
+    const productionGuide = document.querySelector("[data-production-guide]");
+    if (sandboxGuide) sandboxGuide.hidden = false;
+    if (productionGuide) productionGuide.hidden = true;
   };
 
   const clearSandbox = () => {
@@ -125,11 +126,10 @@ function initDarajaSetup() {
     });
     setField("b2c_enabled", false);
     setField("b2b_enabled", false);
-    const paybill = form.querySelector('[name="paybill_account"]');
-    const paybillId = defaults.paybill_ids && defaults.paybill_ids[defaults.shortcode];
-    if (paybill && paybillId && paybill.value === String(paybillId)) paybill.value = "";
-    const guide = document.querySelector("[data-sandbox-guide]");
-    if (guide) guide.hidden = true;
+    const sandboxGuide = document.querySelector("[data-sandbox-guide]");
+    const productionGuide = document.querySelector("[data-production-guide]");
+    if (sandboxGuide) sandboxGuide.hidden = true;
+    if (productionGuide) productionGuide.hidden = false;
   };
 
   const sync = () => {
@@ -141,8 +141,10 @@ function initDarajaSetup() {
   revealSecrets();
   if (envField.value === "SANDBOX") applySandbox();
   else {
-    const guide = document.querySelector("[data-sandbox-guide]");
-    if (guide) guide.hidden = true;
+    const sandboxGuide = document.querySelector("[data-sandbox-guide]");
+    const productionGuide = document.querySelector("[data-production-guide]");
+    if (sandboxGuide) sandboxGuide.hidden = true;
+    if (productionGuide) productionGuide.hidden = false;
   }
 }
 

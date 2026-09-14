@@ -37,12 +37,15 @@
       <div class="panel-head">
         <div>
           <h2>Shared Daraja app</h2>
-          <p class="muted">Used by STK, balance, B2C, and B2B.</p>
+          <p class="muted">Used by STK, balance, B2C, and B2B. Choose Production and type your live paybill — do not pick from a list.</p>
+          <p class="muted" data-production-guide hidden>
+            Paste the live consumer key, secret, Lipa Na M-Pesa passkey, initiator, and your own paybill number from Safaricom.
+          </p>
         </div>
       </div>
       <div class="form-grid">
         {% include "partials/labeled_field.html" with field=form.environment %}
-        {% include "partials/labeled_field.html" with field=form.paybill_account %}
+        {% include "partials/labeled_field.html" with field=form.hub_paybill %}
         {% include "partials/labeled_field.html" with field=form.shortcode %}
         {% include "partials/labeled_field.html" with field=form.org_shortcode %}
         {% include "partials/labeled_field.html" with field=form.till_number %}

@@ -7,7 +7,7 @@ from integrations.models import DarajaConfig
 
 REQUIRED_DARAJA_FIELDS = (
     "environment",
-    "paybill_account",
+    "hub_paybill",
     "shortcode",
     "org_shortcode",
     "till_number",
@@ -79,6 +79,8 @@ class DarajaSettingsTests(TestCase):
         self.assertContains(response, "Live paybill balance")
         self.assertContains(response, "Send to a phone number")
         self.assertContains(response, "Send to another paybill or till")
+        self.assertContains(response, "Paybill number")
+        self.assertNotContains(response, "Select a paybill account")
 
     def test_admin_saves_daraja_setup(self):
         self.client.force_login(self.admin)
@@ -132,6 +134,41 @@ class DarajaSettingsTests(TestCase):
         self.assertEqual(config.org_shortcode, "600984")
         self.assertEqual(config.initiator_name, "Safaricomapi")
         self.assertEqual(config.security_credential, "PortalPassword1")
+
+    def test_production_saves_typed_paybill(self):
+        from paybill.models import PaybillAccount
+
+        self.client.force_login(self.admin)
+        payload = {
+            "environment": DarajaConfig.Environment.PRODUCTION,
+            "hub_paybill": "888555",
+            "consumer_key": "live-consumer-key",
+            "consumer_secret": "live-consumer-secret",
+            "passkey": "live-passkey",
+            "initiator_name": "liveinitiator",
+            "security_credential": "LivePassword1",
+            "stk_transaction_type": DarajaConfig.StkTransactionType.PAYBILL,
+            "stk_callback_url": "https://fin.richcom.co.ke/api/v1/daraja/stk/callback/",
+            "result_url": "https://fin.richcom.co.ke/api/v1/daraja/result/",
+            "timeout_url": "https://fin.richcom.co.ke/api/v1/daraja/timeout/",
+            "balance_identifier_type": DarajaConfig.IdentifierType.SHORTCODE,
+            "b2c_enabled": "on",
+            "b2c_command_id": DarajaConfig.B2CCommand.BUSINESS,
+            "b2b_enabled": "on",
+            "b2b_sender_identifier_type": DarajaConfig.IdentifierType.SHORTCODE,
+            "b2b_paybill_command": DarajaConfig.B2BCommand.PAYBILL,
+            "b2b_till_command": DarajaConfig.B2BCommand.BUY_GOODS,
+        }
+        response = self.client.post(self.url, payload, follow=True)
+        self.assertEqual(response.status_code, 200)
+        config = DarajaConfig.load()
+        self.assertEqual(config.environment, DarajaConfig.Environment.PRODUCTION)
+        self.assertEqual(config.shortcode, "888555")
+        self.assertEqual(config.org_shortcode, "888555")
+        self.assertEqual(config.paybill_account.paybill_number, "888555")
+        self.assertTrue(PaybillAccount.objects.filter(paybill_number="888555").exists())
+        self.assertEqual(config.consumer_key, "live-consumer-key")
+        self.assertNotEqual(config.shortcode, "174379")
 
 
 class DarajaPayoutHelperTests(TestCase):
