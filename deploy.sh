@@ -32,7 +32,8 @@ fi
 python -m pip install -r requirements.txt
 
 if [ ! -f .env ]; then
-  echo "Code is in place. Create .env from .env.example in $APP_DIR, then run this script again."
+  cp .env.example .env
+  echo "Created .env. Set DB_PASSWORD in $APP_DIR/.env, then run this script again."
   exit 0
 fi
 

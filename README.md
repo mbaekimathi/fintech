@@ -94,24 +94,11 @@ Python App settings:
 
 - Python 3.11 or 3.12 (3.13 is newer than this Django 5.0 stack)
 - Application root = `~/FIN`
+- Application URL = `fin.richcom.co.ke`
 - Startup file = `passenger_wsgi.py`
 - Entry point = `application`
 
-Production `.env` values:
-
-```
-DJANGO_DEBUG=False
-DJANGO_SECRET_KEY=<long-random-string>
-DJANGO_ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
-DJANGO_CSRF_TRUSTED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
-DJANGO_SECURE_SSL=True
-DARAJA_PUBLIC_BASE_URL=https://yourdomain.com
-DB_NAME=<cpanel database name>
-DB_USER=<cpanel database user>
-DB_PASSWORD=<cpanel database password>
-DB_HOST=localhost
-DB_PORT=3306
-```
+On the server, `.env` should look like `.env.example`: domain `https://fin.richcom.co.ke/`, database `richcomc_fintech`. Put the MySQL password in `DB_PASSWORD` on the server only.
 
 First login only:
 
