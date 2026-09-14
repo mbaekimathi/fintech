@@ -52,17 +52,43 @@ Open [http://127.0.0.1:8000/login/](http://127.0.0.1:8000/login/).
 
 ## Host on cPanel (git pull)
 
-The repo is ready for cPanel Git Version Control. `.env` is not in git — create it on the server after the first pull.
+Point the Python App at `~/FIN`. After that, updates are one script: clone or pull [mbaekimathi/fintech](https://github.com/mbaekimathi/fintech.git), install, migrate, collectstatic, restart.
 
-1. In cPanel open **Git Version Control** → **Create** → clone this GitHub repo (SSH or HTTPS with a personal access token if the repo is private).
-2. In cPanel open **Setup Python App**:
-   - Python 3.10 or 3.11
-   - Application root = the cloned folder (the directory that contains `manage.py`)
-   - Application URL = your domain or subdomain
-   - Application startup file = `passenger_wsgi.py`
-   - Application entry point = `application`
-3. Create a MySQL database in cPanel and a user with full rights on it.
-4. In the cloned folder create `.env` from `.env.example`. Production values:
+First time, create MySQL, create `~/FIN/.env` from `.env.example`, then in the Python App terminal:
+
+```bash
+bash deploy.sh
+```
+
+Or paste this (same as `deploy.sh`):
+
+```bash
+cd ~/FIN
+
+if [ -d .git ]; then
+  echo "Repo already exists. Pulling latest..."
+  git remote set-url origin https://github.com/mbaekimathi/fintech.git
+  git pull origin main
+else
+  echo "First time: cloning into this folder..."
+  git clone -b main https://github.com/mbaekimathi/fintech.git .
+fi
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py collectstatic --noinput
+mkdir -p tmp && touch tmp/restart.txt
+```
+
+If `~/FIN` is empty the first run clones into it. Later runs only `git pull`. `.env` stays on the server and is never overwritten.
+
+Python App settings:
+
+- Python 3.10 or 3.11
+- Application root = `~/FIN`
+- Startup file = `passenger_wsgi.py`
+- Entry point = `application`
+
+Production `.env` values:
 
 ```
 DJANGO_DEBUG=False
@@ -78,28 +104,13 @@ DB_HOST=localhost
 DB_PORT=3306
 ```
 
-5. In the Python App terminal (virtualenv already activated):
+First login only:
 
 ```bash
-pip install -r requirements.txt
-python manage.py migrate
-python manage.py collectstatic --noinput
 python manage.py bootstrap --code 100001 --password 135790 --email admin@yourdomain.com
 ```
 
-6. Restart the Python App. Open `https://yourdomain.com/login/`.
-7. Change the bootstrap password, then under **Daraja** paste live (or sandbox) credentials and set the callback URLs to `https://yourdomain.com/api/v1/daraja/...`.
-
-Later updates:
-
-```bash
-git pull
-pip install -r requirements.txt
-python manage.py migrate
-python manage.py collectstatic --noinput
-```
-
-Then restart the Python App. If cPanel overwrites `passenger_wsgi.py` when you create the app, restore this repo’s file and restart.
+Then change that password and paste Daraja credentials under **Settings → Daraja**. If cPanel overwrites `passenger_wsgi.py`, restore this repo’s file and run `bash deploy.sh` again.
 
 Default bootstrap admin (change immediately):
 
