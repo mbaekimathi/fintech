@@ -17,6 +17,7 @@ from integrations.daraja import (
     SANDBOX_TEST_PHONE,
     apply_sandbox_to_instance,
     callback_urls,
+    capability_status,
     integration_status,
     sandbox_defaults_payload,
 )
@@ -151,9 +152,12 @@ class DarajaTestView(RoleRequiredMixin, TemplateView):
         expire_stale_queues()
         urls = callback_urls(self.request)
         sandbox = str(config.environment) == "SANDBOX"
+        integration = capability_status(config, self.request)
         context.update(
             {
                 "config": config,
+                "integration": integration,
+                "capabilities": integration["by_id"],
                 "stk_form": kwargs.get("stk_form")
                 or StkPromptForm(
                     initial={

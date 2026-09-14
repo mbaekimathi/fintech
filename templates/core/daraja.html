@@ -37,15 +37,16 @@
       <div class="panel-head">
         <div>
           <h2>Shared Daraja app</h2>
-          <p class="muted">Used by STK, balance, B2C, and B2B. Choose Production and type your live paybill — do not pick from a list.</p>
+          <p class="muted">Choose Production, pick Paybill or Till, type the number, then paste key, secret, passkey, and initiator. The rest fills in.</p>
           <p class="muted" data-production-guide hidden>
-            Paste the live consumer key, secret, Lipa Na M-Pesa passkey, initiator, and your own paybill number from Safaricom.
+            Shortcodes, STK type, balance identifier, and callback URLs are filled from the number you type.
           </p>
         </div>
       </div>
       <div class="form-grid">
         {% include "partials/labeled_field.html" with field=form.environment %}
-        {% include "partials/labeled_field.html" with field=form.hub_paybill %}
+        {% include "partials/labeled_field.html" with field=form.channel %}
+        {% include "partials/labeled_field.html" with field=form.hub_paybill span="2" %}
         {% include "partials/labeled_field.html" with field=form.shortcode %}
         {% include "partials/labeled_field.html" with field=form.org_shortcode %}
         {% include "partials/labeled_field.html" with field=form.till_number %}
@@ -57,8 +58,8 @@
     <section class="panel">
       <div class="panel-head">
         <div>
-          <h2>STK push — collect into this paybill</h2>
-          <p class="muted">Lipa Na M-Pesa Online. Passkey is not used for balance or sending.</p>
+          <h2 data-stk-heading>STK push — collect into this paybill</h2>
+          <p class="muted" data-stk-copy>Lipa Na M-Pesa Online. Passkey is not used for balance or sending.</p>
         </div>
       </div>
       <div class="form-grid">

@@ -91,12 +91,30 @@ def detect_ngrok_base() -> str:
     return ""
 
 
+def hosted_base_url(request=None) -> str:
+    """Live site Safaricom should call. Never localhost."""
+    from django.conf import settings as django_settings
+
+    configured = (getattr(django_settings, "DARAJA_PUBLIC_BASE_URL", "") or "").strip().rstrip("/")
+    if _is_public_https(configured):
+        return configured
+    for host in getattr(django_settings, "ALLOWED_HOSTS", []) or []:
+        host = (host or "").strip().lstrip(".")
+        if not host or host in {"localhost", "127.0.0.1", "testserver", "*"}:
+            continue
+        if "ngrok" in host.lower():
+            continue
+        return f"https://{host}"
+    if request is not None:
+        origin = request.build_absolute_uri("/").rstrip("/")
+        if _is_public_https(origin):
+            return origin
+    return "https://fin.richcom.co.ke"
+
+
 def public_base_url(request=None) -> str:
     from django.conf import settings as django_settings
 
-    detected = detect_ngrok_base()
-    if detected:
-        return detected
     configured = (getattr(django_settings, "DARAJA_PUBLIC_BASE_URL", "") or "").strip().rstrip("/")
     if _is_public_https(configured):
         return configured
@@ -104,13 +122,26 @@ def public_base_url(request=None) -> str:
         origin = request.build_absolute_uri("/").rstrip("/")
         if _is_public_https(origin):
             return origin
-    return ""
+    detected = detect_ngrok_base()
+    if detected:
+        return detected
+    return hosted_base_url(request)
 
 
 def callback_urls(request=None) -> dict:
     base = public_base_url(request)
     if not base:
         return {}
+    return {
+        "stk_callback_url": base + STK_CALLBACK_PATH,
+        "result_url": base + RESULT_PATH,
+        "timeout_url": base + TIMEOUT_PATH,
+    }
+
+
+def form_callback_urls(request=None) -> dict:
+    """Always fill the setup form with the hosted HTTPS callbacks."""
+    base = hosted_base_url(request)
     return {
         "stk_callback_url": base + STK_CALLBACK_PATH,
         "result_url": base + RESULT_PATH,
@@ -132,9 +163,9 @@ def ensure_sandbox_paybill() -> PaybillAccount:
 
 
 def sandbox_defaults_payload(request=None) -> dict:
-    origin = public_base_url(request) or (
-        request.build_absolute_uri("/").rstrip("/") if request is not None else "http://localhost:8000"
-    )
+    hosted = hosted_base_url(request)
+    urls = form_callback_urls(request)
+    origin = hosted
     host = origin.split("//", 1)[-1].split(":")[0].split("/")[0]
     paybill_ids = {
         row.paybill_number: row.pk
@@ -148,9 +179,9 @@ def sandbox_defaults_payload(request=None) -> dict:
         "security_credential": SANDBOX_INITIATOR_PASSWORD,
         "test_phone": SANDBOX_TEST_PHONE,
         "test_amount": SANDBOX_TEST_AMOUNT,
-        "stk_callback_url": origin + STK_CALLBACK_PATH,
-        "result_url": origin + RESULT_PATH,
-        "timeout_url": origin + TIMEOUT_PATH,
+        "stk_callback_url": urls["stk_callback_url"],
+        "result_url": urls["result_url"],
+        "timeout_url": urls["timeout_url"],
         "stk_transaction_type": "CustomerPayBillOnline",
         "stk_account_reference": SANDBOX_ACCOUNT_REF,
         "stk_transaction_desc": SANDBOX_STK_DESC,
@@ -166,8 +197,19 @@ def sandbox_defaults_payload(request=None) -> dict:
         "b2b_till_command": "BusinessBuyGoods",
         "b2b_remarks": SANDBOX_B2B_REMARKS,
         "paybill_ids": paybill_ids,
-        "is_local": host in {"localhost", "127.0.0.1"},
-        "public_base_url": public_base_url(request),
+        "is_local": False,
+        "public_base_url": hosted,
+        "form_urls": urls,
+        "channel_paybill": {
+            "stk_transaction_type": "CustomerPayBillOnline",
+            "balance_identifier_type": "4",
+            "b2b_sender_identifier_type": "4",
+        },
+        "channel_till": {
+            "stk_transaction_type": "CustomerBuyGoodsOnline",
+            "balance_identifier_type": "2",
+            "b2b_sender_identifier_type": "2",
+        },
     }
 
 
@@ -352,4 +394,263 @@ def integration_status(config, request=None) -> dict:
         "checks": checks,
         "title": title,
         "detail": detail,
+    }
+
+
+def _request_host(request) -> str:
+    if request is None:
+        return ""
+    return (request.get_host() or "").split(":")[0].strip().lower()
+
+
+def _browsing_locally(request) -> bool:
+    return _request_host(request) in {"localhost", "127.0.0.1"}
+
+
+def _latest_operations() -> dict:
+    from integrations.models import DarajaOperation
+
+    latest = {}
+    for row in DarajaOperation.objects.all()[:40]:
+        if row.kind in latest:
+            continue
+        latest[row.kind] = {
+            "status": row.status,
+            "status_label": row.get_status_display(),
+            "summary": (row.summary or row.result_desc or "").strip(),
+            "when": row.created_at,
+        }
+        if len(latest) >= 4:
+            break
+    return latest
+
+
+def _op_note(last: dict | None) -> str:
+    if not last:
+        return "Not tested yet on this page."
+    summary = last.get("summary") or last.get("status_label") or last.get("status")
+    return f"Last test: {last.get('status_label') or last.get('status')}. {summary}".strip()
+
+
+def _timed_out(last: dict | None) -> bool:
+    return bool(last and last.get("status") == "TIMEOUT")
+
+
+def callback_reachability(request=None, config=None) -> dict:
+    """Whether Safaricom can POST results back to the hub that is serving this page."""
+    ngrok = detect_ngrok_base()
+    hosted = hosted_base_url(request)
+    live = public_base_url(request)
+    urls = callback_urls(request) if live else {}
+    local = _browsing_locally(request)
+    live_ok = _is_public_https(live)
+    live_is_ngrok = "ngrok" in (live or "").lower()
+    if local:
+        ready = bool(ngrok and live_ok and live_is_ngrok)
+        if ready:
+            detail = f"ngrok is forwarding Safaricom callbacks to this machine ({live})."
+        elif ngrok and live_ok and not live_is_ngrok:
+            detail = (
+                f"ngrok is running at {ngrok}, but this hub will still tell Safaricom to POST to {live}. "
+                "Set DARAJA_PUBLIC_BASE_URL to the ngrok https URL so balance and payout results land here."
+            )
+        else:
+            detail = (
+                f"You are on localhost and ngrok is not in use. Safaricom will POST results to {live or hosted}, "
+                "not this page. Run ngrok http 8000, set DARAJA_PUBLIC_BASE_URL to that https URL, then refresh."
+            )
+    else:
+        ready = live_ok
+        detail = (
+            f"Safaricom will POST results to {live}."
+            if ready
+            else "No public HTTPS callback URL. Set DARAJA_PUBLIC_BASE_URL or open this hub on its https host."
+        )
+    blockers = [] if ready else [detail]
+    if config is not None:
+        stored = [
+            ("STK callback", getattr(config, "stk_callback_url", "")),
+            ("Result URL", getattr(config, "result_url", "")),
+            ("Timeout URL", getattr(config, "timeout_url", "")),
+        ]
+        for label, value in stored:
+            if value and not _is_public_https(value):
+                blockers.append(f"{label} is not public HTTPS.")
+                ready = False
+    return {
+        "ready": ready,
+        "detail": detail,
+        "blockers": blockers,
+        "ngrok": ngrok,
+        "hosted": hosted,
+        "live": live,
+        "urls": urls,
+        "local": local,
+    }
+
+
+def _capability(
+    *,
+    cap_id: str,
+    name: str,
+    work: str,
+    ready: bool,
+    detail: str,
+    blockers: list[str] | None = None,
+    last: dict | None = None,
+    timeout_blocks: bool = True,
+) -> dict:
+    notes = list(dict.fromkeys(blockers or []))
+    if timeout_blocks and _timed_out(last):
+        ready = False
+        timeout_note = (
+            "Last test timed out. Safaricom accepted the request but never reached this hub's result URL."
+        )
+        if timeout_note not in notes:
+            notes.append(timeout_note)
+        if not detail:
+            detail = timeout_note
+    return {
+        "id": cap_id,
+        "name": name,
+        "work": work,
+        "ready": ready,
+        "detail": detail,
+        "blockers": notes,
+        "last": last,
+        "last_note": _op_note(last),
+    }
+
+
+def capability_status(config, request=None) -> dict:
+    """What is ready to run from the test page versus what is still incomplete."""
+    status = integration_status(config, request)
+    probe = status["probe"]
+    oauth_ok = bool(probe.get("ok") or probe.get("state") == "waf")
+    callbacks = callback_reachability(request, config)
+    last = _latest_operations()
+
+    oauth_blockers = [] if oauth_ok else [probe.get("detail") or "Daraja did not accept these app credentials."]
+    stk_blockers = []
+    if not config.has_app_credentials:
+        stk_blockers.append("Save consumer key, consumer secret, and the Lipa Na M-Pesa shortcode.")
+    if not (config.passkey or "").strip():
+        stk_blockers.append("Save the Lipa Na M-Pesa Online passkey.")
+    if not _is_public_https(config.stk_callback_url) and not _is_public_https(
+        (callbacks.get("urls") or {}).get("stk_callback_url", "")
+    ):
+        stk_blockers.append("STK callback URL must be public HTTPS.")
+    if not oauth_ok:
+        stk_blockers.extend(oauth_blockers)
+
+    initiator_blockers = []
+    if not (config.initiator_name or "").strip():
+        initiator_blockers.append("Paste the initiator username from Daraja Test credentials (not the STK till).")
+    if not (config.security_credential or "").strip():
+        initiator_blockers.append("Paste the initiator password / security credential.")
+    if not (config.payout_shortcode or "").strip():
+        initiator_blockers.append("Set organization shortcode (sandbox Party A is 600996).")
+    if not callbacks["ready"]:
+        initiator_blockers.extend(callbacks["blockers"])
+    if not oauth_ok:
+        initiator_blockers.extend(oauth_blockers)
+
+    b2c_blockers = list(initiator_blockers)
+    if not config.b2c_enabled:
+        b2c_blockers.append("Turn on B2C on Daraja setup, and enable Account Balance + B2C on the Daraja app.")
+    if not (config.b2c_command_id or "").strip():
+        b2c_blockers.append("Choose a B2C command (Business payment).")
+
+    b2b_blockers = list(initiator_blockers)
+    if not config.b2b_enabled:
+        b2b_blockers.append("Turn on B2B on Daraja setup, and enable B2B on the Daraja app.")
+    if not (config.b2b_paybill_command and config.b2b_till_command):
+        b2b_blockers.append("Save B2B paybill and till commands.")
+
+    stk_ready = bool(config.stk_ready and oauth_ok)
+    balance_ready = bool(config.balance_ready and oauth_ok and callbacks["ready"])
+    b2c_ready = bool(config.b2c_ready and oauth_ok and callbacks["ready"])
+    b2b_ready = bool(config.b2b_ready and oauth_ok and callbacks["ready"])
+
+    capabilities = [
+        _capability(
+            cap_id="oauth",
+            name="Daraja app login",
+            work="Safaricom accepts this consumer key and secret and can issue an access token.",
+            ready=oauth_ok,
+            detail=probe.get("detail") or "",
+            blockers=oauth_blockers,
+        ),
+        _capability(
+            cap_id="callbacks",
+            name="Result callbacks to this hub",
+            work="After PIN, balance, or a payout, Safaricom POSTs the result to this hub.",
+            ready=callbacks["ready"],
+            detail=callbacks["detail"],
+            blockers=callbacks["blockers"],
+            last=last.get("BALANCE") or last.get("B2C") or last.get("B2B"),
+        ),
+        _capability(
+            cap_id="stk",
+            name="STK push",
+            work="Prompt a customer phone to pay into this shortcode. Refresh can query status if the callback is delayed.",
+            ready=stk_ready,
+            detail="Ready to send an STK prompt." if stk_ready else "STK is not ready to send.",
+            blockers=stk_blockers,
+            last=last.get("STK"),
+            timeout_blocks=False,
+        ),
+        _capability(
+            cap_id="balance",
+            name="Account balance",
+            work="Ask Safaricom for the live float on the organization shortcode. Needs a result callback.",
+            ready=balance_ready,
+            detail="Ready to request live float." if balance_ready else "Balance is not ready to run from this page.",
+            blockers=initiator_blockers,
+            last=last.get("BALANCE"),
+        ),
+        _capability(
+            cap_id="b2c",
+            name="Send to a phone (B2C)",
+            work="Pay out from the organization shortcode to a Kenyan mobile number.",
+            ready=b2c_ready,
+            detail="Ready to send to a phone." if b2c_ready else "Phone payout is not ready to run from this page.",
+            blockers=b2c_blockers,
+            last=last.get("B2C"),
+        ),
+        _capability(
+            cap_id="b2b",
+            name="Send to paybill or till (B2B)",
+            work="Pay out from the organization shortcode to another paybill or till.",
+            ready=b2b_ready,
+            detail="Ready to send to a paybill or till." if b2b_ready else "Paybill/till payout is not ready to run from this page.",
+            blockers=b2b_blockers,
+            last=last.get("B2B"),
+        ),
+    ]
+    ready = [item for item in capabilities if item["ready"]]
+    not_ready = [item for item in capabilities if not item["ready"]]
+    ready_count = len(ready)
+    total = len(capabilities)
+    if ready_count == total:
+        title = "All capabilities are ready to work"
+        detail = status["detail"] if status["integrated"] else "Each Daraja action on this page can run."
+    elif ready_count:
+        title = f"{ready_count} of {total} capabilities ready to work"
+        detail = "Use the ready actions below. Fix the items that are not well integrated before relying on them."
+    else:
+        title = "Nothing is ready to work yet"
+        detail = status["detail"]
+    return {
+        **status,
+        "title": title,
+        "detail": detail,
+        "capabilities": capabilities,
+        "by_id": {item["id"]: item for item in capabilities},
+        "ready": ready,
+        "not_ready": not_ready,
+        "ready_count": ready_count,
+        "total": total,
+        "callbacks": callbacks,
+        "fully_ready": ready_count == total,
     }

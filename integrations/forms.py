@@ -2,7 +2,16 @@ import re
 
 from django import forms
 
-from integrations.daraja import apply_sandbox_to_instance
+from integrations.daraja import (
+    SANDBOX_ACCOUNT_REF,
+    SANDBOX_BALANCE_REMARKS,
+    SANDBOX_B2B_REMARKS,
+    SANDBOX_B2C_OCCASION,
+    SANDBOX_B2C_REMARKS,
+    SANDBOX_STK_DESC,
+    apply_sandbox_to_instance,
+    form_callback_urls,
+)
 from integrations.models import DarajaConfig
 from paybill.models import PaybillAccount
 
@@ -58,19 +67,34 @@ FIELD_WIDGETS = {
 
 
 class DarajaSetupForm(forms.ModelForm):
+    CHANNEL_PAYBILL = "PAYBILL"
+    CHANNEL_TILL = "TILL"
+    CHANNEL_CHOICES = (
+        (CHANNEL_PAYBILL, "Paybill — collect and disburse from a paybill"),
+        (CHANNEL_TILL, "Till — collect and disburse from a Buy Goods till"),
+    )
+
+    channel = forms.ChoiceField(
+        label="Collect and disburse with",
+        choices=CHANNEL_CHOICES,
+        initial=CHANNEL_PAYBILL,
+        widget=forms.Select(attrs={"class": "select", "id": "id_channel"}),
+        help_text="Paybill uses Lipa Na M-Pesa Online (CustomerPayBillOnline). Till uses Buy Goods (CustomerBuyGoodsOnline).",
+    )
     hub_paybill = forms.CharField(
-        label="Paybill number",
+        label="Paybill or till number",
         max_length=20,
         required=False,
         widget=forms.TextInput(
             attrs={
                 "class": "field",
                 "inputmode": "numeric",
-                "placeholder": "Your live paybill, e.g. 888555",
+                "placeholder": "Type the paybill or till number",
                 "autocomplete": "off",
+                "id": "id_hub_paybill",
             }
         ),
-        help_text="Type your Lipa Na M-Pesa paybill. Production uses this number. Sandbox fills 174379.",
+        help_text="Your live number. Shortcode and callback URLs fill from this. Sandbox uses 174379.",
     )
 
     class Meta:
@@ -133,7 +157,7 @@ class DarajaSetupForm(forms.ModelForm):
             "b2b_remarks": "B2B remarks",
         }
         help_texts = {
-            "environment": "Sandbox uses Safaricom test values. Production is your live paybill, key, secret, and passkey.",
+            "environment": "Sandbox uses Safaricom test values. Production is your live key, secret, passkey, and number.",
             "shortcode": "Usually the same as your paybill. Sandbox STK uses 174379.",
             "org_shortcode": "Party A for balance and payouts. Production is often the same paybill. Sandbox Shortcode 1 is 600996.",
             "till_number": "Needed for Buy Goods STK or till payouts when the till is not the same as the shortcode.",
@@ -143,7 +167,7 @@ class DarajaSetupForm(forms.ModelForm):
             "stk_transaction_type": "CustomerPayBillOnline collects into a paybill. CustomerBuyGoodsOnline collects into a till.",
             "stk_account_reference": "Shown on the customer’s STK prompt and stored against the ledger posting.",
             "stk_transaction_desc": "Short description sent with the STK prompt (max 13 characters is safest).",
-            "stk_callback_url": "HTTPS URL Safaricom calls after the customer enters PIN. Production: https://fin.richcom.co.ke/api/v1/daraja/stk/callback/",
+            "stk_callback_url": "HTTPS URL Safaricom calls after the customer enters PIN. Fills from https://fin.richcom.co.ke automatically.",
             "initiator_name": "Initiator username from Daraja. Production uses your live initiator, not testapi.",
             "security_credential": "Initiator password. Paste plaintext — NEXUS encrypts it when calling Safaricom.",
             "result_url": "HTTPS URL Safaricom posts balance and payout results to.",
@@ -164,9 +188,19 @@ class DarajaSetupForm(forms.ModelForm):
     def __init__(self, *args, request=None, **kwargs):
         self.request = request
         super().__init__(*args, **kwargs)
+        channel = self.CHANNEL_TILL if self._instance_is_till() else self.CHANNEL_PAYBILL
+        if self.is_bound:
+            channel = (self.data.get("channel") or channel).strip() or channel
+        self.fields["channel"].initial = channel
         account = getattr(self.instance, "paybill_account", None)
-        self.fields["hub_paybill"].initial = (
-            (account.paybill_number if account else "") or (getattr(self.instance, "shortcode", "") or "")
+        stored_number = (account.paybill_number if account else "") or (
+            (self.instance.till_number if channel == self.CHANNEL_TILL else "") or getattr(self.instance, "shortcode", "") or ""
+        )
+        self.fields["hub_paybill"].initial = stored_number
+        till = channel == self.CHANNEL_TILL
+        self.fields["hub_paybill"].label = "Till number" if till else "Paybill number"
+        self.fields["hub_paybill"].widget.attrs["placeholder"] = (
+            "Your live till, e.g. 123456" if till else "Your live paybill, e.g. 888555"
         )
         for name in SECRET_FIELDS:
             self.fields[name].required = False
@@ -181,15 +215,38 @@ class DarajaSetupForm(forms.ModelForm):
             "hub_paybill",
             "shortcode",
             "org_shortcode",
+            "stk_callback_url",
+            "result_url",
+            "timeout_url",
         ):
             self.fields[name].required = False
         self.fields["b2c_enabled"].required = False
         self.fields["b2b_enabled"].required = False
+        self.fields["channel"].required = False
+        for name in (
+            "stk_transaction_type",
+            "balance_identifier_type",
+            "b2b_sender_identifier_type",
+            "b2c_command_id",
+            "b2b_paybill_command",
+            "b2b_till_command",
+        ):
+            self.fields[name].required = False
+        urls = form_callback_urls(self.request)
+        for name, value in urls.items():
+            self.fields[name].widget.attrs["placeholder"] = value
+            if not self.is_bound:
+                current = str(self.fields[name].initial or getattr(self.instance, name, "") or "")
+                if not current or "localhost" in current or "127.0.0.1" in current or "ngrok" in current:
+                    self.fields[name].initial = value
+
+    def _instance_is_till(self) -> bool:
+        return str(getattr(self.instance, "stk_transaction_type", "") or "") == DarajaConfig.StkTransactionType.BUY_GOODS
 
     def clean_hub_paybill(self):
         digits = re.sub(r"\D", "", self.cleaned_data.get("hub_paybill") or "")
         if digits and len(digits) < 5:
-            raise forms.ValidationError("Enter a valid paybill number.")
+            raise forms.ValidationError("Enter a valid paybill or till number.")
         return digits
 
     def clean_shortcode(self):
@@ -201,8 +258,9 @@ class DarajaSetupForm(forms.ModelForm):
     def clean_till_number(self):
         return (self.cleaned_data.get("till_number") or "").strip()
 
-    def _ensure_paybill(self, number: str) -> PaybillAccount:
+    def _ensure_store(self, number: str, *, till: bool) -> PaybillAccount:
         account = PaybillAccount.objects.filter(paybill_number=number).order_by("id").first()
+        kind = "till" if till else "paybill"
         if account:
             if not account.is_active:
                 account.is_active = True
@@ -210,11 +268,34 @@ class DarajaSetupForm(forms.ModelForm):
             return account
         return PaybillAccount.objects.create(
             paybill_number=number,
-            account_name=f"M-Pesa paybill {number}",
+            account_name=f"M-Pesa {kind} {number}",
             provider=PaybillAccount.Provider.MPESA,
             is_active=True,
-            short_code_notes="Entered on Daraja setup",
+            short_code_notes=f"Entered on Daraja setup as {kind}",
         )
+
+    def _fill_empty(self, instance, **values):
+        for name, value in values.items():
+            if value and not str(getattr(instance, name, "") or "").strip():
+                setattr(instance, name, value)
+
+    def _apply_channel(self, instance, channel: str, number: str):
+        till = channel == self.CHANNEL_TILL
+        instance.stk_transaction_type = (
+            DarajaConfig.StkTransactionType.BUY_GOODS if till else DarajaConfig.StkTransactionType.PAYBILL
+        )
+        instance.balance_identifier_type = (
+            DarajaConfig.IdentifierType.TILL if till else DarajaConfig.IdentifierType.SHORTCODE
+        )
+        instance.b2b_sender_identifier_type = (
+            DarajaConfig.IdentifierType.TILL if till else DarajaConfig.IdentifierType.SHORTCODE
+        )
+        if not number:
+            return
+        instance.paybill_account = self._ensure_store(number, till=till)
+        instance.shortcode = number
+        instance.org_shortcode = number
+        instance.till_number = number if till else (instance.till_number or "")
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -224,16 +305,30 @@ class DarajaSetupForm(forms.ModelForm):
                 for field in SECRET_FIELDS:
                     if not (self.cleaned_data.get(field) or "").strip():
                         setattr(instance, field, getattr(stored, field))
+        channel = self.cleaned_data.get("channel") or self.CHANNEL_PAYBILL
+        number = (self.cleaned_data.get("hub_paybill") or instance.shortcode or instance.till_number or "").strip()
         if instance.environment == DarajaConfig.Environment.SANDBOX:
             apply_sandbox_to_instance(instance, self.request, force=True)
+            if channel == self.CHANNEL_TILL:
+                instance.stk_transaction_type = DarajaConfig.StkTransactionType.BUY_GOODS
+                instance.till_number = instance.till_number or instance.shortcode or "174379"
+                instance.balance_identifier_type = DarajaConfig.IdentifierType.TILL
+                instance.b2b_sender_identifier_type = DarajaConfig.IdentifierType.TILL
         else:
-            number = (self.cleaned_data.get("hub_paybill") or instance.shortcode or "").strip()
-            if number:
-                instance.paybill_account = self._ensure_paybill(number)
-                if not (instance.shortcode or "").strip():
-                    instance.shortcode = number
-                if not (instance.org_shortcode or "").strip():
-                    instance.org_shortcode = number
+            self._apply_channel(instance, channel, number)
+        urls = form_callback_urls(self.request)
+        self._fill_empty(
+            instance,
+            stk_account_reference=SANDBOX_ACCOUNT_REF,
+            stk_transaction_desc=SANDBOX_STK_DESC,
+            balance_remarks=SANDBOX_BALANCE_REMARKS,
+            b2c_remarks=SANDBOX_B2C_REMARKS,
+            b2c_occasion=SANDBOX_B2C_OCCASION,
+            b2b_remarks=SANDBOX_B2B_REMARKS,
+        )
+        for name, value in urls.items():
+            if value:
+                setattr(instance, name, value)
         if commit:
             instance.save()
             self.save_m2m()

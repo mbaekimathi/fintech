@@ -37,8 +37,8 @@ if DEBUG:
         if _host not in ALLOWED_HOSTS:
             ALLOWED_HOSTS.append(_host)
 
-# Public HTTPS origin Safaricom can reach (ngrok). Leave blank to auto-detect a running ngrok tunnel.
-DARAJA_PUBLIC_BASE_URL = os.getenv("DARAJA_PUBLIC_BASE_URL", "").strip().rstrip("/")
+# Public HTTPS origin Safaricom can reach. Defaults to the hosted site.
+DARAJA_PUBLIC_BASE_URL = (os.getenv("DARAJA_PUBLIC_BASE_URL") or "https://fin.richcom.co.ke").strip().rstrip("/")
 
 INSTALLED_APPS = [
     "django.contrib.admin",

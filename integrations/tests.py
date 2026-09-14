@@ -7,6 +7,7 @@ from integrations.models import DarajaConfig
 
 REQUIRED_DARAJA_FIELDS = (
     "environment",
+    "channel",
     "hub_paybill",
     "shortcode",
     "org_shortcode",
@@ -80,12 +81,15 @@ class DarajaSettingsTests(TestCase):
         self.assertContains(response, "Send to a phone number")
         self.assertContains(response, "Send to another paybill or till")
         self.assertContains(response, "Paybill number")
+        self.assertContains(response, "Collect and disburse with")
+        self.assertContains(response, "https://fin.richcom.co.ke/api/v1/daraja/stk/callback/")
         self.assertNotContains(response, "Select a paybill account")
 
     def test_admin_saves_daraja_setup(self):
         self.client.force_login(self.admin)
         payload = {
             "environment": DarajaConfig.Environment.SANDBOX,
+            "channel": "PAYBILL",
             "consumer_key": "sandbox-consumer-key",
             "consumer_secret": "sandbox-consumer-secret",
             "stk_transaction_type": DarajaConfig.StkTransactionType.PAYBILL,
@@ -114,6 +118,7 @@ class DarajaSettingsTests(TestCase):
         self.client.force_login(self.admin)
         payload = {
             "environment": DarajaConfig.Environment.SANDBOX,
+            "channel": "PAYBILL",
             "consumer_key": "sandbox-consumer-key",
             "consumer_secret": "sandbox-consumer-secret",
             "org_shortcode": "600984",
@@ -141,6 +146,7 @@ class DarajaSettingsTests(TestCase):
         self.client.force_login(self.admin)
         payload = {
             "environment": DarajaConfig.Environment.PRODUCTION,
+            "channel": "PAYBILL",
             "hub_paybill": "888555",
             "consumer_key": "live-consumer-key",
             "consumer_secret": "live-consumer-secret",
@@ -169,6 +175,40 @@ class DarajaSettingsTests(TestCase):
         self.assertTrue(PaybillAccount.objects.filter(paybill_number="888555").exists())
         self.assertEqual(config.consumer_key, "live-consumer-key")
         self.assertNotEqual(config.shortcode, "174379")
+        self.assertEqual(config.stk_transaction_type, DarajaConfig.StkTransactionType.PAYBILL)
+
+    def test_production_saves_typed_till(self):
+        self.client.force_login(self.admin)
+        payload = {
+            "environment": DarajaConfig.Environment.PRODUCTION,
+            "channel": "TILL",
+            "hub_paybill": "654321",
+            "consumer_key": "live-consumer-key",
+            "consumer_secret": "live-consumer-secret",
+            "passkey": "live-passkey",
+            "initiator_name": "liveinitiator",
+            "security_credential": "LivePassword1",
+            "stk_transaction_type": DarajaConfig.StkTransactionType.BUY_GOODS,
+            "balance_identifier_type": DarajaConfig.IdentifierType.TILL,
+            "b2c_enabled": "on",
+            "b2c_command_id": DarajaConfig.B2CCommand.BUSINESS,
+            "b2b_enabled": "on",
+            "b2b_sender_identifier_type": DarajaConfig.IdentifierType.TILL,
+            "b2b_paybill_command": DarajaConfig.B2BCommand.PAYBILL,
+            "b2b_till_command": DarajaConfig.B2BCommand.BUY_GOODS,
+        }
+        response = self.client.post(self.url, payload, follow=True)
+        self.assertEqual(response.status_code, 200)
+        config = DarajaConfig.load()
+        self.assertEqual(config.stk_transaction_type, DarajaConfig.StkTransactionType.BUY_GOODS)
+        self.assertEqual(config.till_number, "654321")
+        self.assertEqual(config.shortcode, "654321")
+        self.assertEqual(config.org_shortcode, "654321")
+        self.assertEqual(config.balance_identifier_type, DarajaConfig.IdentifierType.TILL)
+        self.assertEqual(config.b2b_sender_identifier_type, DarajaConfig.IdentifierType.TILL)
+        self.assertTrue(config.stk_callback_url)
+        self.assertTrue(config.result_url)
+        self.assertTrue(config.stk_callback_url.startswith("https://fin.richcom.co.ke/"))
 
 
 class DarajaPayoutHelperTests(TestCase):
@@ -237,7 +277,7 @@ class DarajaPayoutHelperTests(TestCase):
         self.assertEqual(send_payload["PartyA"], "600996")
         self.assertEqual(send_payload["Occassion"], "Payment")
 
-    def test_callback_uses_live_ngrok_not_stale_saved_url(self):
+    def test_callback_uses_hosted_site_not_stale_ngrok(self):
         from unittest.mock import patch
 
         from integrations.daraja_client import DarajaClient
@@ -247,7 +287,15 @@ class DarajaPayoutHelperTests(TestCase):
         stale = "https://old.ngrok-free.app/api/v1/daraja/result/"
         with patch("integrations.daraja.detect_ngrok_base", return_value="https://0ba3-41-90-173-25.ngrok-free.app"):
             url = client._callback(stale, "")
-        self.assertEqual(url, "https://0ba3-41-90-173-25.ngrok-free.app/api/v1/daraja/result/")
+        self.assertEqual(url, "https://fin.richcom.co.ke/api/v1/daraja/result/")
+
+    def test_form_callback_urls_use_hosted_site(self):
+        from integrations.daraja import form_callback_urls
+
+        urls = form_callback_urls()
+        self.assertEqual(urls["stk_callback_url"], "https://fin.richcom.co.ke/api/v1/daraja/stk/callback/")
+        self.assertEqual(urls["result_url"], "https://fin.richcom.co.ke/api/v1/daraja/result/")
+        self.assertEqual(urls["timeout_url"], "https://fin.richcom.co.ke/api/v1/daraja/timeout/")
 
 
 class DarajaTestPageTests(TestCase):
@@ -261,6 +309,52 @@ class DarajaTestPageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "View account balance")
         self.assertContains(response, "Send money")
+        self.assertContains(response, "Ready to work")
+        self.assertContains(response, "Not well integrated")
+        self.assertContains(response, "Daraja app login")
         poll = self.client.get(self.url, {"poll": "1"})
         self.assertEqual(poll.status_code, 200)
         self.assertEqual(poll.json()["operations"], [])
+
+    def test_capability_status_empty_config(self):
+        from integrations.daraja import capability_status
+
+        status = capability_status(DarajaConfig.load())
+        self.assertFalse(status["fully_ready"])
+        not_ready = {item["id"] for item in status["not_ready"]}
+        self.assertIn("oauth", not_ready)
+        self.assertIn("stk", not_ready)
+        self.assertIn("balance", not_ready)
+
+    def test_capability_status_marks_configured_actions_ready(self):
+        from unittest.mock import patch
+
+        from integrations.daraja import apply_sandbox_to_instance, capability_status
+
+        config = DarajaConfig.load()
+        apply_sandbox_to_instance(config, None, force=True)
+        config.consumer_key = "sandbox-consumer-key"
+        config.consumer_secret = "sandbox-consumer-secret"
+        config.save()
+        probe = {
+            "ok": True,
+            "state": "connected",
+            "title": "Successfully integrated",
+            "detail": "Daraja accepted this consumer key and secret on sandbox.",
+        }
+        with patch("integrations.daraja.probe_daraja", return_value=probe):
+            with patch(
+                "integrations.daraja.detect_ngrok_base",
+                return_value="https://demo.ngrok-free.app",
+            ):
+                with patch(
+                    "integrations.daraja.public_base_url",
+                    return_value="https://demo.ngrok-free.app",
+                ):
+                    status = capability_status(config)
+        self.assertTrue(status["by_id"]["oauth"]["ready"])
+        self.assertTrue(status["by_id"]["stk"]["ready"])
+        self.assertTrue(status["by_id"]["balance"]["ready"])
+        self.assertTrue(status["by_id"]["b2c"]["ready"])
+        self.assertTrue(status["by_id"]["b2b"]["ready"])
+        self.assertTrue(status["by_id"]["callbacks"]["ready"])

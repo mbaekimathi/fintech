@@ -4,15 +4,78 @@
 {% block heading %}Test credentials{% endblock %}
 {% block content %}
   <p class="muted lede-inline">
-    STK uses 174379. Balance and send use Party A {{ config.payout_shortcode|default:"600996" }} and initiator {{ config.initiator_name|default:"testapi" }}.
-    A Timed out row means Safaricom never POSTed the result. Keep one ngrok URL, and on the Daraja app enable <strong>Account Balance</strong> and <strong>B2C</strong> (not only Lipa Na M-Pesa Online).
+    This page shows what is wired and ready to run, and what is still missing.
+    STK uses {{ config.shortcode|default:"174379" }}. Balance and send use Party A {{ config.payout_shortcode|default:"600996" }} and initiator {{ config.initiator_name|default:"testapi" }}.
   </p>
 
-  <div class="status-row">
-    <span class="chip {% if config.stk_ready %}is-on{% endif %}">{% if config.stk_ready %}STK ready{% else %}STK missing{% endif %}</span>
-    <span class="chip {% if config.balance_ready %}is-on{% endif %}">{% if config.balance_ready %}Balance ready{% else %}Balance missing{% endif %}</span>
-    <span class="chip {% if config.b2c_ready %}is-on{% endif %}">{% if config.b2c_ready %}Phone payout ready{% else %}Phone payout missing{% endif %}</span>
-    <span class="chip {% if config.b2b_ready %}is-on{% endif %}">{% if config.b2b_ready %}Paybill/till payout ready{% else %}Paybill/till payout missing{% endif %}</span>
+  <section class="integration-banner {% if integration.fully_ready %}is-ok{% else %}is-bad{% endif %}" role="status">
+    <p class="eyebrow">{% if integration.fully_ready %}Ready{% else %}Partial{% endif %}</p>
+    <h2>{{ integration.title }}</h2>
+    <p class="muted">{{ integration.detail }}</p>
+    <p class="muted">{{ integration.ready_count }} of {{ integration.total }} capabilities can run from this hub.</p>
+  </section>
+
+  <div class="readiness-grid">
+    <section class="panel readiness-panel is-ok">
+      <div class="panel-head">
+        <div>
+          <h2>Ready to work</h2>
+          <p class="muted">Integrated and can be used from this page.</p>
+        </div>
+        <span class="chip is-on">{{ integration.ready|length }}</span>
+      </div>
+      {% for item in integration.ready %}
+        <article class="readiness-item">
+          <h3>{{ item.name }}</h3>
+          <p>{{ item.work }}</p>
+          <p class="muted">{{ item.detail }}</p>
+          <p class="muted">{{ item.last_note }}</p>
+        </article>
+      {% empty %}
+        <p class="muted">Nothing is ready yet. Fix the items on the right, save setup, then refresh.</p>
+      {% endfor %}
+    </section>
+
+    <section class="panel readiness-panel is-bad">
+      <div class="panel-head">
+        <div>
+          <h2>Not well integrated</h2>
+          <p class="muted">Missing credentials, callbacks, or a last test that never came back.</p>
+        </div>
+        <span class="chip">{{ integration.not_ready|length }}</span>
+      </div>
+      {% for item in integration.not_ready %}
+        <article class="readiness-item">
+          <h3>{{ item.name }}</h3>
+          <p>{{ item.work }}</p>
+          <p class="muted">{{ item.detail }}</p>
+          {% if item.blockers %}
+            <ul class="readiness-fix">
+              {% for blocker in item.blockers %}
+                <li>{{ blocker }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+          <p class="muted">{{ item.last_note }}</p>
+        </article>
+      {% empty %}
+        <p class="muted">All capabilities are integrated. You can run the tests below.</p>
+      {% endfor %}
+      {% if integration.not_ready %}
+        <div class="toolbar">
+          <a class="btn btn-ghost" href="{% url 'core:daraja' %}">Fix on Daraja setup</a>
+        </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="status-row daraja-status">
+    <span class="chip {% if capabilities.oauth.ready %}is-on{% endif %}">{% if capabilities.oauth.ready %}App connected{% else %}App not connected{% endif %}</span>
+    <span class="chip {% if capabilities.stk.ready %}is-on{% endif %}">{% if capabilities.stk.ready %}STK ready{% else %}STK not ready{% endif %}</span>
+    <span class="chip {% if capabilities.balance.ready %}is-on{% endif %}">{% if capabilities.balance.ready %}Balance ready{% else %}Balance not ready{% endif %}</span>
+    <span class="chip {% if capabilities.b2c.ready %}is-on{% endif %}">{% if capabilities.b2c.ready %}Phone payout ready{% else %}Phone payout not ready{% endif %}</span>
+    <span class="chip {% if capabilities.b2b.ready %}is-on{% endif %}">{% if capabilities.b2b.ready %}Paybill/till payout ready{% else %}Paybill/till payout not ready{% endif %}</span>
+    <span class="chip {% if capabilities.callbacks.ready %}is-on{% endif %}">{% if capabilities.callbacks.ready %}Callbacks reaching this hub{% else %}Callbacks not reaching this hub{% endif %}</span>
     <a class="chip" href="{% url 'core:daraja' %}">Edit setup</a>
     {% if live_result_url %}
       <span class="chip">Result URL {{ live_result_url }}</span>
@@ -20,7 +83,7 @@
   </div>
 
   <section class="stack-panels">
-    <form method="post" class="panel" novalidate>
+    <form method="post" class="panel {% if capabilities.stk.ready %}is-ready{% else %}is-blocked{% endif %}" novalidate>
       {% csrf_token %}
       <input type="hidden" name="intent" value="stk">
       <div class="panel-head">
@@ -28,7 +91,11 @@
           <h2>Prompt a number to pay</h2>
           <p class="muted">STK push. Cash lands on Lipa Na M-Pesa shortcode {{ config.shortcode|default:"—" }}.</p>
         </div>
+        <span class="chip {% if capabilities.stk.ready %}is-on{% endif %}">{% if capabilities.stk.ready %}Ready{% else %}Not ready{% endif %}</span>
       </div>
+      {% if not capabilities.stk.ready and capabilities.stk.blockers %}
+        <p class="field-error">{{ capabilities.stk.blockers|join:" " }}</p>
+      {% endif %}
       {% if stk_form.non_field_errors %}
         <p class="field-error">{{ stk_form.non_field_errors|join:" " }}</p>
       {% endif %}
@@ -38,11 +105,11 @@
         {% include "partials/labeled_field.html" with field=stk_form.account_ref span="2" %}
       </div>
       <div class="toolbar">
-        <button type="submit" class="btn btn-primary" {% if not config.stk_ready %}disabled{% endif %}>Send STK prompt</button>
+        <button type="submit" class="btn btn-primary" {% if not capabilities.stk.ready %}disabled{% endif %}>Send STK prompt</button>
       </div>
     </form>
 
-    <form method="post" class="panel" novalidate>
+    <form method="post" class="panel {% if capabilities.balance.ready %}is-ready{% else %}is-blocked{% endif %}" novalidate>
       {% csrf_token %}
       <input type="hidden" name="intent" value="balance">
       <div class="panel-head">
@@ -50,16 +117,20 @@
           <h2>View account balance</h2>
           <p class="muted">Asks Safaricom for the live float on {{ config.payout_shortcode|default:"the organization shortcode" }}. Not the hub ledger total.</p>
         </div>
+        <span class="chip {% if capabilities.balance.ready %}is-on{% endif %}">{% if capabilities.balance.ready %}Ready{% else %}Not ready{% endif %}</span>
       </div>
+      {% if not capabilities.balance.ready and capabilities.balance.blockers %}
+        <p class="field-error">{{ capabilities.balance.blockers|join:" " }}</p>
+      {% endif %}
       <div class="form-grid">
         {% include "partials/labeled_field.html" with field=balance_form.identifier %}
       </div>
       <div class="toolbar">
-        <button type="submit" class="btn btn-primary" {% if not config.balance_ready %}disabled{% endif %}>Request live balance</button>
+        <button type="submit" class="btn btn-primary" {% if not capabilities.balance.ready %}disabled{% endif %}>Request live balance</button>
       </div>
     </form>
 
-    <form method="post" class="panel" novalidate>
+    <form method="post" class="panel {% if capabilities.b2c.ready or capabilities.b2b.ready %}is-ready{% else %}is-blocked{% endif %}" novalidate>
       {% csrf_token %}
       <input type="hidden" name="intent" value="send">
       <div class="panel-head">
@@ -70,7 +141,11 @@
             Sandbox completes fastest to {{ sandbox_test_phone }} (phone) or {{ sandbox_b2b_destination }} (paybill).
           </p>
         </div>
+        <span class="chip {% if capabilities.b2c.ready or capabilities.b2b.ready %}is-on{% endif %}">{% if capabilities.b2c.ready or capabilities.b2b.ready %}Ready{% else %}Not ready{% endif %}</span>
       </div>
+      {% if not capabilities.b2c.ready and not capabilities.b2b.ready %}
+        <p class="field-error">{{ capabilities.b2c.blockers|join:" " }}</p>
+      {% endif %}
       {% if send_form.non_field_errors %}
         <p class="field-error">{{ send_form.non_field_errors|join:" " }}</p>
       {% endif %}
@@ -81,7 +156,7 @@
         {% include "partials/labeled_field.html" with field=send_form.account_ref %}
       </div>
       <div class="toolbar">
-        <button type="submit" class="btn btn-primary" {% if not config.b2c_ready and not config.b2b_ready %}disabled{% endif %}>Send</button>
+        <button type="submit" class="btn btn-primary" {% if not capabilities.b2c.ready and not capabilities.b2b.ready %}disabled{% endif %}>Send</button>
       </div>
     </form>
   </section>
@@ -91,7 +166,7 @@
       <div>
         <h2>Recent tests</h2>
         <p class="muted" data-poll-hint>
-          New tests update automatically. Older Queued rows waited on a previous ngrok URL — run them again.
+          New tests update automatically. A Timed out row means Safaricom never POSTed the result to this hub.
         </p>
       </div>
     </div>

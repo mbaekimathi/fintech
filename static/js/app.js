@@ -48,9 +48,12 @@ function initDarajaSetup() {
   const form = document.querySelector("[data-daraja-setup]");
   if (!form) return;
   const envField = form.querySelector("#id_environment") || form.querySelector('[name="environment"]');
+  const channelField = form.querySelector("#id_channel") || form.querySelector('[name="channel"]');
+  const numberField = form.querySelector("#id_hub_paybill") || form.querySelector('[name="hub_paybill"]');
   const defaultsNode = document.getElementById("daraja-sandbox-defaults");
   if (!envField || !defaultsNode) return;
   const defaults = JSON.parse(defaultsNode.textContent);
+  const formUrls = defaults.form_urls || {};
 
   const setField = (name, value) => {
     const el =
@@ -62,6 +65,29 @@ function initDarajaSetup() {
       return;
     }
     el.value = value;
+  };
+
+  const fillEmpty = (name, value) => {
+    const el = form.querySelector(`[name="${name}"]`);
+    if (!el || el.type === "checkbox") return;
+    if (!String(el.value || "").trim() && value) el.value = value;
+  };
+
+  const digits = (value) => String(value || "").replace(/\D/g, "");
+
+  const setNumberLabel = (till) => {
+    if (!numberField) return;
+    const label = numberField.closest("label");
+    if (!label) return;
+    const textNode = [...label.childNodes].find((node) => node.nodeType === 3 && node.textContent.trim());
+    if (textNode) textNode.textContent = till ? "Till number" : "Paybill number";
+    const hint = label.querySelector(".field-hint");
+    if (hint) {
+      hint.textContent = till
+        ? "Buy Goods till used to collect and disburse. Shortcode and callbacks fill from this."
+        : "Paybill used to collect and disburse. Shortcode and callbacks fill from this.";
+    }
+    numberField.placeholder = till ? "Your live till, e.g. 123456" : "Your live paybill, e.g. 888555";
   };
 
   const revealSecrets = () => {
@@ -102,6 +128,40 @@ function initDarajaSetup() {
   };
 
   const portalFields = new Set(["org_shortcode", "initiator_name", "security_credential"]);
+  const sandboxGuide = document.querySelector("[data-sandbox-guide]");
+  const productionGuide = document.querySelector("[data-production-guide]");
+  const stkHeading = document.querySelector("[data-stk-heading]");
+  const stkCopy = document.querySelector("[data-stk-copy]");
+
+  const applyChannel = () => {
+    const till = channelField && channelField.value === "TILL";
+    const mapping = till ? defaults.channel_till : defaults.channel_paybill;
+    if (mapping) {
+      Object.entries(mapping).forEach(([name, value]) => setField(name, value));
+    }
+    setNumberLabel(till);
+    if (stkHeading) {
+      stkHeading.textContent = till ? "STK push — collect into this till" : "STK push — collect into this paybill";
+    }
+    if (stkCopy) {
+      stkCopy.textContent = till
+        ? "Buy Goods / CustomerBuyGoodsOnline. Passkey is not used for balance or sending."
+        : "Lipa Na M-Pesa Online / CustomerPayBillOnline. Passkey is not used for balance or sending.";
+    }
+    const number = digits(numberField && numberField.value);
+    const sandbox = envField.value === "SANDBOX";
+    if (number) {
+      setField("shortcode", sandbox && !till ? defaults.shortcode : number);
+      if (sandbox && !till) setField("org_shortcode", defaults.org_shortcode);
+      else setField("org_shortcode", sandbox ? defaults.org_shortcode : number);
+      if (till) setField("till_number", sandbox ? number || defaults.shortcode : number);
+    } else if (sandbox) {
+      setField("hub_paybill", defaults.shortcode);
+      setField("shortcode", defaults.shortcode);
+      setField("org_shortcode", defaults.org_shortcode);
+      if (till) setField("till_number", defaults.shortcode);
+    }
+  };
 
   const applySandbox = () => {
     Object.entries(sandboxValues).forEach(([name, value]) => {
@@ -113,10 +173,27 @@ function initDarajaSetup() {
     });
     setField("b2c_enabled", true);
     setField("b2b_enabled", true);
-    const sandboxGuide = document.querySelector("[data-sandbox-guide]");
-    const productionGuide = document.querySelector("[data-production-guide]");
     if (sandboxGuide) sandboxGuide.hidden = false;
     if (productionGuide) productionGuide.hidden = true;
+    setField("stk_callback_url", formUrls.stk_callback_url || "");
+    setField("result_url", formUrls.result_url || "");
+    setField("timeout_url", formUrls.timeout_url || "");
+    applyChannel();
+  };
+
+  const applyProduction = () => {
+    fillEmpty("stk_account_reference", defaults.stk_account_reference);
+    fillEmpty("stk_transaction_desc", defaults.stk_transaction_desc);
+    fillEmpty("balance_remarks", defaults.balance_remarks);
+    fillEmpty("b2c_remarks", defaults.b2c_remarks);
+    fillEmpty("b2c_occasion", defaults.b2c_occasion);
+    fillEmpty("b2b_remarks", defaults.b2b_remarks);
+    setField("stk_callback_url", formUrls.stk_callback_url || "");
+    setField("result_url", formUrls.result_url || "");
+    setField("timeout_url", formUrls.timeout_url || "");
+    setField("b2c_enabled", true);
+    setField("b2b_enabled", true);
+    applyChannel();
   };
 
   const clearSandbox = () => {
@@ -124,27 +201,30 @@ function initDarajaSetup() {
       const el = form.querySelector(`[name="${name}"]`);
       if (el && el.value === sandboxValue) el.value = "";
     });
-    setField("b2c_enabled", false);
-    setField("b2b_enabled", false);
-    const sandboxGuide = document.querySelector("[data-sandbox-guide]");
-    const productionGuide = document.querySelector("[data-production-guide]");
     if (sandboxGuide) sandboxGuide.hidden = true;
     if (productionGuide) productionGuide.hidden = false;
+    applyProduction();
   };
 
-  const sync = () => {
+  const syncEnv = () => {
     if (envField.value === "SANDBOX") applySandbox();
     else clearSandbox();
   };
 
-  envField.addEventListener("change", sync);
+  envField.addEventListener("change", syncEnv);
+  if (channelField) channelField.addEventListener("change", applyChannel);
+  if (numberField) {
+    numberField.addEventListener("input", () => {
+      numberField.value = digits(numberField.value);
+      applyChannel();
+    });
+  }
   revealSecrets();
   if (envField.value === "SANDBOX") applySandbox();
   else {
-    const sandboxGuide = document.querySelector("[data-sandbox-guide]");
-    const productionGuide = document.querySelector("[data-production-guide]");
     if (sandboxGuide) sandboxGuide.hidden = true;
     if (productionGuide) productionGuide.hidden = false;
+    applyProduction();
   }
 }
 
