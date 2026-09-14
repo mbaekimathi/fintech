@@ -1,0 +1,49 @@
+{% extends "auth_base.html" %}
+{% block title %}Register{% endblock %}
+{% block content %}
+  <div class="auth-card">
+    <h2>Register</h2>
+    <p class="muted">Access stays locked until an admin approves you.</p>
+
+    <form method="post" class="stack" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
+      {% endif %}
+      <div class="form-grid">
+        <label class="label">First name {{ form.first_name }}{% if form.first_name.errors %}<span class="field-error">{{ form.first_name.errors|join:", " }}</span>{% endif %}</label>
+        <label class="label">Last name {{ form.last_name }}{% if form.last_name.errors %}<span class="field-error">{{ form.last_name.errors|join:", " }}</span>{% endif %}</label>
+      </div>
+      <label class="label">Email {{ form.email }}{% if form.email.errors %}<span class="field-error">{{ form.email.errors|join:", " }}</span>{% endif %}</label>
+      <label class="label">Phone {{ form.phone }}</label>
+      <label class="label">
+        Login code
+        {{ form.staff_code }}
+        {% if form.staff_code.errors %}<span class="field-error">{{ form.staff_code.errors|join:", " }}</span>{% endif %}
+      </label>
+      <div class="form-grid">
+        <label class="label">
+          Password
+          <span class="password-field">
+            {{ form.password1 }}
+            {% include "partials/password_toggle.html" %}
+          </span>
+          {% if form.password1.errors %}<span class="field-error">{{ form.password1.errors|join:", " }}</span>{% endif %}
+        </label>
+        <label class="label">
+          Confirm
+          <span class="password-field">
+            {{ form.password2 }}
+            {% include "partials/password_toggle.html" %}
+          </span>
+          {% if form.password2.errors %}<span class="field-error">{{ form.password2.errors|join:", " }}</span>{% endif %}
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Create account</button>
+    </form>
+
+    <p class="auth-foot">
+      <a href="{% url 'accounts:login' %}">Sign in</a>
+    </p>
+  </div>
+{% endblock %}

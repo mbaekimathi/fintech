@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block heading %}Settings{% endblock %}
+{% block content %}
+  <section class="card-grid">
+    <article class="panel tile">
+      <h2>{{ user.get_full_name|default:user.email }}</h2>
+      <dl class="kv">
+        <dt>Code</dt>
+        <dd>{{ user.staff_code }}</dd>
+        <dt>Role</dt>
+        <dd>{{ user.get_role_display }}</dd>
+        <dt>Email</dt>
+        <dd>{{ user.email }}</dd>
+      </dl>
+    </article>
+    <article class="panel tile">
+      <h2>{{ product_name }}</h2>
+      <dl class="kv">
+        <dt>Timezone</dt>
+        <dd>{{ hub_timezone }}</dd>
+        <dt>Session</dt>
+        <dd>{{ session_hours }}h idle</dd>
+      </dl>
+    </article>
+  </section>
+
+  <section class="panel settings-links">
+    <div class="chip-row">
+      {% if user.can_manage_users %}
+        <a class="chip" href="{% url 'accounts:users' %}">People</a>
+      {% endif %}
+      {% if user.can_manage_ledger or user.role == 'IT_SUPPORT' %}
+        <a class="chip" href="{% url 'paybill:accounts' %}">Paybills</a>
+        <a class="chip" href="{% url 'paybill:systems' %}">Systems</a>
+      {% endif %}
+      {% if user.can_manage_daraja %}
+        <a class="chip" href="{% url 'core:daraja' %}">Daraja</a>
+        <a class="chip" href="{% url 'core:daraja-test' %}">Test credentials</a>
+      {% endif %}
+      {% if user.is_staff %}
+        <a class="chip" href="{% url 'admin:index' %}">Admin</a>
+      {% endif %}
+      <a class="chip" href="{% url 'core:dashboard' %}">Dashboard</a>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1f2a">
+  <title>{% block title %}Workspace{% endblock %} · {{ product_name }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,560;9..144,680&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+</head>
+<body class="app-body" x-data="nexusShell()" :class="{ 'nav-open': navOpen, 'nav-collapsed': collapsed && !isMobile }">
+  <div class="app-shell">
+    {% include "partials/sidebar.html" %}
+    <header class="app-header">
+      <div class="header-left">
+        <button type="button" class="icon-btn" @click="toggleNav()" aria-label="Toggle navigation">
+          <span class="burger" aria-hidden="true"></span>
+        </button>
+        <div class="crumb">
+          <h1 class="page-title">{% block heading %}Dashboard{% endblock %}</h1>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="user-chip" x-data="{ open: false }" @keydown.escape.window="open = false">
+          <button type="button" class="user-btn" @click="open = !open" aria-haspopup="true" :aria-expanded="open">
+            <span class="avatar">{{ user.first_name|slice:":1"|default:"N" }}{{ user.last_name|slice:":1" }}</span>
+            <span class="user-meta">
+              <strong>{{ user.get_full_name|default:user.email }}</strong>
+              <small>{{ user.get_role_display }}</small>
+            </span>
+            <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4.2 6.2a.7.7 0 0 1 1 0L8 8.9l2.8-2.7a.7.7 0 1 1 1 1l-3.3 3.2a.7.7 0 0 1-1 0L4.2 7.2a.7.7 0 0 1 0-1z"/>
+            </svg>
+          </button>
+          <div class="menu" x-show="open" x-cloak x-transition.origin.top.right.duration.150ms @click.outside="open = false">
+            <div class="menu-head">
+              <span class="avatar">{{ user.first_name|slice:":1"|default:"N" }}{{ user.last_name|slice:":1" }}</span>
+              <div class="menu-who">
+                <strong>{{ user.get_full_name|default:user.email }}</strong>
+                <small>{{ user.email }}</small>
+              </div>
+            </div>
+            <a class="menu-action" href="{% url 'core:settings' %}">Settings</a>
+            <form method="post" action="{% url 'accounts:logout' %}">
+              {% csrf_token %}
+              <button type="submit" class="menu-action is-logout">Sign out</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main class="app-main" id="main">
+      {% include "partials/messages.html" %}
+      {% block content %}{% endblock %}
+    </main>
+    {% include "partials/footer.html" %}
+  </div>
+  <div class="nav-backdrop" @click="navOpen = false" x-cloak x-show="navOpen"></div>
+  <script src="{% static 'js/app.js' %}"></script>
+</body>
+</html>

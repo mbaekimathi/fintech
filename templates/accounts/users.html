@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}People{% endblock %}
+{% block heading %}People{% endblock %}
+{% block content %}
+  <div class="toolbar">
+    <div class="chips">
+      <a class="chip {% if status == 'all' %}is-on{% endif %}" href="{% url 'accounts:users' %}">All</a>
+      <a class="chip {% if status == 'pending' %}is-on{% endif %}" href="?status=pending">Pending ({{ pending_count }})</a>
+      <a class="chip {% if status == 'active' %}is-on{% endif %}" href="?status=active">Active</a>
+    </div>
+  </div>
+  <section class="panel">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Role</th>
+            <th>Approved</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for person in people %}
+            <tr>
+              <td>{{ person.staff_code }}</td>
+              <td>{{ person.get_full_name }}</td>
+              <td>
+                <form method="post" action="{% url 'accounts:set_role' person.pk %}" class="inline-form">
+                  {% csrf_token %}
+                  <select name="role" class="select" onchange="this.form.submit()" aria-label="Role for {{ person.staff_code }}">
+                    {% for value, label in role_choices %}
+                      <option value="{{ value }}" {% if person.role == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </form>
+              </td>
+              <td>
+                <form method="post" action="{% url 'accounts:set_approval' person.pk %}" class="inline-form">
+                  {% csrf_token %}
+                  <select name="is_approved" class="select" onchange="this.form.submit()" aria-label="Approval for {{ person.staff_code }}">
+                    {% for value, label in approval_choices %}
+                      <option value="{% if value %}1{% else %}0{% endif %}" {% if person.is_approved == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </form>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="4" class="empty">No people match this filter.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Test credentials{% endblock %}
+{% block eyebrow %}Daraja{% endblock %}
+{% block heading %}Test credentials{% endblock %}
+{% block content %}
+  <p class="muted lede-inline">
+    STK uses 174379. Balance and send use Party A {{ config.payout_shortcode|default:"600996" }} and initiator {{ config.initiator_name|default:"testapi" }}.
+    A Timed out row means Safaricom never POSTed the result. Keep one ngrok URL, and on the Daraja app enable <strong>Account Balance</strong> and <strong>B2C</strong> (not only Lipa Na M-Pesa Online).
+  </p>
+
+  <div class="status-row">
+    <span class="chip {% if config.stk_ready %}is-on{% endif %}">{% if config.stk_ready %}STK ready{% else %}STK missing{% endif %}</span>
+    <span class="chip {% if config.balance_ready %}is-on{% endif %}">{% if config.balance_ready %}Balance ready{% else %}Balance missing{% endif %}</span>
+    <span class="chip {% if config.b2c_ready %}is-on{% endif %}">{% if config.b2c_ready %}Phone payout ready{% else %}Phone payout missing{% endif %}</span>
+    <span class="chip {% if config.b2b_ready %}is-on{% endif %}">{% if config.b2b_ready %}Paybill/till payout ready{% else %}Paybill/till payout missing{% endif %}</span>
+    <a class="chip" href="{% url 'core:daraja' %}">Edit setup</a>
+    {% if live_result_url %}
+      <span class="chip">Result URL {{ live_result_url }}</span>
+    {% endif %}
+  </div>
+
+  <section class="stack-panels">
+    <form method="post" class="panel" novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="intent" value="stk">
+      <div class="panel-head">
+        <div>
+          <h2>Prompt a number to pay</h2>
+          <p class="muted">STK push. Cash lands on Lipa Na M-Pesa shortcode {{ config.shortcode|default:"—" }}.</p>
+        </div>
+      </div>
+      {% if stk_form.non_field_errors %}
+        <p class="field-error">{{ stk_form.non_field_errors|join:" " }}</p>
+      {% endif %}
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=stk_form.phone %}
+        {% include "partials/labeled_field.html" with field=stk_form.amount %}
+        {% include "partials/labeled_field.html" with field=stk_form.account_ref span="2" %}
+      </div>
+      <div class="toolbar">
+        <button type="submit" class="btn btn-primary" {% if not config.stk_ready %}disabled{% endif %}>Send STK prompt</button>
+      </div>
+    </form>
+
+    <form method="post" class="panel" novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="intent" value="balance">
+      <div class="panel-head">
+        <div>
+          <h2>View account balance</h2>
+          <p class="muted">Asks Safaricom for the live float on {{ config.payout_shortcode|default:"the organization shortcode" }}. Not the hub ledger total.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=balance_form.identifier %}
+      </div>
+      <div class="toolbar">
+        <button type="submit" class="btn btn-primary" {% if not config.balance_ready %}disabled{% endif %}>Request live balance</button>
+      </div>
+    </form>
+
+    <form method="post" class="panel" novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="intent" value="send">
+      <div class="panel-head">
+        <div>
+          <h2>Send money</h2>
+          <p class="muted">
+            Pays from {{ config.payout_shortcode|default:"—" }}.
+            Sandbox completes fastest to {{ sandbox_test_phone }} (phone) or {{ sandbox_b2b_destination }} (paybill).
+          </p>
+        </div>
+      </div>
+      {% if send_form.non_field_errors %}
+        <p class="field-error">{{ send_form.non_field_errors|join:" " }}</p>
+      {% endif %}
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=send_form.destination_type %}
+        {% include "partials/labeled_field.html" with field=send_form.destination %}
+        {% include "partials/labeled_field.html" with field=send_form.amount %}
+        {% include "partials/labeled_field.html" with field=send_form.account_ref %}
+      </div>
+      <div class="toolbar">
+        <button type="submit" class="btn btn-primary" {% if not config.b2c_ready and not config.b2b_ready %}disabled{% endif %}>Send</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Recent tests</h2>
+        <p class="muted" data-poll-hint>
+          New tests update automatically. Older Queued rows waited on a previous ngrok URL — run them again.
+        </p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data" data-daraja-tests data-poll-url="{% url 'core:daraja-test' %}?poll=1">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Action</th>
+            <th>Destination</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Result</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in operations %}
+            <tr data-id="{{ row.pk }}" data-status="{{ row.status }}" data-watch="{% if row.is_fresh_queue %}1{% endif %}">
+              <td data-col="when">{{ row.created_at|date:"H:i:s" }}</td>
+              <td data-col="kind">{{ row.get_kind_display }}</td>
+              <td data-col="destination">{{ row.destination|default:"—" }}</td>
+              <td data-col="amount">{% if row.amount %}KES {{ row.amount }}{% else %}—{% endif %}</td>
+              <td data-col="status"><span class="badge badge-{{ row.status|lower }}">{{ row.get_status_display }}</span></td>
+              <td data-col="summary">{{ row.summary|default:row.result_desc|default:"Waiting" }}</td>
+              <td data-col="refresh">
+                {% if row.kind == "STK" and row.checkout_request_id %}
+                  <form method="post" class="inline-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="intent" value="refresh">
+                    <input type="hidden" name="operation_id" value="{{ row.pk }}">
+                    <button type="submit" class="btn btn-ghost btn-small">Refresh</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr data-empty="1"><td colspan="7" class="empty">No tests yet. Prompt a number, request balance, or send money.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "auth_base.html" %}
+{% block title %}Access denied{% endblock %}
+{% block content %}
+  <div class="auth-card">
+    <h2>Access denied</h2>
+    <p class="muted">This page is not available for your role.</p>
+    <a class="btn btn-primary btn-block" href="{% url 'core:dashboard' %}">Dashboard</a>
+  </div>
+{% endblock %}

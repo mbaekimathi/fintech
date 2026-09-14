@@ -1,0 +1,32 @@
+<aside class="app-sidebar" id="sidebar">
+  <div class="brand">
+    <span class="brand-mark">N</span>
+    <div class="brand-copy">
+      <strong>{{ product_name }}</strong>
+      <small>{{ product_tag }}</small>
+    </div>
+  </div>
+  <nav class="side-nav" aria-label="Primary">
+    {% for item in nav_items %}
+      <a href="{% url item.url %}" class="nav-link {% if request.resolver_match.view_name == item.url %}is-active{% endif %}">
+        <span class="nav-icon" data-icon="{{ item.icon }}"></span>
+        <span>{{ item.name }}</span>
+      </a>
+    {% endfor %}
+  </nav>
+  <div class="side-foot">
+    <nav class="side-tools" aria-label="Account">
+      <a href="{% url 'core:settings' %}" class="nav-link {% if request.resolver_match.view_name == 'core:settings' %}is-active{% endif %}">
+        <span class="nav-icon" data-icon="gear"></span>
+        <span>Settings</span>
+      </a>
+      <form method="post" action="{% url 'accounts:logout' %}">
+        {% csrf_token %}
+        <button type="submit" class="nav-link is-logout">
+          <span class="nav-icon" data-icon="exit"></span>
+          <span>Log out</span>
+        </button>
+      </form>
+    </nav>
+  </div>
+</aside>

@@ -1,0 +1,12 @@
+{% extends "auth_base.html" %}
+{% block title %}Pending{% endblock %}
+{% block content %}
+  <div class="auth-card">
+    <h2>Pending approval</h2>
+    <p class="muted">Code <strong>{{ user.staff_code }}</strong> is on file. Ask an admin to approve access.</p>
+    <form method="post" action="{% url 'accounts:logout' %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-ghost btn-block">Sign out</button>
+    </form>
+  </div>
+{% endblock %}

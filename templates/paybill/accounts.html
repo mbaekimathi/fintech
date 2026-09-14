@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Paybills{% endblock %}
+{% block heading %}Paybills{% endblock %}
+{% block content %}
+  <section class="card-grid">
+    {% for account in accounts %}
+      <article class="panel tile">
+        <h2>{{ account.account_name }}</h2>
+        <p class="code-line">{{ account.paybill_number }}</p>
+        <span class="badge {% if account.is_active %}badge-completed{% else %}badge-failed{% endif %}">
+          {% if account.is_active %}Live{% else %}Off{% endif %}
+        </span>
+      </article>
+    {% empty %}
+      <p class="empty">No paybill accounts yet.</p>
+    {% endfor %}
+  </section>
+{% endblock %}

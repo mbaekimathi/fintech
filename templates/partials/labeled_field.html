@@ -1,0 +1,25 @@
+{% if field.field.widget.input_type == "checkbox" %}
+  <label class="label check-label {% if span %}span-2{% endif %}">
+    {{ field }}
+    <span class="check-copy">
+      <span>{{ field.label }}</span>
+      {% if field.help_text %}<span class="field-hint">{{ field.help_text }}</span>{% endif %}
+    </span>
+    {% if field.errors %}<span class="field-error">{{ field.errors|join:", " }}</span>{% endif %}
+  </label>
+{% else %}
+  <label class="label {% if span %}span-2{% endif %}">
+    {{ field.label }}
+    {% if secret %}
+      <span class="password-field">
+        {{ field }}
+        {% include "partials/password_toggle.html" with visible=True %}
+      </span>
+      {% if saved %}<span class="secret-set">Saved</span>{% endif %}
+    {% else %}
+      {{ field }}
+    {% endif %}
+    {% if field.help_text %}<span class="field-hint">{{ field.help_text }}</span>{% endif %}
+    {% if field.errors %}<span class="field-error">{{ field.errors|join:", " }}</span>{% endif %}
+  </label>
+{% endif %}

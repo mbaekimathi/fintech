@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Systems{% endblock %}
+{% block heading %}Systems{% endblock %}
+{% block content %}
+  <section class="card-grid">
+    {% for system in systems %}
+      <article class="panel tile">
+        <h2>{{ system.name }}</h2>
+        <p class="muted">{{ system.slug }}</p>
+        <span class="badge {% if system.is_active %}badge-completed{% else %}badge-failed{% endif %}">
+          {% if system.is_active %}Live{% else %}Off{% endif %}
+        </span>
+      </article>
+    {% empty %}
+      <p class="empty">No systems yet.</p>
+    {% endfor %}
+  </section>
+{% endblock %}

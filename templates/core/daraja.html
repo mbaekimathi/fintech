@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Daraja{% endblock %}
+{% block heading %}Daraja credentials{% endblock %}
+{% block content %}
+  {{ sandbox_defaults|json_script:"daraja-sandbox-defaults" }}
+
+  <section class="integration-banner {% if integration.integrated %}is-ok{% else %}is-bad{% endif %}" role="status">
+    <p class="eyebrow">{% if integration.integrated %}Connected{% else %}Not connected{% endif %}</p>
+    <h2>{{ integration.title }}</h2>
+    <p class="muted">{{ integration.detail }}</p>
+    {% if integration.checks %}
+      <ul class="check-list">
+        {% for item in integration.checks %}
+          <li class="{% if item.ok %}is-ok{% else %}is-bad{% endif %}">
+            {% if item.ok %}Set{% else %}Fix{% endif %} · {{ item.label }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </section>
+
+  <div class="status-row daraja-status">
+    <span class="chip {% if config.has_app_credentials %}is-on{% endif %}">{% if config.has_app_credentials %}App ready{% else %}App missing{% endif %}</span>
+    <span class="chip {% if config.stk_ready %}is-on{% endif %}">{% if config.stk_ready %}STK ready{% else %}STK missing{% endif %}</span>
+    <span class="chip {% if config.balance_ready %}is-on{% endif %}">{% if config.balance_ready %}Balance ready{% else %}Balance missing{% endif %}</span>
+    <span class="chip {% if config.b2c_ready %}is-on{% endif %}">{% if config.b2c_ready %}Phone payout ready{% else %}Phone payout missing{% endif %}</span>
+    <span class="chip {% if config.b2b_ready %}is-on{% endif %}">{% if config.b2b_ready %}Paybill/till payout ready{% else %}Paybill/till payout missing{% endif %}</span>
+  </div>
+
+  <form method="post" class="stack-panels daraja-setup" novalidate autocomplete="off" data-daraja-setup>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Shared Daraja app</h2>
+          <p class="muted">Used by STK, balance, B2C, and B2B.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.environment %}
+        {% include "partials/labeled_field.html" with field=form.paybill_account %}
+        {% include "partials/labeled_field.html" with field=form.shortcode %}
+        {% include "partials/labeled_field.html" with field=form.org_shortcode %}
+        {% include "partials/labeled_field.html" with field=form.till_number %}
+        {% include "partials/labeled_field.html" with field=form.consumer_key %}
+        {% include "partials/labeled_field.html" with field=form.consumer_secret secret=True saved=secrets.consumer_secret span="2" %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>STK push — collect into this paybill</h2>
+          <p class="muted">Lipa Na M-Pesa Online. Passkey is not used for balance or sending.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.stk_transaction_type %}
+        {% include "partials/labeled_field.html" with field=form.passkey secret=True saved=secrets.passkey span="2" %}
+        {% include "partials/labeled_field.html" with field=form.stk_account_reference %}
+        {% include "partials/labeled_field.html" with field=form.stk_transaction_desc %}
+        {% include "partials/labeled_field.html" with field=form.stk_callback_url span="2" %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Live paybill balance</h2>
+          <p class="muted">
+            Account Balance API. Paste <strong>Shortcode 1</strong>, <strong>Initiator Name</strong>, and the initiator password from
+            <a href="https://developer.safaricom.co.ke/test_credentials" target="_blank" rel="noopener">Daraja Test credentials</a>
+            — not the STK till 174379.
+          </p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.initiator_name %}
+        {% include "partials/labeled_field.html" with field=form.security_credential secret=True saved=secrets.security_credential span="2" %}
+        {% include "partials/labeled_field.html" with field=form.balance_identifier_type %}
+        {% include "partials/labeled_field.html" with field=form.balance_remarks %}
+        {% include "partials/labeled_field.html" with field=form.result_url %}
+        {% include "partials/labeled_field.html" with field=form.timeout_url %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Send to a phone number (B2C)</h2>
+          <p class="muted">Same initiator and organization shortcode as balance. The destination phone and amount are entered per payout.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.b2c_enabled span="2" %}
+        {% include "partials/labeled_field.html" with field=form.b2c_command_id %}
+        {% include "partials/labeled_field.html" with field=form.b2c_occasion %}
+        {% include "partials/labeled_field.html" with field=form.b2c_remarks span="2" %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Send to another paybill or till (B2B)</h2>
+          <p class="muted">Same initiator as balance. Destination shortcode or till is entered per transfer.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.b2b_enabled span="2" %}
+        {% include "partials/labeled_field.html" with field=form.b2b_sender_identifier_type %}
+        {% include "partials/labeled_field.html" with field=form.b2b_paybill_command %}
+        {% include "partials/labeled_field.html" with field=form.b2b_till_command %}
+        {% include "partials/labeled_field.html" with field=form.b2b_remarks %}
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <button type="submit" class="btn btn-primary" name="intent" value="save">Save Daraja setup</button>
+      <button type="submit" class="btn btn-ghost" name="intent" value="test">Save and test connection</button>
+      <a class="btn btn-ghost" href="{% url 'core:daraja-test' %}">Test credentials</a>
+      <a class="btn btn-ghost" href="{% url 'core:settings' %}">Back to settings</a>
+    </div>
+  </form>
+{% endblock %}

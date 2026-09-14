@@ -1,0 +1,33 @@
+{% extends "auth_base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+  <div class="auth-card">
+    <h2>Sign in</h2>
+    <p class="muted">6-digit code and password.</p>
+
+    <form method="post" class="stack" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
+      {% endif %}
+      <label class="label">
+        Login code
+        {{ form.staff_code }}
+        {% if form.staff_code.errors %}<span class="field-error">{{ form.staff_code.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="label">
+        Password
+        <span class="password-field">
+          {{ form.password }}
+          {% include "partials/password_toggle.html" %}
+        </span>
+        {% if form.password.errors %}<span class="field-error">{{ form.password.errors|join:", " }}</span>{% endif %}
+      </label>
+      <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+    </form>
+
+    <p class="auth-foot">
+      <a href="{% url 'accounts:register' %}">Register</a>
+    </p>
+  </div>
+{% endblock %}

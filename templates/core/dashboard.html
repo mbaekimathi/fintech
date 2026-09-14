@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+{% block content %}
+  <section class="stat-grid">
+    <article class="stat-card">
+      <p class="stat-label">Today</p>
+      <p class="stat-value">KES {{ today_volume|floatformat:2 }}</p>
+    </article>
+    <article class="stat-card">
+      <p class="stat-label">Systems</p>
+      <p class="stat-value">{{ system_count }}</p>
+    </article>
+    <article class="stat-card">
+      <p class="stat-label">Paybills</p>
+      <p class="stat-value">{{ paybill_count }}</p>
+    </article>
+    <article class="stat-card">
+      <p class="stat-label">Pending</p>
+      <p class="stat-value">{{ pending_people }}</p>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Latest</h2>
+      <a class="btn btn-ghost" href="{% url 'paybill:transactions' %}">View all</a>
+    </div>
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Reference</th>
+            <th>Account</th>
+            <th>Amount</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in recent_entries %}
+            <tr>
+              <td>{{ row.reference }}</td>
+              <td>{{ row.paybill_account.account_name }}</td>
+              <td>{{ row.currency }} {{ row.amount }}</td>
+              <td><span class="badge badge-{{ row.status|lower }}">{{ row.get_status_display }}</span></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="4" class="empty">No postings yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
