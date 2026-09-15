@@ -1,3 +1,119 @@
+function sendMoneyPanel(config) {
+  const digits = (value) => String(value || "").replace(/\D/g, "");
+  return {
+    type: config.type || "PHONE",
+    destination: digits(config.destination),
+    accountRef: config.accountRef || config.accountExample || "",
+    phoneReady: Boolean(config.phoneReady),
+    b2bReady: Boolean(config.b2bReady),
+    phoneExample: config.phoneExample || "254708374149",
+    paybillExample: config.paybillExample || "600000",
+    tillExample: config.tillExample || "600000",
+    accountExample: config.accountExample || "NEXUS",
+    isSandbox: Boolean(config.isSandbox),
+    init() {
+      if (this.type === "PHONE" && !this.phoneReady && this.b2bReady) this.type = "PAYBILL";
+      if ((this.type === "PAYBILL" || this.type === "TILL") && !this.b2bReady && this.phoneReady) {
+        this.type = "PHONE";
+      }
+      this.onTypeChange(true);
+    },
+    get readyForType() {
+      return this.type === "PHONE" ? this.phoneReady : this.b2bReady;
+    },
+    get readyLabel() {
+      if (!this.phoneReady && !this.b2bReady) return "Not ready";
+      if (this.type === "PHONE") return this.phoneReady ? "Phone ready" : "Phone not ready";
+      if (this.type === "TILL") return this.b2bReady ? "Till ready" : "Till not ready";
+      return this.b2bReady ? "Paybill ready" : "Paybill not ready";
+    },
+    get destinationLabel() {
+      if (this.type === "PHONE") return "Phone number";
+      if (this.type === "TILL") return "Till number";
+      return "Paybill number";
+    },
+    get destinationPlaceholder() {
+      if (this.type === "PHONE") return this.phoneExample;
+      if (this.type === "TILL") return this.tillExample;
+      return this.paybillExample;
+    },
+    get destinationHint() {
+      if (!this.isSandbox) {
+        if (this.type === "PHONE") return "Kenyan mobile, e.g. 07XXXXXXXX.";
+        if (this.type === "TILL") return "Buy Goods till that should receive the money.";
+        return "Paybill shortcode that should receive the money.";
+      }
+      if (this.type === "PHONE") return `Sandbox test phone: ${this.phoneExample}`;
+      if (this.type === "TILL") return `Sandbox till / shortcode: ${this.tillExample}`;
+      return `Sandbox paybill: ${this.paybillExample}. Account number required.`;
+    },
+    get submitLabel() {
+      if (this.type === "PHONE") return "Send to phone";
+      if (this.type === "TILL") return "Send to till";
+      return "Send to paybill";
+    },
+    onTypeChange(fromInit = false) {
+      const current = digits(this.destination);
+      const looksPhone = current.startsWith("254") || current.length >= 10;
+      const looksShortcode = current.length >= 5 && current.length <= 8 && !looksPhone;
+      if (this.type === "PHONE") {
+        if (!fromInit || !looksPhone) this.destination = this.isSandbox ? this.phoneExample : looksPhone ? current : "";
+      } else if (this.type === "PAYBILL") {
+        if (!fromInit || looksPhone || !looksShortcode) {
+          this.destination = this.isSandbox ? this.paybillExample : looksShortcode ? current : "";
+        }
+        if (!String(this.accountRef || "").trim()) this.accountRef = this.accountExample;
+      } else if (!fromInit || looksPhone || !looksShortcode) {
+        this.destination = this.isSandbox ? this.tillExample : looksShortcode ? current : "";
+      }
+    },
+  };
+}
+
+function moneyRequestPanel(config) {
+  const digits = (value) => String(value || "").replace(/\D/g, "");
+  return {
+    type: config.type || "PHONE",
+    destination: digits(config.destination),
+    accountRef: config.accountRef || "",
+    init() {
+      this.onTypeChange(true);
+    },
+    get destinationLabel() {
+      if (this.type === "PHONE") return "Phone number";
+      if (this.type === "TILL") return "Till number";
+      return "Paybill number";
+    },
+    get destinationPlaceholder() {
+      if (this.type === "PHONE") return "07XXXXXXXX or 2547XXXXXXXX";
+      if (this.type === "TILL") return "Till number";
+      return "Paybill shortcode";
+    },
+    get destinationHint() {
+      if (this.type === "PHONE") return "Where the money should be sent (M-Pesa phone).";
+      if (this.type === "TILL") return "Buy Goods till that should receive the transfer.";
+      return "Paybill shortcode that should receive the transfer.";
+    },
+    get submitLabel() {
+      if (this.type === "PHONE") return "Request transfer to phone";
+      if (this.type === "TILL") return "Request transfer to till";
+      return "Request transfer to paybill";
+    },
+    onTypeChange(fromInit = false) {
+      const current = digits(this.destination);
+      const looksPhone = current.startsWith("254") || current.startsWith("0") || current.length >= 9;
+      const looksShortcode = current.length >= 5 && current.length <= 8 && !looksPhone;
+      if (this.type === "PHONE") {
+        if (!fromInit && !looksPhone) this.destination = "";
+      } else if (this.type === "PAYBILL") {
+        if (!fromInit && (looksPhone || !looksShortcode)) this.destination = "";
+      } else if (!fromInit && (looksPhone || !looksShortcode)) {
+        this.destination = "";
+      }
+    },
+  };
+}
+
 function nexusShell() {
   const mobileQuery = window.matchMedia("(max-width: 900px)");
   return {
@@ -132,6 +248,23 @@ function initDarajaSetup() {
   const productionGuide = document.querySelector("[data-production-guide]");
   const stkHeading = document.querySelector("[data-stk-heading]");
   const stkCopy = document.querySelector("[data-stk-copy]");
+  const balanceHeading = document.querySelector("[data-balance-heading]");
+  const balanceCopy = document.querySelector("[data-balance-copy]");
+  const paybillSections = form.querySelectorAll("[data-channel-paybill]");
+  const tillSections = form.querySelectorAll("[data-channel-till]");
+  const derivedFields = form.querySelectorAll("[data-channel-derived]");
+
+  const syncChannelSections = (till) => {
+    paybillSections.forEach((el) => {
+      el.hidden = till;
+    });
+    tillSections.forEach((el) => {
+      el.hidden = !till;
+    });
+    derivedFields.forEach((el) => {
+      el.hidden = true;
+    });
+  };
 
   const applyChannel = () => {
     const till = channelField && channelField.value === "TILL";
@@ -140,6 +273,7 @@ function initDarajaSetup() {
       Object.entries(mapping).forEach(([name, value]) => setField(name, value));
     }
     setNumberLabel(till);
+    syncChannelSections(till);
     if (stkHeading) {
       stkHeading.textContent = till ? "STK push — collect into this till" : "STK push — collect into this paybill";
     }
@@ -148,6 +282,14 @@ function initDarajaSetup() {
         ? "Buy Goods / CustomerBuyGoodsOnline. Passkey is not used for balance or sending."
         : "Lipa Na M-Pesa Online / CustomerPayBillOnline. Passkey is not used for balance or sending.";
     }
+    if (balanceHeading) {
+      balanceHeading.textContent = till ? "Live till balance" : "Live paybill balance";
+    }
+    if (balanceCopy) {
+      balanceCopy.innerHTML = till
+        ? 'Account Balance API. Paste <strong>Shortcode 1</strong>, <strong>Initiator Name</strong>, and the initiator password from <a href="https://developer.safaricom.co.ke/test_credentials" target="_blank" rel="noopener">Daraja Test credentials</a> — Party A for sandbox is 600996.'
+        : 'Account Balance API. Paste <strong>Shortcode 1</strong>, <strong>Initiator Name</strong>, and the initiator password from <a href="https://developer.safaricom.co.ke/test_credentials" target="_blank" rel="noopener">Daraja Test credentials</a> — not the STK till 174379.';
+    }
     const number = digits(numberField && numberField.value);
     const sandbox = envField.value === "SANDBOX";
     if (number) {
@@ -155,6 +297,9 @@ function initDarajaSetup() {
       if (sandbox && !till) setField("org_shortcode", defaults.org_shortcode);
       else setField("org_shortcode", sandbox ? defaults.org_shortcode : number);
       if (till) setField("till_number", sandbox ? number || defaults.shortcode : number);
+      else if (!String(form.querySelector('[name="till_number"]')?.value || "").trim()) {
+        setField("till_number", "");
+      }
     } else if (sandbox) {
       setField("hub_paybill", defaults.shortcode);
       setField("shortcode", defaults.shortcode);
@@ -232,10 +377,120 @@ if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     initDarajaSetup();
     initDarajaTests();
+    initWebPush();
   });
 } else {
   initDarajaSetup();
   initDarajaTests();
+  initWebPush();
+}
+
+function initWebPush() {
+  const configEl = document.getElementById("webpush-config");
+  const keyEl = document.getElementById("webpush-vapid-key");
+  const enableBtn = document.querySelector("[data-webpush-enable]");
+  if (!configEl || !keyEl || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    if (enableBtn) {
+      enableBtn.disabled = true;
+      enableBtn.textContent = "Phone alerts unsupported";
+    }
+    return;
+  }
+
+  let config = {};
+  try {
+    config = JSON.parse(configEl.textContent || "{}");
+  } catch (_err) {
+    return;
+  }
+  let vapidKey = "";
+  try {
+    vapidKey = JSON.parse(keyEl.textContent || '""');
+  } catch (_err) {
+    return;
+  }
+  if (!config.subscribeUrl || !config.swUrl || !vapidKey) return;
+
+  const csrf =
+    document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") ||
+    document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
+    "";
+
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = window.atob(base64);
+    const output = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i += 1) output[i] = raw.charCodeAt(i);
+    return output;
+  };
+
+  const syncLabel = async () => {
+    if (!enableBtn) return;
+    try {
+      const reg = await navigator.serviceWorker.getRegistration(config.swUrl);
+      const sub = reg && (await reg.pushManager.getSubscription());
+      if (Notification.permission === "granted" && sub) {
+        enableBtn.textContent = "Phone alerts on";
+        enableBtn.classList.add("is-on");
+      } else if (Notification.permission === "denied") {
+        enableBtn.textContent = "Alerts blocked";
+        enableBtn.disabled = true;
+      } else {
+        enableBtn.textContent = "Enable phone alerts";
+        enableBtn.classList.remove("is-on");
+      }
+    } catch (_err) {
+      /* leave default label */
+    }
+  };
+
+  const subscribe = async () => {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      if (enableBtn) enableBtn.textContent = "Permission needed";
+      return;
+    }
+    const reg = await navigator.serviceWorker.register(config.swUrl, { scope: "/" });
+    await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+      });
+    }
+    const response = await fetch(config.subscribeUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "X-CSRFToken": csrf,
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      body: JSON.stringify(sub.toJSON()),
+      credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error("Subscribe failed");
+    await syncLabel();
+  };
+
+  navigator.serviceWorker.register(config.swUrl, { scope: "/" }).catch(() => {});
+  syncLabel();
+  if (enableBtn) {
+    enableBtn.addEventListener("click", async () => {
+      enableBtn.disabled = true;
+      enableBtn.textContent = "Enabling…";
+      try {
+        await subscribe();
+      } catch (_err) {
+        enableBtn.textContent = "Enable failed";
+      } finally {
+        enableBtn.disabled = false;
+        syncLabel();
+      }
+    });
+  }
 }
 
 function initDarajaTests() {

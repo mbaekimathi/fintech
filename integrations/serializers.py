@@ -10,6 +10,7 @@ class LedgerEntrySerializer(serializers.ModelSerializer):
         model = LedgerEntry
         fields = (
             "reference",
+            "mpesa_reference",
             "paybill_number",
             "direction",
             "amount",
@@ -25,6 +26,7 @@ class LedgerEntrySerializer(serializers.ModelSerializer):
         read_only_fields = ("posted_at",)
         extra_kwargs = {
             "reference": {"validators": []},
+            "mpesa_reference": {"required": False, "allow_blank": True},
         }
 
     def to_representation(self, instance):
@@ -36,6 +38,13 @@ class LedgerEntrySerializer(serializers.ModelSerializer):
         if LedgerEntry.objects.filter(reference=value).exists():
             raise serializers.ValidationError("This reference is already on the ledger.")
         return value
+
+    def create(self, validated_data):
+        reference = (validated_data.get("reference") or "").strip()
+        mpesa_reference = (validated_data.get("mpesa_reference") or "").strip()
+        if not mpesa_reference and reference:
+            validated_data["mpesa_reference"] = reference[:64]
+        return super().create(validated_data)
 
     def validate(self, attrs):
         number = attrs.pop("paybill_number", None)

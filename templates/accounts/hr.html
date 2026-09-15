@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}HR{% endblock %}
+{% block eyebrow %}People ops{% endblock %}
+{% block heading %}HR{% endblock %}
+{% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Human resources</h2>
+      <p>Active headcount. Use the sidebar for approvals, management, permissions, and salaries.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Active employees</h2>
+        <p class="muted">Staff currently cleared for workspace access.</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Phone</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for person in employees %}
+            <tr>
+              <td>{{ person.staff_code }}</td>
+              <td>{{ person.get_full_name|default:"—" }}</td>
+              <td>{{ person.email }}</td>
+              <td>{{ person.get_role_display }}</td>
+              <td>{{ person.phone|default:"—" }}</td>
+              <td><span class="badge badge-completed">Active</span></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="empty">No active employees.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

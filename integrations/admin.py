@@ -19,6 +19,7 @@ class DarajaConfigAdmin(admin.ModelAdmin):
         "stk_transaction_type",
         "b2c_enabled",
         "b2b_enabled",
+        "agent_shop_enabled",
         "updated_at",
         "updated_by",
     )

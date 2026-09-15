@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+.vapid.json
 *.pyc
 __pycache__/
 *.pyo

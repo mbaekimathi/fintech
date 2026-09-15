@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Phone payout{% endblock %}
+{% block eyebrow %}Daraja{% endblock %}
+{% block heading %}Phone payout{% endblock %}
+{% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>B2C phone payouts</h2>
+      <p>Disburse to M-Pesa phones using the shared initiator credentials.</p>
+    </div>
+  </section>
+  {% include "partials/daraja_status.html" %}
+
+  <form method="post" class="stack-panels daraja-setup" novalidate autocomplete="off">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Send to a phone number (B2C)</h2>
+          <p class="muted">Same initiator and organization shortcode as balance. The destination phone and amount are entered per payout on the test page.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.b2c_enabled span="2" %}
+        {% include "partials/labeled_field.html" with field=form.b2c_command_id %}
+        {% include "partials/labeled_field.html" with field=form.b2c_occasion %}
+        {% include "partials/labeled_field.html" with field=form.b2c_remarks span="2" %}
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <button type="submit" class="btn btn-primary" name="intent" value="save">Save phone payout</button>
+      <a class="btn btn-ghost" href="{% url 'core:daraja-balance' %}">Live balance</a>
+      <a class="btn btn-ghost" href="{% url 'core:daraja-test' %}">Test credentials</a>
+    </div>
+  </form>
+{% endblock %}

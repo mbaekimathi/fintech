@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Edit employee{% endblock %}
+{% block eyebrow %}HR{% endblock %}
+{% block heading %}Edit employee{% endblock %}
+{% block content %}
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>{{ employee.staff_code }} · {{ employee.get_full_name|default:employee.email }}</h2>
+        <p class="muted">Update employee details. Role changes are on Employee permissions.</p>
+      </div>
+      <a class="btn btn-ghost" href="{% url 'accounts:hr-employees' %}">Back</a>
+    </div>
+    <form method="post" class="stack-panels" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
+      {% endif %}
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.first_name %}
+        {% include "partials/labeled_field.html" with field=form.last_name %}
+        {% include "partials/labeled_field.html" with field=form.email %}
+        {% include "partials/labeled_field.html" with field=form.phone %}
+        {% include "partials/labeled_field.html" with field=form.department span="2" %}
+        {% include "partials/labeled_field.html" with field=form.is_active span="2" %}
+      </div>
+      <div class="toolbar">
+        <button type="submit" class="btn btn-primary">Save changes</button>
+        <a class="btn btn-ghost" href="{% url 'accounts:hr-employees' %}">Cancel</a>
+      </div>
+    </form>
+  </section>
+{% endblock %}

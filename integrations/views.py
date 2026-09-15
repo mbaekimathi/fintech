@@ -97,3 +97,14 @@ class DarajaTimeoutView(APIView):
     def post(self, request):
         apply_timeout_callback(request.data if isinstance(request.data, dict) else {})
         return Response({"status": "ok"})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DarajaAgentCallbackView(APIView):
+    """Placeholder endpoints for future official Safaricom agent deposit/withdraw callbacks."""
+
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        return Response({"ResultCode": 0, "ResultDesc": "Accepted", "status": "ok"})

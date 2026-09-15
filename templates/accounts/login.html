@@ -2,8 +2,9 @@
 {% block title %}Sign in{% endblock %}
 {% block content %}
   <div class="auth-card">
+    <p class="eyebrow">Staff access</p>
     <h2>Sign in</h2>
-    <p class="muted">6-digit code and password.</p>
+    <p class="muted">Use your 6-digit login code and password.</p>
 
     <form method="post" class="stack" novalidate>
       {% csrf_token %}
@@ -27,7 +28,7 @@
     </form>
 
     <p class="auth-foot">
-      <a href="{% url 'accounts:register' %}">Register</a>
+      New here? <a href="{% url 'accounts:register' %}">Register for access</a>
     </p>
   </div>
 {% endblock %}

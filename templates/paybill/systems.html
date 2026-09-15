@@ -1,15 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Systems{% endblock %}
+{% block eyebrow %}Integrations{% endblock %}
 {% block heading %}Systems{% endblock %}
 {% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Connected systems</h2>
+      <p>Upstream platforms that post into or consume this ledger hub.</p>
+    </div>
+  </section>
+
   <section class="card-grid">
     {% for system in systems %}
       <article class="panel tile">
+        <p class="eyebrow">{% if system.is_active %}Connected{% else %}Inactive{% endif %}</p>
         <h2>{{ system.name }}</h2>
-        <p class="muted">{{ system.slug }}</p>
-        <span class="badge {% if system.is_active %}badge-completed{% else %}badge-failed{% endif %}">
-          {% if system.is_active %}Live{% else %}Off{% endif %}
-        </span>
+        <p class="code-line">{{ system.slug }}</p>
+        <div class="tile-meta">
+          <span class="badge {% if system.is_active %}badge-completed{% else %}badge-failed{% endif %}">
+            {% if system.is_active %}Live{% else %}Off{% endif %}
+          </span>
+        </div>
       </article>
     {% empty %}
       <p class="empty">No systems yet.</p>

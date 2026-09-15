@@ -112,15 +112,29 @@ class User(AbstractUser):
         return f"{self.staff_code} · {name}"
 
     @property
+    def effective_role(self) -> str:
+        """Active role for this request (session switch) or the stored role."""
+        return getattr(self, "_effective_role", None) or self.role
+
+    @property
+    def is_role_switched(self) -> bool:
+        switched = getattr(self, "_effective_role", None)
+        return bool(switched) and switched != self.role
+
+    @property
     def role_label(self) -> str:
-        return self.get_role_display()
+        return self.Role(self.effective_role).label
 
     def has_role(self, *roles: str) -> bool:
-        return self.role in roles
+        return self.effective_role in roles
 
     @property
     def is_pending(self) -> bool:
         return (not self.is_approved) or self.role == self.Role.PENDING_APPROVAL
+
+    def can_switch_roles(self) -> bool:
+        """IT Support may temporarily view the app as another role (session only)."""
+        return self.role == self.Role.IT_SUPPORT
 
     def apply_approval(self, approved: bool, actor=None) -> list[str]:
         """Set approval state and return the fields that changed."""
@@ -138,23 +152,40 @@ class User(AbstractUser):
         return update_fields
 
     def can_manage_users(self) -> bool:
-        return self.is_superuser or self.role in {self.Role.ADMIN, self.Role.MANAGER}
+        if self.is_superuser and not self.is_role_switched:
+            return True
+        return self.effective_role in {self.Role.ADMIN, self.Role.MANAGER}
+
+    def can_manage_hr(self) -> bool:
+        if self.is_superuser and not self.is_role_switched:
+            return True
+        return self.effective_role in {
+            self.Role.ADMIN,
+            self.Role.MANAGER,
+            self.Role.IT_SUPPORT,
+        }
 
     def can_manage_ledger(self) -> bool:
-        return self.is_superuser or self.role in {
+        if self.is_superuser and not self.is_role_switched:
+            return True
+        return self.effective_role in {
             self.Role.ADMIN,
             self.Role.MANAGER,
             self.Role.ACCOUNTS,
         }
 
     def can_manage_integrations(self) -> bool:
-        return self.is_superuser or self.role in {
+        if self.is_superuser and not self.is_role_switched:
+            return True
+        return self.effective_role in {
             self.Role.ADMIN,
             self.Role.IT_SUPPORT,
         }
 
     def can_manage_daraja(self) -> bool:
-        return self.is_superuser or self.role in {
+        if self.is_superuser and not self.is_role_switched:
+            return True
+        return self.effective_role in {
             self.Role.ADMIN,
             self.Role.MANAGER,
             self.Role.IT_SUPPORT,
@@ -183,3 +214,31 @@ class AuditEvent(models.Model):
     def __str__(self):
         who = self.actor.staff_code if self.actor else "system"
         return f"{self.created_at:%Y-%m-%d %H:%M} {who} {self.action}"
+
+
+class EmployeeSalary(models.Model):
+    employee = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="salary",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    currency = models.CharField(max_length=3, default="KES")
+    notes = models.CharField(max_length=255, blank=True)
+    updated_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="salaries_updated",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["employee__staff_code"]
+        verbose_name = "employee salary"
+        verbose_name_plural = "employee salaries"
+
+    def __str__(self):
+        return f"{self.employee.staff_code} · {self.currency} {self.amount}"

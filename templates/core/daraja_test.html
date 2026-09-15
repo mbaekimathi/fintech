@@ -3,10 +3,15 @@
 {% block eyebrow %}Daraja{% endblock %}
 {% block heading %}Test credentials{% endblock %}
 {% block content %}
-  <p class="muted lede-inline">
-    This page shows what is wired and ready to run, and what is still missing.
-    STK uses {{ config.shortcode|default:"174379" }}. Balance and send use Party A {{ config.payout_shortcode|default:"600996" }} and initiator {{ config.initiator_name|default:"testapi" }}.
-  </p>
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Capability readiness</h2>
+      <p class="lede-inline">
+        What is wired and ready to run, and what is still missing.
+        STK uses {{ config.shortcode|default:"174379" }}. Balance and send use Party A {{ config.payout_shortcode|default:"600996" }} and initiator {{ config.initiator_name|default:"testapi" }}.
+      </p>
+    </div>
+  </section>
 
   <section class="integration-banner {% if integration.fully_ready %}is-ok{% else %}is-bad{% endif %}" role="status">
     <p class="eyebrow">{% if integration.fully_ready %}Ready{% else %}Partial{% endif %}</p>
@@ -15,58 +20,112 @@
     <p class="muted">{{ integration.ready_count }} of {{ integration.total }} capabilities can run from this hub.</p>
   </section>
 
-  <div class="readiness-grid">
-    <section class="panel readiness-panel is-ok">
-      <div class="panel-head">
-        <div>
-          <h2>Ready to work</h2>
-          <p class="muted">Integrated and can be used from this page.</p>
+  <div x-data="{ detail: null }" @keydown.escape.window="detail = null">
+    <div class="readiness-grid">
+      <section class="panel readiness-panel is-ok">
+        <div class="panel-head">
+          <div>
+            <h2>Ready to work</h2>
+            <p class="muted">Integrated and can be used from this page.</p>
+          </div>
+          <span class="chip is-on">{{ integration.ready|length }}</span>
         </div>
-        <span class="chip is-on">{{ integration.ready|length }}</span>
-      </div>
-      {% for item in integration.ready %}
-        <article class="readiness-item">
-          <h3>{{ item.name }}</h3>
-          <p>{{ item.work }}</p>
-          <p class="muted">{{ item.detail }}</p>
-          <p class="muted">{{ item.last_note }}</p>
-        </article>
-      {% empty %}
-        <p class="muted">Nothing is ready yet. Fix the items on the right, save setup, then refresh.</p>
-      {% endfor %}
-    </section>
+        {% for item in integration.ready %}
+          <article class="readiness-item">
+            <div class="readiness-simple">
+              <h3>{{ item.name }}</h3>
+              <button
+                type="button"
+                class="btn btn-ghost btn-small"
+                @click="detail = {
+                  name: '{{ item.name|escapejs }}',
+                  work: '{{ item.work|escapejs }}',
+                  detail: '{{ item.detail|escapejs }}',
+                  lastNote: '{{ item.last_note|escapejs }}',
+                  blockers: [{% for blocker in item.blockers %}'{{ blocker|escapejs }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+                  ready: true
+                }"
+              >View</button>
+            </div>
+          </article>
+        {% empty %}
+          <p class="muted">Nothing is ready yet. Fix the items on the right, save setup, then refresh.</p>
+        {% endfor %}
+      </section>
 
-    <section class="panel readiness-panel is-bad">
-      <div class="panel-head">
-        <div>
-          <h2>Not well integrated</h2>
-          <p class="muted">Missing credentials, callbacks, or a last test that never came back.</p>
+      <section class="panel readiness-panel is-bad">
+        <div class="panel-head">
+          <div>
+            <h2>Not well integrated</h2>
+            <p class="muted">Missing credentials, callbacks, or a last test that never came back.</p>
+          </div>
+          <span class="chip">{{ integration.not_ready|length }}</span>
         </div>
-        <span class="chip">{{ integration.not_ready|length }}</span>
-      </div>
-      {% for item in integration.not_ready %}
-        <article class="readiness-item">
-          <h3>{{ item.name }}</h3>
-          <p>{{ item.work }}</p>
-          <p class="muted">{{ item.detail }}</p>
-          {% if item.blockers %}
-            <ul class="readiness-fix">
-              {% for blocker in item.blockers %}
-                <li>{{ blocker }}</li>
-              {% endfor %}
+        {% for item in integration.not_ready %}
+          <article class="readiness-item">
+            <div class="readiness-simple">
+              <h3>{{ item.name }}</h3>
+              <button
+                type="button"
+                class="btn btn-ghost btn-small"
+                @click="detail = {
+                  name: '{{ item.name|escapejs }}',
+                  work: '{{ item.work|escapejs }}',
+                  detail: '{{ item.detail|escapejs }}',
+                  lastNote: '{{ item.last_note|escapejs }}',
+                  blockers: [{% for blocker in item.blockers %}'{{ blocker|escapejs }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+                  ready: false
+                }"
+              >View</button>
+            </div>
+          </article>
+        {% empty %}
+          <p class="muted">All capabilities are integrated. You can run the tests below.</p>
+        {% endfor %}
+        {% if integration.not_ready %}
+          <div class="toolbar">
+            <a class="btn btn-ghost" href="{% url 'core:daraja' %}">Fix on Daraja setup</a>
+          </div>
+        {% endif %}
+      </section>
+    </div>
+
+    <div
+      class="detail-backdrop"
+      x-show="detail"
+      x-cloak
+      x-transition.opacity.duration.150ms
+      @click.self="detail = null"
+      role="presentation"
+    >
+      <div
+        class="detail-dialog"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="detail ? 'readiness-detail-title' : null"
+        @click.stop
+      >
+        <template x-if="detail">
+          <div>
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" x-text="detail.ready ? 'Ready' : 'Not ready'"></p>
+                <h2 id="readiness-detail-title" x-text="detail.name"></h2>
+              </div>
+              <button type="button" class="btn btn-ghost btn-small" @click="detail = null">Close</button>
+            </div>
+            <p x-show="detail.work" x-text="detail.work"></p>
+            <p class="muted" x-show="detail.detail" x-text="detail.detail"></p>
+            <ul class="readiness-fix" x-show="detail.blockers && detail.blockers.length">
+              <template x-for="(blocker, index) in detail.blockers" :key="index">
+                <li x-text="blocker"></li>
+              </template>
             </ul>
-          {% endif %}
-          <p class="muted">{{ item.last_note }}</p>
-        </article>
-      {% empty %}
-        <p class="muted">All capabilities are integrated. You can run the tests below.</p>
-      {% endfor %}
-      {% if integration.not_ready %}
-        <div class="toolbar">
-          <a class="btn btn-ghost" href="{% url 'core:daraja' %}">Fix on Daraja setup</a>
-        </div>
-      {% endif %}
-    </section>
+            <p class="muted" x-show="detail.lastNote" x-text="detail.lastNote"></p>
+          </div>
+        </template>
+      </div>
+    </div>
   </div>
 
   <div class="status-row daraja-status">
@@ -130,7 +189,23 @@
       </div>
     </form>
 
-    <form method="post" class="panel {% if capabilities.b2c.ready or capabilities.b2b.ready %}is-ready{% else %}is-blocked{% endif %}" novalidate>
+    <form
+      method="post"
+      class="panel send-money {% if capabilities.b2c.ready or capabilities.b2b.ready %}is-ready{% else %}is-blocked{% endif %}"
+      novalidate
+      x-data="sendMoneyPanel({
+        type: '{{ send_form.destination_type.value|default:send_form.destination_type.field.initial|default:'PHONE'|escapejs }}',
+        destination: '{{ send_form.destination.value|default_if_none:''|escapejs }}',
+        accountRef: '{{ send_form.account_ref.value|default_if_none:config.stk_account_reference|default:'NEXUS'|escapejs }}',
+        phoneReady: {{ capabilities.b2c.ready|yesno:'true,false' }},
+        b2bReady: {{ capabilities.b2b.ready|yesno:'true,false' }},
+        phoneExample: '{{ sandbox_test_phone|escapejs }}',
+        paybillExample: '{{ sandbox_b2b_destination|escapejs }}',
+        tillExample: '{{ sandbox_b2b_destination|escapejs }}',
+        accountExample: '{{ config.stk_account_reference|default:'NEXUS'|escapejs }}',
+        isSandbox: {{ is_sandbox|yesno:'true,false' }}
+      })"
+    >
       {% csrf_token %}
       <input type="hidden" name="intent" value="send">
       <div class="panel-head">
@@ -138,25 +213,95 @@
           <h2>Send money</h2>
           <p class="muted">
             Pays from {{ config.payout_shortcode|default:"—" }}.
-            Sandbox completes fastest to {{ sandbox_test_phone }} (phone) or {{ sandbox_b2b_destination }} (paybill).
+            Pick where the money should go — phone, paybill, or till.
           </p>
         </div>
-        <span class="chip {% if capabilities.b2c.ready or capabilities.b2b.ready %}is-on{% endif %}">{% if capabilities.b2c.ready or capabilities.b2b.ready %}Ready{% else %}Not ready{% endif %}</span>
+        <span class="chip" :class="readyForType ? 'is-on' : ''" x-text="readyLabel"></span>
       </div>
-      {% if not capabilities.b2c.ready and not capabilities.b2b.ready %}
-        <p class="field-error">{{ capabilities.b2c.blockers|join:" " }}</p>
-      {% endif %}
+      <p class="field-error" x-show="!phoneReady && !b2bReady" x-cloak>
+        {{ capabilities.b2c.blockers|join:" " }}
+      </p>
+      <p class="field-error" x-show="type === 'PHONE' && !phoneReady && b2bReady" x-cloak>
+        {{ capabilities.b2c.blockers|join:" " }}
+      </p>
+      <p class="field-error" x-show="(type === 'PAYBILL' || type === 'TILL') && !b2bReady && phoneReady" x-cloak>
+        {{ capabilities.b2b.blockers|join:" " }}
+      </p>
       {% if send_form.non_field_errors %}
         <p class="field-error">{{ send_form.non_field_errors|join:" " }}</p>
       {% endif %}
       <div class="form-grid">
-        {% include "partials/labeled_field.html" with field=send_form.destination_type %}
-        {% include "partials/labeled_field.html" with field=send_form.destination %}
-        {% include "partials/labeled_field.html" with field=send_form.amount %}
-        {% include "partials/labeled_field.html" with field=send_form.account_ref %}
+        <label class="label">
+          {{ send_form.destination_type.label }}
+          <select
+            name="{{ send_form.destination_type.name }}"
+            id="{{ send_form.destination_type.id_for_label }}"
+            class="select"
+            x-model="type"
+            @change="onTypeChange()"
+          >
+            {% for value, label in send_form.destination_type.field.choices %}
+              <option
+                value="{{ value }}"
+                {% if send_form.destination_type.value == value %}selected{% endif %}
+                {% if value == "PHONE" and not capabilities.b2c.ready and capabilities.b2b.ready %}disabled{% endif %}
+                {% if value != "PHONE" and not capabilities.b2b.ready and capabilities.b2c.ready %}disabled{% endif %}
+              >{{ label }}</option>
+            {% endfor %}
+          </select>
+          {% if send_form.destination_type.errors %}
+            <span class="field-error">{{ send_form.destination_type.errors|join:", " }}</span>
+          {% endif %}
+        </label>
+        <label class="label">
+          <span x-text="destinationLabel">Where to send</span>
+          <input
+            type="text"
+            name="{{ send_form.destination.name }}"
+            id="{{ send_form.destination.id_for_label }}"
+            class="field"
+            autocomplete="off"
+            inputmode="numeric"
+            x-model="destination"
+            :placeholder="destinationPlaceholder"
+          >
+          <span class="field-hint" x-text="destinationHint"></span>
+          {% if send_form.destination.errors %}
+            <span class="field-error">{{ send_form.destination.errors|join:", " }}</span>
+          {% endif %}
+        </label>
+        <label class="label">
+          {{ send_form.amount.label }}
+          {{ send_form.amount }}
+          {% if send_form.amount.errors %}
+            <span class="field-error">{{ send_form.amount.errors|join:", " }}</span>
+          {% endif %}
+        </label>
+        <label class="label" x-show="type === 'PAYBILL'" x-cloak>
+          {{ send_form.account_ref.label }}
+          <input
+            type="text"
+            name="{{ send_form.account_ref.name }}"
+            id="{{ send_form.account_ref.id_for_label }}"
+            class="field"
+            autocomplete="off"
+            maxlength="12"
+            x-model="accountRef"
+            placeholder="Customer account on that paybill"
+          >
+          <span class="field-hint">Shown on the receiving paybill statement.</span>
+          {% if send_form.account_ref.errors %}
+            <span class="field-error">{{ send_form.account_ref.errors|join:", " }}</span>
+          {% endif %}
+        </label>
       </div>
       <div class="toolbar">
-        <button type="submit" class="btn btn-primary" {% if not capabilities.b2c.ready and not capabilities.b2b.ready %}disabled{% endif %}>Send</button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          :disabled="!readyForType"
+          x-text="submitLabel"
+        >Send</button>
       </div>
     </form>
   </section>

@@ -1,7 +1,15 @@
 {% extends "base.html" %}
 {% block title %}People{% endblock %}
+{% block eyebrow %}Access{% endblock %}
 {% block heading %}People{% endblock %}
 {% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>People directory</h2>
+      <p>Staff codes, roles, and approval state for everyone in the workspace.</p>
+    </div>
+  </section>
+
   <div class="toolbar">
     <div class="chips">
       <a class="chip {% if status == 'all' %}is-on{% endif %}" href="{% url 'accounts:users' %}">All</a>

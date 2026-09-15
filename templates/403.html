@@ -2,8 +2,9 @@
 {% block title %}Access denied{% endblock %}
 {% block content %}
   <div class="auth-card">
+    <p class="eyebrow">Authorization</p>
     <h2>Access denied</h2>
-    <p class="muted">This page is not available for your role.</p>
-    <a class="btn btn-primary btn-block" href="{% url 'core:dashboard' %}">Dashboard</a>
+    <p class="muted">This page is not available for your current role. Return to the dashboard or switch role if permitted.</p>
+    <a class="btn btn-primary btn-block" href="{% url 'core:dashboard' %}">Back to dashboard</a>
   </div>
 {% endblock %}

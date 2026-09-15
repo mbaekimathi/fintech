@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Agent shop{% endblock %}
+{% block eyebrow %}Daraja{% endblock %}
+{% block heading %}Agent shop{% endblock %}
+{% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Agent shop channel</h2>
+      <p>Configure business-shop logic now, and store official Safaricom agent API settings for when you register and receive access.</p>
+    </div>
+  </section>
+  {% include "partials/daraja_status.html" %}
+
+  <form method="post" class="stack-panels daraja-setup" novalidate autocomplete="off">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Channel</h2>
+          <p class="muted">
+            Business shop runs on STK + B2C today. Official Safaricom agent is for deposit/withdraw + commission after registration and API access.
+          </p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.agent_shop_enabled span="2" %}
+        {% include "partials/labeled_field.html" with field=form.agent_channel span="2" %}
+        {% include "partials/labeled_field.html" with field=form.agent_cash_in_enabled span="2" %}
+        {% include "partials/labeled_field.html" with field=form.agent_cash_out_enabled span="2" %}
+        {% include "partials/labeled_field.html" with field=form.agent_track_commission span="2" %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Official Safaricom agent</h2>
+          <p class="muted">
+            Fill these after you register. Paths and commands stay blank until Safaricom issues the API pack.
+            Callback URLs are reserved on this hub now so you can paste them into Safaricom later.
+          </p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.agent_api_enabled span="2" %}
+        {% include "partials/labeled_field.html" with field=form.agent_till_number %}
+        {% include "partials/labeled_field.html" with field=form.agent_head_office %}
+        {% include "partials/labeled_field.html" with field=form.agent_store_number %}
+        {% include "partials/labeled_field.html" with field=form.agent_operator_id %}
+        {% include "partials/labeled_field.html" with field=form.agent_use_shared_app span="2" %}
+        {% include "partials/labeled_field.html" with field=form.agent_consumer_key %}
+        {% include "partials/labeled_field.html" with field=form.agent_consumer_secret secret=True saved=secrets.agent_consumer_secret %}
+        {% include "partials/labeled_field.html" with field=form.agent_initiator_name %}
+        {% include "partials/labeled_field.html" with field=form.agent_security_credential secret=True saved=secrets.agent_security_credential span="2" %}
+        {% include "partials/labeled_field.html" with field=form.agent_api_base_url span="2" %}
+        {% include "partials/labeled_field.html" with field=form.agent_deposit_path %}
+        {% include "partials/labeled_field.html" with field=form.agent_withdraw_path %}
+        {% include "partials/labeled_field.html" with field=form.agent_deposit_command %}
+        {% include "partials/labeled_field.html" with field=form.agent_withdraw_command %}
+        {% include "partials/labeled_field.html" with field=form.agent_deposit_callback_url span="2" %}
+        {% include "partials/labeled_field.html" with field=form.agent_withdraw_callback_url span="2" %}
+        {% include "partials/labeled_field.html" with field=form.agent_result_url %}
+        {% include "partials/labeled_field.html" with field=form.agent_timeout_url %}
+        {% include "partials/labeled_field.html" with field=form.agent_api_notes span="2" %}
+      </div>
+      {% if config.agent_shop_enabled and config.is_safaricom_agent_channel %}
+        <ul class="check-list" style="margin-top:1rem">
+          <li class="{% if config.agent_safaricom_config_ready %}is-ok{% else %}is-bad{% endif %}">
+            {% if config.agent_safaricom_config_ready %}Ready{% else %}Incomplete{% endif %} · Official agent config
+          </li>
+          <li class="{% if config.agent_deposit_path %}is-ok{% else %}is-bad{% endif %}">
+            {% if config.agent_deposit_path %}Set{% else %}Waiting for pack{% endif %} · Deposit API path
+          </li>
+          <li class="{% if config.agent_withdraw_path %}is-ok{% else %}is-bad{% endif %}">
+            {% if config.agent_withdraw_path %}Set{% else %}Waiting for pack{% endif %} · Withdraw API path
+          </li>
+        </ul>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Limits, fees, and receipts</h2>
+          <p class="muted">
+            Your fees apply on the business channel. Safaricom agent commission is tracked separately when the official channel exposes it.
+          </p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.agent_min_amount %}
+        {% include "partials/labeled_field.html" with field=form.agent_max_amount %}
+        {% include "partials/labeled_field.html" with field=form.agent_daily_limit %}
+        {% include "partials/labeled_field.html" with field=form.agent_float_warn_kes %}
+        {% include "partials/labeled_field.html" with field=form.agent_cash_in_fee %}
+        {% include "partials/labeled_field.html" with field=form.agent_cash_out_fee %}
+        {% include "partials/labeled_field.html" with field=form.agent_cash_in_account_ref %}
+        {% include "partials/labeled_field.html" with field=form.agent_receipt_prefix %}
+      </div>
+      {% if config.agent_shop_enabled and not config.is_safaricom_agent_channel %}
+        <ul class="check-list" style="margin-top:1rem">
+          <li class="{% if config.agent_cash_in_ready %}is-ok{% else %}is-bad{% endif %}">
+            {% if config.agent_cash_in_ready %}Ready{% else %}Needs STK{% endif %} · Deposit (STK)
+          </li>
+          <li class="{% if config.agent_cash_out_ready %}is-ok{% else %}is-bad{% endif %}">
+            {% if config.agent_cash_out_ready %}Ready{% else %}Needs B2C{% endif %} · Withdraw (B2C)
+          </li>
+        </ul>
+      {% endif %}
+    </section>
+
+    <div class="toolbar">
+      <button type="submit" class="btn btn-primary" name="intent" value="save">Save agent shop</button>
+      <a class="btn btn-ghost" href="{% url 'core:daraja-stk' %}">STK push</a>
+      <a class="btn btn-ghost" href="{% url 'core:daraja-b2c' %}">Phone payout</a>
+      <a class="btn btn-ghost" href="{% url 'core:daraja-test' %}">Test credentials</a>
+    </div>
+  </form>
+{% endblock %}

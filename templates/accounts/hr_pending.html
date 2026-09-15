@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Pending approvals{% endblock %}
+{% block eyebrow %}HR{% endblock %}
+{% block heading %}Pending approvals{% endblock %}
+{% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Registration queue</h2>
+      <p>Approve new accounts and assign a role in one step.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>New registrations</h2>
+        <p class="muted">Waiting for an HR decision.</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Assign role</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for person in people %}
+            <tr>
+              <td>{{ person.staff_code }}</td>
+              <td>{{ person.get_full_name|default:"—" }}</td>
+              <td>{{ person.email }}</td>
+              <td>
+                <form method="post" action="{% url 'accounts:set_approval' person.pk %}" class="inline-form" id="approve-{{ person.pk }}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{% url 'accounts:hr-pending' %}">
+                  <input type="hidden" name="is_approved" value="1">
+                  <select name="role" class="select" aria-label="Role for {{ person.staff_code }}">
+                    {% for value, label in assignable_roles %}
+                      <option value="{{ value }}" {% if value == 'EMPLOYEE' %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </form>
+              </td>
+              <td>
+                <button type="submit" form="approve-{{ person.pk }}" class="btn btn-primary">Approve</button>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="empty">No pending approvals.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

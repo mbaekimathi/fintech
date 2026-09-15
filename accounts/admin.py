@@ -4,7 +4,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.forms import UserChangeForm as DjangoUserChangeForm
 from django.contrib.auth.forms import UserCreationForm as DjangoUserCreationForm
 
-from accounts.models import AuditEvent, User
+from accounts.models import AuditEvent, EmployeeSalary, User
 
 APPROVAL_CHOICES = (
     ("1", "Approved"),
@@ -131,3 +131,10 @@ class AuditEventAdmin(admin.ModelAdmin):
         "detail",
         "created_at",
     )
+
+
+@admin.register(EmployeeSalary)
+class EmployeeSalaryAdmin(admin.ModelAdmin):
+    list_display = ("employee", "currency", "amount", "updated_by", "updated_at")
+    search_fields = ("employee__staff_code", "employee__email", "employee__first_name", "employee__last_name")
+    readonly_fields = ("created_at", "updated_at")

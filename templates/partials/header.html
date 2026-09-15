@@ -4,6 +4,7 @@
       <span class="burger" aria-hidden="true"></span>
     </button>
     <div class="crumb">
+      <p class="page-eyebrow">{% block eyebrow %}{% endblock %}</p>
       <h1 class="page-title">{% block heading %}Dashboard{% endblock %}</h1>
     </div>
   </div>
@@ -13,7 +14,7 @@
         <span class="avatar">{{ user.first_name|slice:":1"|default:"N" }}{{ user.last_name|slice:":1" }}</span>
         <span class="user-meta">
           <strong>{{ user.get_full_name|default:user.email }}</strong>
-          <small>{{ user.get_role_display }}</small>
+          <small>{{ user.role_label }}{% if user.is_role_switched %} · viewing{% endif %}</small>
         </span>
         <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true">
           <path d="M4.2 6.2a.7.7 0 0 1 1 0L8 8.9l2.8-2.7a.7.7 0 1 1 1 1l-3.3 3.2a.7.7 0 0 1-1 0L4.2 7.2a.7.7 0 0 1 0-1z"/>
@@ -25,9 +26,23 @@
           <div class="menu-who">
             <strong>{{ user.get_full_name|default:user.email }}</strong>
             <small>{{ user.email }}</small>
+            {% if user.is_role_switched %}
+              <small class="menu-viewing">Viewing as {{ user.role_label }}</small>
+            {% endif %}
           </div>
         </div>
         <a class="menu-action" href="{% url 'core:settings' %}">Settings</a>
+        {% if user.can_switch_roles %}
+          <div class="menu-label-row">Switch role</div>
+          <div class="menu-roles">
+            {% for item in switchable_roles %}
+              <a
+                class="menu-action menu-role{% if user.effective_role == item.value %} is-active{% endif %}"
+                href="{{ item.href }}"
+              >{{ item.label }}</a>
+            {% endfor %}
+          </div>
+        {% endif %}
         <form method="post" action="{% url 'accounts:logout' %}">
           {% csrf_token %}
           <button type="submit" class="menu-action is-logout">Sign out</button>

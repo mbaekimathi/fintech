@@ -50,11 +50,14 @@ def expire_stale_queues(seconds: int = 75) -> int:
         created_at__lt=cutoff,
     ).exclude(kind=DarajaOperation.Kind.STK)
     count = 0
+    from paybill.services import sync_money_request_from_operation
+
     for operation in rows:
         operation.status = DarajaOperation.Status.TIMEOUT
         operation.summary = NO_RESULT_SUMMARY
         operation.result_desc = "No ResultURL callback from Safaricom."
         operation.save(update_fields=["status", "summary", "result_desc", "updated_at"])
+        sync_money_request_from_operation(operation)
         count += 1
     return count
 
@@ -106,11 +109,12 @@ def apply_stk_callback(payload: dict) -> DarajaOperation | None:
     operation.result_payload = payload
     operation.result_code = code
     operation.result_desc = (callback.get("ResultDesc") or "")[:255]
-    receipt = str(items.get("MpesaReceiptNumber") or "")
+    receipt = str(items.get("MpesaReceiptNumber") or items.get("TransactionReceipt") or "")
     amount = items.get("Amount")
     phone = str(items.get("PhoneNumber") or operation.destination)
     if code in {"0", "00"}:
         operation.status = DarajaOperation.Status.SUCCESS
+        receipt = operation.capture_mpesa_reference(receipt, items=items)
         operation.summary = f"Paid KES {amount} · {receipt}".strip(" ·")
         _post_ledger(operation, amount=amount, phone=phone, receipt=receipt, inbound=True)
     else:
@@ -146,7 +150,10 @@ def apply_result_callback(payload: dict) -> DarajaOperation | None:
         operation.status = DarajaOperation.Status.SUCCESS if code in {"0", "00"} else DarajaOperation.Status.FAILED
     elif code in {"0", "00"}:
         operation.status = DarajaOperation.Status.SUCCESS
-        receipt = str(items.get("TransactionReceipt") or items.get("ReceiptNo") or "")
+        receipt = operation.capture_mpesa_reference(
+            str(items.get("TransactionReceipt") or items.get("ReceiptNo") or items.get("TransactionID") or ""),
+            items=items,
+        )
         amount = items.get("TransactionAmount") or items.get("Amount") or operation.amount
         operation.summary = f"Sent KES {amount} · {receipt}".strip(" ·")
         phone = str(items.get("ReceiverPartyPublicName") or operation.destination)
@@ -157,6 +164,9 @@ def apply_result_callback(payload: dict) -> DarajaOperation | None:
     if str(result.get("ResultType")) == "timeout" or "timed out" in operation.result_desc.lower():
         operation.status = DarajaOperation.Status.TIMEOUT
     operation.save()
+    from paybill.services import sync_money_request_from_operation
+
+    sync_money_request_from_operation(operation)
     return operation
 
 
@@ -175,11 +185,16 @@ def apply_timeout_callback(payload: dict) -> DarajaOperation | None:
     operation.result_desc = (result.get("ResultDesc") or "Request timed out.")[:255]
     operation.summary = operation.result_desc
     operation.save()
+    from paybill.services import sync_money_request_from_operation
+
+    sync_money_request_from_operation(operation)
     return operation
 
 
 def _post_ledger(operation: DarajaOperation, *, amount, phone: str, receipt: str, inbound: bool):
     from integrations.models import DarajaConfig
+    from paybill.models import LedgerEntry, MoneyRequest
+    from paybill.services import extract_mpesa_receipt, money_request_meta
 
     config = DarajaConfig.load()
     account = config.paybill_account
@@ -191,18 +206,93 @@ def _post_ledger(operation: DarajaOperation, *, amount, phone: str, receipt: str
         money = Decimal(str(amount if amount is not None else operation.amount or 0))
     except (InvalidOperation, TypeError):
         return
-    reference = (receipt or f"{operation.kind}-{operation.pk}")[:64]
-    if LedgerEntry.objects.filter(reference=reference).exists():
+
+    mpesa_reference = extract_mpesa_receipt(
+        receipt=receipt or operation.mpesa_reference,
+        payload=operation.result_payload,
+        summary=operation.summary,
+    )
+    if mpesa_reference and operation.mpesa_reference != mpesa_reference:
+        operation.mpesa_reference = mpesa_reference
+        operation.save(update_fields=["mpesa_reference", "updated_at"])
+
+    reference = (mpesa_reference or f"{operation.kind}-{operation.pk}")[:64]
+
+    money_request = getattr(operation, "money_request", None)
+    if money_request is None:
+        money_request = (
+            MoneyRequest.objects.filter(daraja_operation=operation)
+            .select_related("requester")
+            .first()
+        )
+
+    existing = LedgerEntry.objects.filter(reference=reference).first()
+    if existing is None and money_request is not None:
+        existing = (
+            LedgerEntry.objects.filter(money_request=money_request)
+            .exclude(status=LedgerEntry.Status.REVERSED)
+            .order_by("-posted_at")
+            .first()
+        )
+
+    payer_name = ""
+    expense_category = ""
+    expense_reason = ""
+    narrative = operation.get_kind_display()
+    raw_payload = dict(operation.result_payload or operation.response_payload or {})
+    if money_request is not None:
+        requester = money_request.requester
+        payer_name = (requester.get_full_name() or requester.staff_code or "")[:160]
+        expense_category = money_request.get_category_display()
+        expense_reason = money_request.reason
+        narrative = f"{expense_category}: {expense_reason}"[:255]
+        raw_payload["_money_request"] = money_request_meta(
+            money_request, mpesa_reference=mpesa_reference
+        )
+        if mpesa_reference and money_request.mpesa_reference != mpesa_reference:
+            money_request.mpesa_reference = mpesa_reference
+            money_request.save(update_fields=["mpesa_reference", "updated_at"])
+
+    if existing is not None:
+        updates = {
+            "mpesa_reference": mpesa_reference or existing.mpesa_reference,
+            "amount": money,
+            "payer_phone": str(phone)[:20] or existing.payer_phone,
+            "account_ref": operation.account_ref or existing.account_ref,
+            "status": LedgerEntry.Status.COMPLETED,
+            "narrative": narrative or existing.narrative,
+            "raw_payload": raw_payload or existing.raw_payload,
+            "direction": LedgerEntry.Direction.IN if inbound else LedgerEntry.Direction.OUT,
+        }
+        if payer_name:
+            updates["payer_name"] = payer_name
+        if expense_category:
+            updates["expense_category"] = expense_category
+        if expense_reason:
+            updates["expense_reason"] = expense_reason
+        if money_request is not None:
+            updates["money_request"] = money_request
+        if existing.reference != reference and not LedgerEntry.objects.filter(reference=reference).exclude(pk=existing.pk).exists():
+            updates["reference"] = reference
+        for field, value in updates.items():
+            setattr(existing, field, value)
+        existing.save(update_fields=[*updates.keys()])
         return
+
     LedgerEntry.objects.create(
         reference=reference,
+        mpesa_reference=mpesa_reference,
+        money_request=money_request,
+        expense_category=expense_category,
+        expense_reason=expense_reason,
         paybill_account=account,
         connected_system=account.connected_system,
         direction=LedgerEntry.Direction.IN if inbound else LedgerEntry.Direction.OUT,
         amount=money,
+        payer_name=payer_name,
         payer_phone=str(phone)[:20],
         account_ref=operation.account_ref,
         status=LedgerEntry.Status.COMPLETED,
-        narrative=operation.get_kind_display(),
-        raw_payload=operation.result_payload or operation.response_payload,
+        narrative=narrative,
+        raw_payload=raw_payload,
     )

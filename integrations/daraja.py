@@ -25,8 +25,20 @@ SANDBOX_B2B_REMARKS = "Transfer"
 STK_CALLBACK_PATH = "/api/v1/daraja/stk/callback/"
 RESULT_PATH = "/api/v1/daraja/result/"
 TIMEOUT_PATH = "/api/v1/daraja/timeout/"
+AGENT_DEPOSIT_CALLBACK_PATH = "/api/v1/daraja/agent/deposit/callback/"
+AGENT_WITHDRAW_CALLBACK_PATH = "/api/v1/daraja/agent/withdraw/callback/"
+AGENT_RESULT_PATH = "/api/v1/daraja/agent/result/"
+AGENT_TIMEOUT_PATH = "/api/v1/daraja/agent/timeout/"
 
-CALLBACK_URL_FIELDS = ("stk_callback_url", "result_url", "timeout_url")
+CALLBACK_URL_FIELDS = (
+    "stk_callback_url",
+    "result_url",
+    "timeout_url",
+    "agent_deposit_callback_url",
+    "agent_withdraw_callback_url",
+    "agent_result_url",
+    "agent_timeout_url",
+)
 
 SANDBOX_OAUTH_URL = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
 PRODUCTION_OAUTH_URL = "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
@@ -136,6 +148,10 @@ def callback_urls(request=None) -> dict:
         "stk_callback_url": base + STK_CALLBACK_PATH,
         "result_url": base + RESULT_PATH,
         "timeout_url": base + TIMEOUT_PATH,
+        "agent_deposit_callback_url": base + AGENT_DEPOSIT_CALLBACK_PATH,
+        "agent_withdraw_callback_url": base + AGENT_WITHDRAW_CALLBACK_PATH,
+        "agent_result_url": base + AGENT_RESULT_PATH,
+        "agent_timeout_url": base + AGENT_TIMEOUT_PATH,
     }
 
 
@@ -146,6 +162,10 @@ def form_callback_urls(request=None) -> dict:
         "stk_callback_url": base + STK_CALLBACK_PATH,
         "result_url": base + RESULT_PATH,
         "timeout_url": base + TIMEOUT_PATH,
+        "agent_deposit_callback_url": base + AGENT_DEPOSIT_CALLBACK_PATH,
+        "agent_withdraw_callback_url": base + AGENT_WITHDRAW_CALLBACK_PATH,
+        "agent_result_url": base + AGENT_RESULT_PATH,
+        "agent_timeout_url": base + AGENT_TIMEOUT_PATH,
     }
 
 
@@ -628,6 +648,52 @@ def capability_status(config, request=None) -> dict:
             last=last.get("B2B"),
         ),
     ]
+    if config.agent_shop_enabled:
+        agent_blockers = []
+        if config.is_safaricom_agent_channel:
+            if not config.agent_api_enabled:
+                agent_blockers.append("Turn on official agent APIs after Safaricom issues access.")
+            if not (config.agent_till_number or "").strip():
+                agent_blockers.append("Save the agent till number from Safaricom.")
+            if not config.agent_app_credentials_ready:
+                agent_blockers.append("Finish Daraja app credentials, or paste a separate agent app key/secret.")
+            if not config.agent_safaricom_config_ready:
+                agent_blockers.append("Save agent callback URLs (deposit, withdraw, result, timeout).")
+            if not (config.agent_deposit_path and config.agent_withdraw_path):
+                agent_blockers.append("Paste deposit/withdraw API paths when Safaricom sends the pack (optional until then).")
+            detail = (
+                "Official agent config is ready for wiring."
+                if config.agent_shop_ready
+                else "Official Safaricom agent channel needs till, APIs, and callbacks."
+            )
+            work = "Deposit and withdraw for clients on an official agent till, with Safaricom commission when exposed."
+        else:
+            if config.agent_cash_in_enabled and not stk_ready:
+                agent_blockers.extend(stk_blockers or ["Finish STK setup for cash-in."])
+            if config.agent_cash_out_enabled and not b2c_ready:
+                agent_blockers.extend(b2c_blockers or ["Finish B2C setup for cash-out."])
+            detail = (
+                "Agent shop logic is ready."
+                if config.agent_shop_ready
+                else "Agent shop is on but cash-in/out is not ready."
+            )
+            work = "Cash-in from a phone (STK) and cash-out to a phone (B2C) with shop limits and fees."
+        if not config.agent_cash_in_enabled and not config.agent_cash_out_enabled:
+            agent_blockers.append("Turn on deposit, withdraw, or both.")
+        agent_ready = bool(config.agent_shop_ready and (oauth_ok or config.is_safaricom_agent_channel))
+        if config.is_safaricom_agent_channel and config.agent_use_shared_app and not oauth_ok:
+            agent_ready = False
+            agent_blockers.extend(oauth_blockers)
+        capabilities.append(
+            _capability(
+                cap_id="agent",
+                name="Agent shop",
+                work=work,
+                ready=agent_ready,
+                detail=detail,
+                blockers=agent_blockers,
+            )
+        )
     ready = [item for item in capabilities if item["ready"]]
     not_ready = [item for item in capabilities if not item["ready"]]
     ready_count = len(ready)

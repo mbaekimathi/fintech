@@ -2,9 +2,10 @@
 {% block title %}Login code{% endblock %}
 {% block content %}
   <div class="auth-card">
+    <p class="eyebrow">Credentials</p>
     <h2>Save this code</h2>
     <p class="code-reveal" aria-live="polite">{{ staff_code }}</p>
-    <p class="muted">Sign in after an admin approves your account.</p>
-    <a class="btn btn-primary btn-block" href="{% url 'accounts:login' %}">Sign in</a>
+    <p class="muted">Sign in after an admin approves your account. Keep this code private.</p>
+    <a class="btn btn-primary btn-block" href="{% url 'accounts:login' %}">Continue to sign in</a>
   </div>
 {% endblock %}

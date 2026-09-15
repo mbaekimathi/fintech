@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}STK push{% endblock %}
+{% block eyebrow %}Daraja{% endblock %}
+{% block heading %}STK push{% endblock %}
+{% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>STK collection</h2>
+      <p>Lipa Na M-Pesa Online settings for prompting customer payments into this channel.</p>
+    </div>
+  </section>
+  {% include "partials/daraja_status.html" %}
+
+  <form method="post" class="stack-panels daraja-setup" novalidate autocomplete="off">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2 data-stk-heading>STK push — collect into this paybill</h2>
+          <p class="muted">Lipa Na M-Pesa Online. Passkey is not used for balance or sending. Configure the shared app first if STK is missing.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.stk_transaction_type span="2" %}
+        {% include "partials/labeled_field.html" with field=form.passkey secret=True saved=secrets.passkey span="2" %}
+        {% include "partials/labeled_field.html" with field=form.stk_account_reference %}
+        {% include "partials/labeled_field.html" with field=form.stk_transaction_desc %}
+        {% include "partials/labeled_field.html" with field=form.stk_callback_url span="2" %}
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <button type="submit" class="btn btn-primary" name="intent" value="save">Save STK setup</button>
+      <a class="btn btn-ghost" href="{% url 'core:daraja' %}">Daraja app</a>
+      <a class="btn btn-ghost" href="{% url 'core:daraja-test' %}">Test credentials</a>
+    </div>
+  </form>
+{% endblock %}

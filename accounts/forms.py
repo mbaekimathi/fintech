@@ -3,7 +3,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 
-from accounts.models import User
+from accounts.models import EmployeeSalary, User
 
 CODE_WIDGET = forms.TextInput(
     attrs={
@@ -28,6 +28,10 @@ PIN_WIDGET = forms.PasswordInput(
         "aria-label": "6-digit password",
     }
 )
+
+FIELD = forms.TextInput(attrs={"class": "field"})
+EMAIL_FIELD = forms.EmailInput(attrs={"class": "field", "autocomplete": "email"})
+PHONE_FIELD = forms.TextInput(attrs={"class": "field", "autocomplete": "tel"})
 
 
 class LoginForm(forms.Form):
@@ -154,3 +158,74 @@ class EmployeeRegisterForm(forms.ModelForm):
         if commit:
             user.save()
         return user
+
+
+class EmployeeEditForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ("first_name", "last_name", "email", "phone", "department", "is_active")
+        widgets = {
+            "first_name": FIELD,
+            "last_name": FIELD,
+            "email": EMAIL_FIELD,
+            "phone": PHONE_FIELD,
+            "department": FIELD,
+            "is_active": forms.CheckboxInput(),
+        }
+        labels = {
+            "is_active": "Active status",
+        }
+        help_texts = {
+            "is_active": "Inactive employees cannot sign in.",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["first_name"].required = True
+        self.fields["last_name"].required = True
+        self.fields["email"].required = True
+
+    def clean_email(self):
+        email = User.objects.normalize_email(self.cleaned_data["email"])
+        qs = User.objects.filter(email=email)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise ValidationError("That email is already in use.")
+        return email
+
+
+class EmployeeSalaryForm(forms.ModelForm):
+    class Meta:
+        model = EmployeeSalary
+        fields = ("amount", "currency", "notes")
+        widgets = {
+            "amount": forms.NumberInput(
+                attrs={"class": "field", "step": "0.01", "min": "0", "inputmode": "decimal"}
+            ),
+            "currency": forms.TextInput(attrs={"class": "field", "maxlength": "3"}),
+            "notes": forms.TextInput(attrs={"class": "field"}),
+        }
+        labels = {
+            "amount": "Gross salary",
+            "currency": "Currency",
+            "notes": "Notes",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["currency"].required = True
+        if not self.instance.pk and not self.initial.get("currency"):
+            self.fields["currency"].initial = "KES"
+
+    def clean_currency(self):
+        currency = (self.cleaned_data.get("currency") or "").strip().upper()
+        if len(currency) != 3 or not currency.isalpha():
+            raise ValidationError("Enter a 3-letter currency code, e.g. KES.")
+        return currency
+
+    def clean_amount(self):
+        amount = self.cleaned_data.get("amount")
+        if amount is not None and amount <= 0:
+            raise ValidationError("Salary must be greater than zero.")
+        return amount

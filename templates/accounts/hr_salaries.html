@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Employee salaries{% endblock %}
+{% block eyebrow %}HR{% endblock %}
+{% block heading %}Employee salaries{% endblock %}
+{% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Salary register</h2>
+      <p>Register or update compensation for each active employee.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Salaries</h2>
+        <p class="muted">Amounts shown in registered currency.</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Role</th>
+            <th>Salary</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for person in employees %}
+            <tr>
+              <td>{{ person.staff_code }}</td>
+              <td>{{ person.get_full_name|default:"—" }}</td>
+              <td>{{ person.get_role_display }}</td>
+              <td>
+                {% if person.salary %}
+                  {{ person.salary.currency }} {{ person.salary.amount }}
+                {% else %}
+                  <span class="muted">Not registered</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if person.salary %}
+                  <a class="btn btn-ghost" href="{% url 'accounts:hr-salary-update' person.pk %}">Update</a>
+                {% else %}
+                  <a class="btn btn-primary" href="{% url 'accounts:hr-salary-register' person.pk %}">Register</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="empty">No active employees.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

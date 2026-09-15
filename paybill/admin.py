@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from paybill.models import ConnectedSystem, LedgerEntry, PaybillAccount
+from paybill.models import ConnectedSystem, LedgerEntry, MoneyRequest, PaybillAccount
 
 
 @admin.register(ConnectedSystem)
@@ -19,7 +19,50 @@ class PaybillAccountAdmin(admin.ModelAdmin):
 
 @admin.register(LedgerEntry)
 class LedgerEntryAdmin(admin.ModelAdmin):
-    list_display = ("reference", "amount", "currency", "status", "paybill_account", "posted_at")
-    list_filter = ("status", "direction", "currency")
-    search_fields = ("reference", "payer_phone", "account_ref", "payer_name")
+    list_display = (
+        "reference",
+        "mpesa_reference",
+        "payer_name",
+        "expense_category",
+        "amount",
+        "currency",
+        "status",
+        "paybill_account",
+        "posted_at",
+    )
+    list_filter = ("status", "direction", "currency", "expense_category")
+    search_fields = (
+        "reference",
+        "mpesa_reference",
+        "payer_phone",
+        "payer_name",
+        "account_ref",
+        "expense_category",
+        "expense_reason",
+    )
     readonly_fields = ("posted_at",)
+    raw_id_fields = ("money_request",)
+
+
+@admin.register(MoneyRequest)
+class MoneyRequestAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "requester",
+        "category",
+        "destination_type",
+        "destination",
+        "amount",
+        "status",
+        "mpesa_reference",
+        "created_at",
+    )
+    list_filter = ("status", "category", "destination_type")
+    search_fields = (
+        "destination",
+        "account_ref",
+        "reason",
+        "mpesa_reference",
+        "requester__staff_code",
+    )
+    readonly_fields = ("created_at", "updated_at")

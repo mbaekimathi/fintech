@@ -1,15 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Paybills{% endblock %}
+{% block eyebrow %}Accounts{% endblock %}
 {% block heading %}Paybills{% endblock %}
 {% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Paybill accounts</h2>
+      <p>Collection and disbursement endpoints registered on this hub.</p>
+    </div>
+  </section>
+
   <section class="card-grid">
     {% for account in accounts %}
       <article class="panel tile">
+        <p class="eyebrow">{% if account.is_active %}Live channel{% else %}Offline{% endif %}</p>
         <h2>{{ account.account_name }}</h2>
         <p class="code-line">{{ account.paybill_number }}</p>
-        <span class="badge {% if account.is_active %}badge-completed{% else %}badge-failed{% endif %}">
-          {% if account.is_active %}Live{% else %}Off{% endif %}
-        </span>
+        <div class="tile-meta">
+          <span class="badge {% if account.is_active %}badge-completed{% else %}badge-failed{% endif %}">
+            {% if account.is_active %}Live{% else %}Off{% endif %}
+          </span>
+        </div>
       </article>
     {% empty %}
       <p class="empty">No paybill accounts yet.</p>

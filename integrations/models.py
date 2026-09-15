@@ -66,6 +66,12 @@ class DarajaOperation(models.Model):
     checkout_request_id = models.CharField(max_length=64, blank=True, db_index=True)
     conversation_id = models.CharField(max_length=64, blank=True, db_index=True)
     originator_conversation_id = models.CharField(max_length=64, blank=True, db_index=True)
+    mpesa_reference = models.CharField(
+        max_length=64,
+        blank=True,
+        db_index=True,
+        help_text="M-Pesa receipt / transaction reference from Safaricom.",
+    )
     result_code = models.CharField(max_length=16, blank=True)
     result_desc = models.CharField(max_length=255, blank=True)
     summary = models.TextField(blank=True)
@@ -87,6 +93,20 @@ class DarajaOperation(models.Model):
 
     def __str__(self):
         return f"{self.kind} {self.status} {self.destination}"
+
+    def capture_mpesa_reference(self, receipt: str = "", *, items=None) -> str:
+        """Persist the first usable M-Pesa receipt found for this operation."""
+        from paybill.services import extract_mpesa_receipt
+
+        value = extract_mpesa_receipt(
+            receipt=receipt,
+            items=items,
+            payload=self.result_payload,
+            summary=self.summary,
+        )
+        if value and self.mpesa_reference != value:
+            self.mpesa_reference = value
+        return self.mpesa_reference
 
     def is_fresh_queue(self, seconds: int = 90) -> bool:
         if self.status != self.Status.QUEUED:
@@ -121,6 +141,10 @@ class DarajaConfig(models.Model):
         BUY_GOODS = "BusinessBuyGoods", "Send to till (BusinessBuyGoods)"
         DISBURSE = "DisburseFundsToBusiness", "Disburse to business"
         TRANSFER = "BusinessToBusinessTransfer", "Business to business transfer"
+
+    class AgentChannel(models.TextChoices):
+        BUSINESS = "BUSINESS", "Business shop (STK collect + B2C payout)"
+        SAFARICOM = "SAFARICOM", "Official Safaricom agent (API when issued)"
 
     environment = MysqlChoiceEnumField(
         max_length=12,
@@ -196,6 +220,140 @@ class DarajaConfig(models.Model):
         default=B2BCommand.BUY_GOODS,
     )
     b2b_remarks = models.CharField(max_length=64, blank=True)
+    agent_shop_enabled = MysqlBooleanEnumField(
+        default=False,
+        help_text="Turn on agent-shop deposit and withdraw by phone on this shortcode.",
+    )
+    agent_channel = MysqlChoiceEnumField(
+        max_length=16,
+        choices=AgentChannel.choices,
+        default=AgentChannel.BUSINESS,
+        help_text="Business uses STK/B2C on your paybill. Safaricom agent uses official agent APIs after registration.",
+    )
+    agent_till_number = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="M-Pesa agent till / outlet number from Safaricom.",
+    )
+    agent_head_office = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Agent head-office shortcode, if different from the till.",
+    )
+    agent_store_number = models.CharField(
+        max_length=32,
+        blank=True,
+        help_text="Store or outlet reference from your dealer / head office.",
+    )
+    agent_operator_id = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="Operator / attendant id if Safaricom issues one for API calls.",
+    )
+    agent_api_enabled = MysqlBooleanEnumField(
+        default=False,
+        help_text="Use official agent deposit/withdraw APIs when Safaricom has issued them.",
+    )
+    agent_use_shared_app = MysqlBooleanEnumField(
+        default=True,
+        help_text="Reuse the shared Daraja consumer key/secret. Turn off to paste a separate agent app.",
+    )
+    agent_consumer_key = models.CharField(max_length=255, blank=True)
+    agent_consumer_secret = models.CharField(max_length=512, blank=True)
+    agent_initiator_name = models.CharField(max_length=120, blank=True)
+    agent_security_credential = models.TextField(blank=True)
+    agent_api_base_url = models.URLField(
+        max_length=500,
+        blank=True,
+        help_text="API host Safaricom gives you (leave blank to use the shared Daraja host).",
+    )
+    agent_deposit_path = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Relative deposit/cash-in path from the Safaricom API pack, e.g. /mpesa/agent/v1/deposit.",
+    )
+    agent_withdraw_path = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Relative withdraw/cash-out path from the Safaricom API pack.",
+    )
+    agent_deposit_command = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="CommandID or product code for agent deposit, when provided.",
+    )
+    agent_withdraw_command = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="CommandID or product code for agent withdraw, when provided.",
+    )
+    agent_deposit_callback_url = models.URLField(max_length=500, blank=True)
+    agent_withdraw_callback_url = models.URLField(max_length=500, blank=True)
+    agent_result_url = models.URLField(max_length=500, blank=True)
+    agent_timeout_url = models.URLField(max_length=500, blank=True)
+    agent_track_commission = MysqlBooleanEnumField(
+        default=True,
+        help_text="Record Safaricom agent commission when callbacks or statements expose it.",
+    )
+    agent_api_notes = models.TextField(
+        blank=True,
+        help_text="Paste product names, sandbox notes, or support ticket refs from Safaricom.",
+    )
+    agent_cash_in_enabled = MysqlBooleanEnumField(
+        default=True,
+        help_text="Cash-in / deposit for a customer phone.",
+    )
+    agent_cash_out_enabled = MysqlBooleanEnumField(
+        default=True,
+        help_text="Cash-out / withdraw for a customer phone.",
+    )
+    agent_min_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=10,
+        help_text="Minimum KES per cash-in or cash-out.",
+    )
+    agent_max_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=70000,
+        help_text="Maximum KES per cash-in or cash-out.",
+    )
+    agent_daily_limit = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Max KES per agent per day. Use 0 for no extra daily cap.",
+    )
+    agent_cash_in_fee = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Your own fee on business-shop cash-in (KES). Not Safaricom commission. 0 = none.",
+    )
+    agent_cash_out_fee = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Your own fee on business-shop cash-out (KES). Not Safaricom commission. 0 = none.",
+    )
+    agent_cash_in_account_ref = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="Default account reference for cash-in (e.g. AGENT or till code).",
+    )
+    agent_float_warn_kes = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=1000,
+        help_text="Warn when live float falls below this amount.",
+    )
+    agent_receipt_prefix = models.CharField(
+        max_length=16,
+        blank=True,
+        default="AG",
+        help_text="Prefix for agent receipt / reference numbers.",
+    )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -272,3 +430,59 @@ class DarajaConfig(models.Model):
     @property
     def payout_ready(self) -> bool:
         return self.b2c_ready or self.b2b_ready
+
+    @property
+    def is_safaricom_agent_channel(self) -> bool:
+        return str(self.agent_channel) == self.AgentChannel.SAFARICOM
+
+    @property
+    def agent_app_credentials_ready(self) -> bool:
+        if self.agent_use_shared_app:
+            return self.has_app_credentials
+        return bool(self.agent_consumer_key and self.agent_consumer_secret)
+
+    @property
+    def agent_safaricom_config_ready(self) -> bool:
+        """Identity + credentials + callbacks filled for future official agent APIs."""
+        return bool(
+            self.agent_api_enabled
+            and self.agent_till_number
+            and self.agent_app_credentials_ready
+            and self.agent_deposit_callback_url
+            and self.agent_withdraw_callback_url
+            and self.agent_result_url
+            and self.agent_timeout_url
+        )
+
+    @property
+    def agent_cash_in_ready(self) -> bool:
+        if not (self.agent_shop_enabled and self.agent_cash_in_enabled):
+            return False
+        if self.is_safaricom_agent_channel:
+            return self.agent_safaricom_config_ready
+        return self.stk_ready
+
+    @property
+    def agent_cash_out_ready(self) -> bool:
+        if not (self.agent_shop_enabled and self.agent_cash_out_enabled):
+            return False
+        if self.is_safaricom_agent_channel:
+            return self.agent_safaricom_config_ready
+        return self.b2c_ready
+
+    @property
+    def agent_shop_ready(self) -> bool:
+        if not self.agent_shop_enabled:
+            return False
+        if not (self.agent_cash_in_enabled or self.agent_cash_out_enabled):
+            return False
+        if self.is_safaricom_agent_channel:
+            if not self.agent_safaricom_config_ready:
+                return False
+            # Paths may arrive later with the Safaricom pack; config can still be saved.
+            return True
+        if self.agent_cash_in_enabled and not self.stk_ready:
+            return False
+        if self.agent_cash_out_enabled and not self.b2c_ready:
+            return False
+        return True

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Live balance{% endblock %}
+{% block eyebrow %}Daraja{% endblock %}
+{% block heading %}Live balance{% endblock %}
+{% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Account balance</h2>
+      <p>Initiator and identifier settings used to query live paybill or till balances.</p>
+    </div>
+  </section>
+  {% include "partials/daraja_status.html" %}
+
+  <form method="post" class="stack-panels daraja-setup" novalidate autocomplete="off">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Live paybill balance</h2>
+          <p class="muted">
+            Account Balance API. Paste <strong>Shortcode 1</strong>, <strong>Initiator Name</strong>, and the initiator password from
+            <a href="https://developer.safaricom.co.ke/test_credentials" target="_blank" rel="noopener">Daraja Test credentials</a>
+            — not the STK till 174379.
+          </p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.initiator_name %}
+        {% include "partials/labeled_field.html" with field=form.security_credential secret=True saved=secrets.security_credential span="2" %}
+        {% include "partials/labeled_field.html" with field=form.balance_identifier_type %}
+        {% include "partials/labeled_field.html" with field=form.balance_remarks %}
+        {% include "partials/labeled_field.html" with field=form.result_url %}
+        {% include "partials/labeled_field.html" with field=form.timeout_url %}
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <button type="submit" class="btn btn-primary" name="intent" value="save">Save balance setup</button>
+      <a class="btn btn-ghost" href="{% url 'core:daraja' %}">Daraja app</a>
+      <a class="btn btn-ghost" href="{% url 'core:daraja-test' %}">Test credentials</a>
+    </div>
+  </form>
+{% endblock %}

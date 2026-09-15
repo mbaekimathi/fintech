@@ -6,7 +6,6 @@ class ApprovedRequiredMixin(LoginRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated and request.user.is_pending:
             raise PermissionDenied("Your account is waiting for approval.")
-            raise PermissionDenied("Your account is waiting for approval.")
         return super().dispatch(request, *args, **kwargs)
 
 
@@ -15,6 +14,6 @@ class RoleRequiredMixin(ApprovedRequiredMixin, UserPassesTestMixin):
 
     def test_func(self):
         user = self.request.user
-        if user.is_superuser:
+        if user.is_superuser and not user.is_role_switched:
             return True
-        return user.role in self.allowed_roles
+        return user.effective_role in self.allowed_roles

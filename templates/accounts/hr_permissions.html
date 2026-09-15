@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Employee permissions{% endblock %}
+{% block eyebrow %}HR{% endblock %}
+{% block heading %}Employee permissions{% endblock %}
+{% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Access roles</h2>
+      <p>Assign the workspace role that controls what each employee can open.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Roles</h2>
+        <p class="muted">Changes apply immediately after save.</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Current role</th>
+            <th>Set role</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for person in employees %}
+            <tr>
+              <td>{{ person.staff_code }}</td>
+              <td>{{ person.get_full_name|default:"—" }}</td>
+              <td>{{ person.email }}</td>
+              <td>{{ person.get_role_display }}</td>
+              <td>
+                <form method="post" action="{% url 'accounts:set_role' person.pk %}" class="inline-form">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{% url 'accounts:hr-permissions' %}">
+                  <select name="role" class="select" onchange="this.form.submit()" aria-label="Role for {{ person.staff_code }}">
+                    {% for value, label in assignable_roles %}
+                      <option value="{{ value }}" {% if person.role == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </form>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="empty">No employees to manage.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

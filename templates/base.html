@@ -4,11 +4,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1f2a">
+  <meta name="theme-color" content="#0c1624">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <link rel="manifest" href="{% url 'core:web-manifest' %}">
+  <link rel="icon" href="{% static 'icons/icon.svg' %}" type="image/svg+xml">
   <title>{% block title %}Workspace{% endblock %} · {{ product_name }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,560;9..144,680&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Manrope:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
 </head>
@@ -21,16 +24,97 @@
           <span class="burger" aria-hidden="true"></span>
         </button>
         <div class="crumb">
+          <p class="page-eyebrow">{% block eyebrow %}{% endblock %}</p>
           <h1 class="page-title">{% block heading %}Dashboard{% endblock %}</h1>
         </div>
       </div>
       <div class="header-right">
+        <div class="notify-chip" x-data="{ open: false }" @keydown.escape.window="open = false">
+          <button
+            type="button"
+            class="icon-btn notify-btn"
+            @click="open = !open"
+            aria-label="Notifications"
+            aria-haspopup="true"
+            :aria-expanded="open"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M6 9a6 6 0 0 1 12 0c0 7 3 7 3 7H3s3 0 3-7"/>
+              <path d="M10.3 19a2 2 0 0 0 3.4 0"/>
+            </svg>
+            {% if unread_notification_count %}
+              <span class="notify-count">{{ unread_notification_count }}</span>
+            {% endif %}
+          </button>
+          <div
+            class="menu notify-menu"
+            x-show="open"
+            x-cloak
+            x-transition.origin.top.right.duration.150ms
+            @click.outside="open = false"
+          >
+            <div class="notify-menu-head">
+              <strong>Notifications</strong>
+              <div class="notify-head-actions">
+                {% if webpush_enabled and user.is_authenticated %}
+                  <button type="button" class="btn btn-ghost btn-small" data-webpush-enable>
+                    Enable phone alerts
+                  </button>
+                {% endif %}
+                {% if unread_notification_count %}
+                  <form method="post" action="{% url 'core:notifications-read' %}" class="inline-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="intent" value="all">
+                    <input type="hidden" name="next" value="{{ request.path }}">
+                    <button type="submit" class="btn btn-ghost btn-small">Mark all read</button>
+                  </form>
+                {% endif %}
+              </div>
+            </div>
+            <div class="notify-list">
+              {% for note in header_notifications %}
+                <article class="notify-item{% if not note.is_read %} is-unread{% endif %}">
+                  <div class="notify-copy">
+                    <strong>{{ note.title }}</strong>
+                    {% if note.body %}<p>{{ note.body }}</p>{% endif %}
+                    <small>{{ note.created_at|timesince }} ago</small>
+                  </div>
+                  <div class="notify-actions">
+                    <form method="post" action="{% url 'core:notification-open' note.pk %}" class="inline-form">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-ghost btn-small">Open</button>
+                    </form>
+                    {% if can_review_money_requests and note.can_review %}
+                      <form method="post" action="{% url 'core:notification-review' note.pk %}" class="inline-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="intent" value="approve">
+                        <input type="hidden" name="next" value="{{ request.path }}">
+                        <button type="submit" class="btn btn-primary btn-small">Approve &amp; send</button>
+                      </form>
+                      <form method="post" action="{% url 'core:notification-review' note.pk %}" class="inline-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="intent" value="reject">
+                        <input type="hidden" name="next" value="{{ request.path }}">
+                        <button type="submit" class="btn btn-ghost btn-small">Reject</button>
+                      </form>
+                    {% endif %}
+                  </div>
+                </article>
+              {% empty %}
+                <p class="notify-empty">No notifications yet.</p>
+              {% endfor %}
+            </div>
+            {% if can_review_money_requests %}
+              <a class="menu-action" href="{% url 'paybill:transactions' %}">Open pending transactions</a>
+            {% endif %}
+          </div>
+        </div>
         <div class="user-chip" x-data="{ open: false }" @keydown.escape.window="open = false">
           <button type="button" class="user-btn" @click="open = !open" aria-haspopup="true" :aria-expanded="open">
             <span class="avatar">{{ user.first_name|slice:":1"|default:"N" }}{{ user.last_name|slice:":1" }}</span>
             <span class="user-meta">
               <strong>{{ user.get_full_name|default:user.email }}</strong>
-              <small>{{ user.get_role_display }}</small>
+              <small>{{ user.role_label }}{% if user.is_role_switched %} · viewing{% endif %}</small>
             </span>
             <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M4.2 6.2a.7.7 0 0 1 1 0L8 8.9l2.8-2.7a.7.7 0 1 1 1 1l-3.3 3.2a.7.7 0 0 1-1 0L4.2 7.2a.7.7 0 0 1 0-1z"/>
@@ -42,9 +126,23 @@
               <div class="menu-who">
                 <strong>{{ user.get_full_name|default:user.email }}</strong>
                 <small>{{ user.email }}</small>
+                {% if user.is_role_switched %}
+                  <small class="menu-viewing">Viewing as {{ user.role_label }}</small>
+                {% endif %}
               </div>
             </div>
             <a class="menu-action" href="{% url 'core:settings' %}">Settings</a>
+            {% if user.can_switch_roles %}
+              <div class="menu-label-row">Switch role</div>
+              <div class="menu-roles">
+                {% for item in switchable_roles %}
+                  <a
+                    class="menu-action menu-role{% if user.effective_role == item.value %} is-active{% endif %}"
+                    href="{{ item.href }}"
+                  >{{ item.label }}</a>
+                {% endfor %}
+              </div>
+            {% endif %}
             <form method="post" action="{% url 'accounts:logout' %}">
               {% csrf_token %}
               <button type="submit" class="menu-action is-logout">Sign out</button>
@@ -60,6 +158,15 @@
     {% include "partials/footer.html" %}
   </div>
   <div class="nav-backdrop" @click="navOpen = false" x-cloak x-show="navOpen"></div>
+  {% if user.is_authenticated and webpush_enabled %}
+    {{ webpush_vapid_public_key|json_script:"webpush-vapid-key" }}
+    <script type="application/json" id="webpush-config">
+      {
+        "subscribeUrl": "{% url 'core:push-subscribe' %}",
+        "swUrl": "{% url 'core:service-worker' %}"
+      }
+    </script>
+  {% endif %}
   <script src="{% static 'js/app.js' %}"></script>
 </body>
 </html>

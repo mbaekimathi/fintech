@@ -256,10 +256,22 @@ class DarajaClient:
         if not self.config.b2b_ready:
             raise DarajaError("Paybill/till payout is not enabled. Turn on B2B on Daraja setup.")
         dest = re.sub(r"\D", "", destination or "")
-        if len(dest) < 5:
-            raise DarajaError("Enter the destination paybill or till number.")
+        if dest.startswith("254") or len(dest) >= 10:
+            raise DarajaError(
+                "Enter a paybill or till shortcode, not a phone number. Use Customer phone to pay a mobile."
+            )
+        if len(dest) < 5 or len(dest) > 8:
+            raise DarajaError("Enter the destination paybill or till number (5–8 digits).")
         command = self.config.b2b_till_command if to_till else self.config.b2b_paybill_command
         receiver_type = "2" if to_till else "4"
+        # Paybill B2B needs an account reference. Till (Buy Goods) does not — keep a short fallback.
+        if to_till:
+            reference = (account_ref or self.config.stk_account_reference or "NEXUS")[:12]
+        else:
+            reference = (account_ref or "").strip()
+            if not reference:
+                raise DarajaError("Enter the account number for that paybill.")
+            reference = reference[:12]
         payload = {
             "Initiator": self.config.initiator_name,
             "SecurityCredential": self._security_credential(),
@@ -269,7 +281,7 @@ class DarajaClient:
             "Amount": whole_kes(amount),
             "PartyA": self._payout_party_a(),
             "PartyB": dest,
-            "AccountReference": (account_ref or self.config.stk_account_reference or "NEXUS")[:12],
+            "AccountReference": reference,
             "Remarks": (self.config.b2b_remarks or "Transfer")[:100],
             "QueueTimeOutURL": self._callback(self.config.timeout_url, timeout_url),
             "ResultURL": self._callback(self.config.result_url, result_url),

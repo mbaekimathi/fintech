@@ -1,0 +1,30 @@
+<section class="integration-banner {% if integration.integrated %}is-ok{% else %}is-bad{% endif %}" role="status">
+  <p class="eyebrow">{% if integration.integrated %}Connected{% else %}Not connected{% endif %}</p>
+  <h2>{{ integration.title }}</h2>
+  <p class="muted">{{ integration.detail }}</p>
+  {% if integration.checks %}
+    <ul class="check-list">
+      {% for item in integration.checks %}
+        <li class="{% if item.ok %}is-ok{% else %}is-bad{% endif %}">
+          {% if item.ok %}Set{% else %}Fix{% endif %} · {{ item.label }}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+
+<div class="status-row daraja-status">
+  <span class="chip {% if config.has_app_credentials %}is-on{% endif %}">{% if config.has_app_credentials %}App ready{% else %}App missing{% endif %}</span>
+  <span class="chip {% if config.stk_ready %}is-on{% endif %}">{% if config.stk_ready %}STK ready{% else %}STK missing{% endif %}</span>
+  <span class="chip {% if config.balance_ready %}is-on{% endif %}">{% if config.balance_ready %}Balance ready{% else %}Balance missing{% endif %}</span>
+  <span class="chip {% if config.b2c_ready %}is-on{% endif %}">{% if config.b2c_ready %}Phone payout ready{% else %}Phone payout missing{% endif %}</span>
+  <span class="chip {% if config.b2b_ready %}is-on{% endif %}">{% if config.b2b_ready %}Paybill/till payout ready{% else %}Paybill/till payout missing{% endif %}</span>
+  <span class="chip {% if config.agent_shop_ready %}is-on{% endif %}">
+    {% if config.agent_shop_ready %}Agent shop ready{% elif config.agent_shop_enabled %}Agent shop incomplete{% else %}Agent shop off{% endif %}
+  </span>
+  {% if config.agent_shop_enabled and config.is_safaricom_agent_channel %}
+    <span class="chip {% if config.agent_safaricom_config_ready %}is-on{% endif %}">
+      {% if config.agent_safaricom_config_ready %}Safaricom agent config ready{% else %}Safaricom agent config incomplete{% endif %}
+    </span>
+  {% endif %}
+</div>

@@ -1,21 +1,38 @@
 {% extends "base.html" %}
 {% block title %}Settings{% endblock %}
+{% block eyebrow %}Workspace{% endblock %}
 {% block heading %}Settings{% endblock %}
 {% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Profile &amp; control plane</h2>
+      <p>Identity, session posture, and shortcuts into the modules your role can operate.</p>
+    </div>
+  </section>
+
   <section class="card-grid">
     <article class="panel tile">
+      <p class="eyebrow">Signed in</p>
       <h2>{{ user.get_full_name|default:user.email }}</h2>
       <dl class="kv">
         <dt>Code</dt>
         <dd>{{ user.staff_code }}</dd>
         <dt>Role</dt>
-        <dd>{{ user.get_role_display }}</dd>
+        <dd>
+          {% if user.is_role_switched %}
+            {{ user.role_label }}
+            <span class="muted"> (viewing · signed in as {{ user.get_role_display }})</span>
+          {% else %}
+            {{ user.get_role_display }}
+          {% endif %}
+        </dd>
         <dt>Email</dt>
         <dd>{{ user.email }}</dd>
       </dl>
     </article>
     <article class="panel tile">
-      <h2>{{ product_name }}</h2>
+      <p class="eyebrow">{{ product_name }}</p>
+      <h2>Hub configuration</h2>
       <dl class="kv">
         <dt>Timezone</dt>
         <dd>{{ hub_timezone }}</dd>
@@ -26,22 +43,71 @@
   </section>
 
   <section class="panel settings-links">
-    <div class="chip-row">
+    <div class="panel-head">
+      <div>
+        <h2>Quick links</h2>
+        <p class="muted">Jump to the areas you manage.</p>
+      </div>
+    </div>
+    <div class="card-grid">
       {% if user.can_manage_users %}
-        <a class="chip" href="{% url 'accounts:users' %}">People</a>
+        <a class="link-tile" href="{% url 'accounts:users' %}">
+          <strong>People</strong>
+          <span>Roles and approvals</span>
+        </a>
       {% endif %}
-      {% if user.can_manage_ledger or user.role == 'IT_SUPPORT' %}
-        <a class="chip" href="{% url 'paybill:accounts' %}">Paybills</a>
-        <a class="chip" href="{% url 'paybill:systems' %}">Systems</a>
+      {% if user.can_manage_hr %}
+        <a class="link-tile" href="{% url 'accounts:hr' %}">
+          <strong>HR</strong>
+          <span>Active employees</span>
+        </a>
+        <a class="link-tile" href="{% url 'accounts:hr-pending' %}">
+          <strong>Pending approvals</strong>
+          <span>Registration queue</span>
+        </a>
+        <a class="link-tile" href="{% url 'accounts:hr-employees' %}">
+          <strong>Employee management</strong>
+          <span>Profiles and status</span>
+        </a>
+        <a class="link-tile" href="{% url 'accounts:hr-permissions' %}">
+          <strong>Permissions</strong>
+          <span>Role assignments</span>
+        </a>
+        <a class="link-tile" href="{% url 'accounts:hr-salaries' %}">
+          <strong>Salaries</strong>
+          <span>Payroll register</span>
+        </a>
+      {% endif %}
+      {% if user.can_manage_ledger or user.effective_role == 'IT_SUPPORT' %}
+        <a class="link-tile" href="{% url 'paybill:accounts' %}">
+          <strong>Paybills</strong>
+          <span>Collection accounts</span>
+        </a>
+        <a class="link-tile" href="{% url 'paybill:systems' %}">
+          <strong>Systems</strong>
+          <span>Connected platforms</span>
+        </a>
       {% endif %}
       {% if user.can_manage_daraja %}
-        <a class="chip" href="{% url 'core:daraja' %}">Daraja</a>
-        <a class="chip" href="{% url 'core:daraja-test' %}">Test credentials</a>
+        <a class="link-tile" href="{% url 'core:daraja' %}">
+          <strong>Daraja</strong>
+          <span>App credentials</span>
+        </a>
+        <a class="link-tile" href="{% url 'core:daraja-test' %}">
+          <strong>Test credentials</strong>
+          <span>Readiness and probes</span>
+        </a>
       {% endif %}
       {% if user.is_staff %}
-        <a class="chip" href="{% url 'admin:index' %}">Admin</a>
+        <a class="link-tile" href="{% url 'admin:index' %}">
+          <strong>Admin</strong>
+          <span>Django administration</span>
+        </a>
       {% endif %}
-      <a class="chip" href="{% url 'core:dashboard' %}">Dashboard</a>
+      <a class="link-tile" href="{% url 'core:dashboard' %}">
+        <strong>Dashboard</strong>
+        <span>Ledger overview</span>
+      </a>
     </div>
   </section>
 {% endblock %}

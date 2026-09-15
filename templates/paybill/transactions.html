@@ -1,36 +1,280 @@
 {% extends "base.html" %}
 {% block title %}Transactions{% endblock %}
+{% block eyebrow %}Ledger{% endblock %}
 {% block heading %}Transactions{% endblock %}
 {% block content %}
-  <section class="panel">
-    <div class="panel-head">
-      <h2>KES {{ volume|floatformat:2 }}</h2>
-    </div>
-    <div class="table-wrap">
-      <table class="data">
-        <thead>
-          <tr>
-            <th>When</th>
-            <th>Reference</th>
-            <th>Paybill</th>
-            <th>Amount</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in entries %}
+  <div x-data="{ transferDetail: null }" @keydown.escape.window="transferDetail = null">
+    <section class="page-intro">
+      <div class="page-intro-copy">
+        <h2>Transaction ledger</h2>
+        <p>Posted movement across paybill accounts with status and references.</p>
+      </div>
+      <div class="metric-strip">
+        <p class="stat-value">KES {{ volume|floatformat:2 }}</p>
+        <p class="stat-label">Listed volume</p>
+      </div>
+    </section>
+
+    {% if show_pending_requests %}
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Pending transactions</h2>
+            <p class="muted">
+              {% if can_review_requests %}
+                Approve to send money from the hub paybill, or reject the request.
+              {% else %}
+                Employee money requests waiting for approval before payout.
+              {% endif %}
+            </p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Initiator</th>
+                <th>Category</th>
+                <th>To</th>
+                <th>From</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th></th>
+                {% if can_review_requests %}<th></th>{% endif %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in pending_requests %}
+                <tr>
+                  <td>{{ row.created_at|date:"d M H:i" }}</td>
+                  <td>
+                    {{ row.requester.get_full_name|default:row.requester.staff_code }}
+                    <span class="muted">· {{ row.requester.staff_code }}</span>
+                  </td>
+                  <td>{{ row.get_category_display }}</td>
+                  <td>
+                    {{ row.get_destination_type_display }}
+                    · {{ row.destination }}
+                    {% if row.account_ref %}<span class="muted"> / {{ row.account_ref }}</span>{% endif %}
+                  </td>
+                  <td>{{ row.source_paybill.paybill_number }}</td>
+                  <td>KES {{ row.amount|floatformat:2 }}</td>
+                  <td><span class="badge badge-{{ row.status_badge_class }}">{{ row.get_status_display }}</span></td>
+                  <td>
+                    <button
+                      type="button"
+                      class="icon-btn row-view-btn"
+                      aria-label="View transfer details"
+                      title="View reason and details"
+                      @click="transferDetail = {
+                        when: '{{ row.created_at|date:"d M Y H:i"|escapejs }}',
+                        initiator: '{{ row.requester.get_full_name|default:row.requester.staff_code|escapejs }}',
+                        initiatorCode: '{{ row.requester.staff_code|escapejs }}',
+                        category: '{{ row.get_category_display|escapejs }}',
+                        reason: '{{ row.reason|escapejs }}',
+                        destination: '{{ row.get_destination_type_display|escapejs }} · {{ row.destination|escapejs }}{% if row.account_ref %} / {{ row.account_ref|escapejs }}{% endif %}',
+                        source: '{{ row.source_paybill.paybill_number|escapejs }}',
+                        amount: 'KES {{ row.amount|floatformat:2 }}',
+                        status: '{{ row.get_status_display|escapejs }}',
+                        reference: ''
+                      }"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M2.1 12s3.6-7 9.9-7 9.9 7 9.9 7-3.6 7-9.9 7-9.9-7-9.9-7Z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    </button>
+                  </td>
+                  {% if can_review_requests %}
+                    <td>
+                      <div class="toolbar">
+                        <form method="post" action="{% url 'paybill:money-request-review' row.pk %}" class="inline-form">
+                          {% csrf_token %}
+                          <input type="hidden" name="intent" value="approve">
+                          <button type="submit" class="btn btn-primary btn-small">Approve &amp; send</button>
+                        </form>
+                        <form method="post" action="{% url 'paybill:money-request-review' row.pk %}" class="inline-form">
+                          {% csrf_token %}
+                          <input type="hidden" name="intent" value="reject">
+                          <button type="submit" class="btn btn-ghost btn-small">Reject</button>
+                        </form>
+                      </div>
+                    </td>
+                  {% endif %}
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="{% if can_review_requests %}9{% else %}8{% endif %}" class="empty">
+                    No pending money requests.
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Entries</h2>
+          <p class="muted">Chronological postings for this workspace, including initiator and expense category.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
             <tr>
-              <td>{{ row.posted_at|date:"d M H:i" }}</td>
-              <td>{{ row.reference }}</td>
-              <td>{{ row.paybill_account.paybill_number }}</td>
-              <td>{{ row.currency }} {{ row.amount }}</td>
-              <td><span class="badge badge-{{ row.status|lower }}">{{ row.get_status_display }}</span></td>
+              <th>When</th>
+              <th>Reference</th>
+              <th>M-Pesa reference</th>
+              <th>Initiator</th>
+              <th>Category</th>
+              <th>Paybill</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th></th>
             </tr>
-          {% empty %}
-            <tr><td colspan="5" class="empty">No transactions.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {% for row in entries %}
+              <tr>
+                <td>{{ row.posted_at|date:"d M H:i" }}</td>
+                <td>{{ row.reference }}</td>
+                <td>
+                  {% if row.mpesa_reference %}
+                    <span class="mono">{{ row.mpesa_reference }}</span>
+                  {% else %}
+                    <span class="muted">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if row.initiator_name %}
+                    {{ row.initiator_name }}
+                    {% if row.initiator_code %}<span class="muted">· {{ row.initiator_code }}</span>{% endif %}
+                  {% else %}
+                    <span class="muted">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if row.expense_category %}
+                    {{ row.expense_category }}
+                  {% else %}
+                    <span class="muted">—</span>
+                  {% endif %}
+                </td>
+                <td>{{ row.paybill_account.paybill_number }}</td>
+                <td>{{ row.currency }} {{ row.amount }}</td>
+                <td><span class="badge badge-{{ row.status|lower }}">{{ row.get_status_display }}</span></td>
+                <td>
+                  <button
+                    type="button"
+                    class="icon-btn row-view-btn"
+                    aria-label="View transfer details"
+                    title="View reason and details"
+                    @click="transferDetail = {
+                      when: '{{ row.posted_at|date:"d M Y H:i"|escapejs }}',
+                      initiator: '{{ row.initiator_name|default:''|escapejs }}',
+                      initiatorCode: '{{ row.initiator_code|default:''|escapejs }}',
+                      category: '{{ row.expense_category|default:''|escapejs }}',
+                      reason: '{{ row.expense_reason|default:''|escapejs }}',
+                      destination: '{% if row.destination_label %}{{ row.destination_label|escapejs }} · {{ row.destination_value|escapejs }}{% if row.destination_account_ref %} / {{ row.destination_account_ref|escapejs }}{% endif %}{% elif row.destination_value %}{{ row.destination_value|escapejs }}{% endif %}',
+                      source: '{{ row.source_paybill_number|default:row.paybill_account.paybill_number|escapejs }}',
+                      amount: '{{ row.currency }} {{ row.amount }}',
+                      status: '{{ row.get_status_display|escapejs }}',
+                      reference: '{{ row.reference|escapejs }}',
+                      mpesaReference: '{{ row.mpesa_reference|default:''|escapejs }}'
+                    }"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M2.1 12s3.6-7 9.9-7 9.9 7 9.9 7-3.6 7-9.9 7-9.9-7-9.9-7Z"/>
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                  </button>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="9" class="empty">No transactions.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div
+      class="detail-backdrop"
+      x-show="transferDetail"
+      x-cloak
+      x-transition.opacity.duration.150ms
+      @click.self="transferDetail = null"
+      role="presentation"
+    >
+      <div
+        class="detail-dialog"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="transferDetail ? 'transfer-detail-title' : null"
+        @click.stop
+      >
+        <template x-if="transferDetail">
+          <div>
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Transfer details</p>
+                <h2 id="transfer-detail-title" x-text="transferDetail.category || 'Ledger entry'"></h2>
+              </div>
+              <button type="button" class="btn btn-ghost btn-small" @click="transferDetail = null">Close</button>
+            </div>
+            <dl class="detail-list">
+              <div x-show="transferDetail.when">
+                <dt>When</dt>
+                <dd x-text="transferDetail.when"></dd>
+              </div>
+              <div x-show="transferDetail.reference">
+                <dt>Reference</dt>
+                <dd x-text="transferDetail.reference"></dd>
+              </div>
+              <div x-show="transferDetail.mpesaReference">
+                <dt>M-Pesa reference</dt>
+                <dd class="mono" x-text="transferDetail.mpesaReference"></dd>
+              </div>
+              <div x-show="transferDetail.initiator">
+                <dt>Initiator</dt>
+                <dd>
+                  <span x-text="transferDetail.initiator"></span>
+                  <span class="muted" x-show="transferDetail.initiatorCode" x-text="' · ' + transferDetail.initiatorCode"></span>
+                </dd>
+              </div>
+              <div x-show="transferDetail.category">
+                <dt>Expense category</dt>
+                <dd x-text="transferDetail.category"></dd>
+              </div>
+              <div x-show="transferDetail.destination">
+                <dt>To</dt>
+                <dd x-text="transferDetail.destination"></dd>
+              </div>
+              <div x-show="transferDetail.source">
+                <dt>From</dt>
+                <dd x-text="transferDetail.source"></dd>
+              </div>
+              <div x-show="transferDetail.amount">
+                <dt>Amount</dt>
+                <dd x-text="transferDetail.amount"></dd>
+              </div>
+              <div x-show="transferDetail.status">
+                <dt>Status</dt>
+                <dd x-text="transferDetail.status"></dd>
+              </div>
+              <div x-show="transferDetail.reason">
+                <dt>Reason for transfer</dt>
+                <dd x-text="transferDetail.reason"></dd>
+              </div>
+            </dl>
+          </div>
+        </template>
+      </div>
     </div>
-  </section>
+  </div>
 {% endblock %}

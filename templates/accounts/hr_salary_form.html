@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == 'update' %}Update salary{% else %}Register salary{% endif %}{% endblock %}
+{% block eyebrow %}HR{% endblock %}
+{% block heading %}{% if mode == 'update' %}Update salary{% else %}Register salary{% endif %}{% endblock %}
+{% block content %}
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>{{ employee.staff_code }} · {{ employee.get_full_name|default:employee.email }}</h2>
+        <p class="muted">{{ employee.get_role_display }}</p>
+      </div>
+      <a class="btn btn-ghost" href="{% url 'accounts:hr-salaries' %}">Back</a>
+    </div>
+    <form method="post" class="stack-panels" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
+      {% endif %}
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.amount %}
+        {% include "partials/labeled_field.html" with field=form.currency %}
+        {% include "partials/labeled_field.html" with field=form.notes span="2" %}
+      </div>
+      <div class="toolbar">
+        <button type="submit" class="btn btn-primary">
+          {% if mode == 'update' %}Save salary{% else %}Register salary{% endif %}
+        </button>
+        <a class="btn btn-ghost" href="{% url 'accounts:hr-salaries' %}">Cancel</a>
+      </div>
+    </form>
+  </section>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Paybill payout{% endblock %}
+{% block eyebrow %}Daraja{% endblock %}
+{% block heading %}Paybill payout{% endblock %}
+{% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>B2B paybill &amp; till payouts</h2>
+      <p>Send to another paybill or till using the shared initiator and command settings.</p>
+    </div>
+  </section>
+  {% include "partials/daraja_status.html" %}
+
+  <form method="post" class="stack-panels daraja-setup" novalidate autocomplete="off">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Send to another paybill or till (B2B)</h2>
+          <p class="muted">Same initiator as balance. Destination shortcode or till is entered per transfer on the test page.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.b2b_enabled span="2" %}
+        {% include "partials/labeled_field.html" with field=form.b2b_sender_identifier_type %}
+        {% include "partials/labeled_field.html" with field=form.b2b_paybill_command %}
+        {% include "partials/labeled_field.html" with field=form.b2b_till_command %}
+        {% include "partials/labeled_field.html" with field=form.b2b_remarks %}
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <button type="submit" class="btn btn-primary" name="intent" value="save">Save paybill payout</button>
+      <a class="btn btn-ghost" href="{% url 'core:daraja-balance' %}">Live balance</a>
+      <a class="btn btn-ghost" href="{% url 'core:daraja-test' %}">Test credentials</a>
+    </div>
+  </form>
+{% endblock %}

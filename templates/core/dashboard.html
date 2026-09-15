@@ -1,32 +1,239 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
+{% block eyebrow %}Overview{% endblock %}
 {% block heading %}Dashboard{% endblock %}
 {% block content %}
-  <section class="stat-grid">
-    <article class="stat-card">
-      <p class="stat-label">Today</p>
-      <p class="stat-value">KES {{ today_volume|floatformat:2 }}</p>
-    </article>
-    <article class="stat-card">
-      <p class="stat-label">Systems</p>
-      <p class="stat-value">{{ system_count }}</p>
-    </article>
-    <article class="stat-card">
-      <p class="stat-label">Paybills</p>
-      <p class="stat-value">{{ paybill_count }}</p>
-    </article>
-    <article class="stat-card">
-      <p class="stat-label">Pending</p>
-      <p class="stat-value">{{ pending_people }}</p>
-    </article>
-  </section>
+  {% if is_employee_dashboard %}
+    <section class="page-intro">
+      <div class="page-intro-copy">
+        <h2>Request a transfer</h2>
+        <p>Submit a money request against the hub paybill. Approvals and payouts stay in the ledger trail.</p>
+      </div>
+    </section>
 
-  <section class="panel">
-    <div class="panel-head">
-      <h2>Latest</h2>
-      <a class="btn btn-ghost" href="{% url 'paybill:transactions' %}">View all</a>
-    </div>
-    <div class="table-wrap">
+    <section class="panel money-request-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Request money</h2>
+          <p class="muted">
+            {% if source_paybill %}
+              Funds come from {{ source_paybill.account_name }}
+              ({{ source_paybill.paybill_number }}).
+            {% else %}
+              No hub paybill is configured yet.
+            {% endif %}
+          </p>
+        </div>
+      </div>
+
+      {% if not source_paybill %}
+        <p class="field-error">Ask an admin to set the hub paybill before you can request a transfer.</p>
+      {% else %}
+        <form
+          method="post"
+          class="money-request-form"
+          novalidate
+          x-data="moneyRequestPanel({
+            type: '{{ money_form.destination_type.value|default:money_form.destination_type.field.initial|default:'PHONE'|escapejs }}',
+            destination: '{{ money_form.destination.value|default_if_none:''|escapejs }}',
+            accountRef: '{{ money_form.account_ref.value|default_if_none:''|escapejs }}'
+          })"
+        >
+          {% csrf_token %}
+          {% if money_form.non_field_errors %}
+            <p class="field-error">{{ money_form.non_field_errors|join:" " }}</p>
+          {% endif %}
+          <div class="form-grid">
+            {% include "partials/labeled_field.html" with field=money_form.category %}
+            <label class="label">
+              {{ money_form.destination_type.label }}
+              <select
+                name="{{ money_form.destination_type.name }}"
+                id="{{ money_form.destination_type.id_for_label }}"
+                class="select"
+                x-model="type"
+                @change="onTypeChange()"
+              >
+                {% for value, label in money_form.destination_type.field.choices %}
+                  <option
+                    value="{{ value }}"
+                    {% if money_form.destination_type.value == value %}selected{% endif %}
+                  >{{ label }}</option>
+                {% endfor %}
+              </select>
+              {% if money_form.destination_type.errors %}
+                <span class="field-error">{{ money_form.destination_type.errors|join:", " }}</span>
+              {% endif %}
+            </label>
+            <label class="label">
+              <span x-text="destinationLabel">Destination details</span>
+              <input
+                type="text"
+                name="{{ money_form.destination.name }}"
+                id="{{ money_form.destination.id_for_label }}"
+                class="field"
+                autocomplete="off"
+                inputmode="numeric"
+                x-model="destination"
+                :placeholder="destinationPlaceholder"
+              >
+              <span class="field-hint" x-text="destinationHint"></span>
+              {% if money_form.destination.errors %}
+                <span class="field-error">{{ money_form.destination.errors|join:", " }}</span>
+              {% endif %}
+            </label>
+            <label class="label" x-show="type === 'PAYBILL'" x-cloak>
+              {{ money_form.account_ref.label }}
+              <input
+                type="text"
+                name="{{ money_form.account_ref.name }}"
+                id="{{ money_form.account_ref.id_for_label }}"
+                class="field"
+                autocomplete="off"
+                maxlength="64"
+                x-model="accountRef"
+                placeholder="Account number on that paybill"
+              >
+              <span class="field-hint">{{ money_form.account_ref.help_text }}</span>
+              {% if money_form.account_ref.errors %}
+                <span class="field-error">{{ money_form.account_ref.errors|join:", " }}</span>
+              {% endif %}
+            </label>
+            {% include "partials/labeled_field.html" with field=money_form.amount %}
+            {% include "partials/labeled_field.html" with field=money_form.reason span="2" %}
+          </div>
+          <div class="toolbar">
+            <button type="submit" class="btn btn-primary" x-text="submitLabel">Submit request</button>
+          </div>
+        </form>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Pending requests</h2>
+          <p class="muted">Transfer requests waiting for approval.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Category</th>
+              <th>To</th>
+              <th>Amount</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in pending_money_requests %}
+              <tr>
+                <td>{{ row.created_at|date:"d M Y H:i" }}</td>
+                <td>{{ row.get_category_display }}</td>
+                <td>
+                  {{ row.get_destination_type_display }}
+                  · {{ row.destination }}
+                  {% if row.account_ref %}<span class="muted"> / {{ row.account_ref }}</span>{% endif %}
+                </td>
+                <td>KES {{ row.amount|floatformat:2 }}</td>
+                <td><span class="badge badge-{{ row.status_badge_class }}">{{ row.get_status_display }}</span></td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="empty">No pending requests.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Approved requests</h2>
+          <p class="muted">Approved and paid transfers with their M-Pesa reference.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Category</th>
+              <th>To</th>
+              <th>Amount</th>
+              <th>M-Pesa reference</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in approved_money_requests %}
+              <tr>
+                <td>{{ row.created_at|date:"d M Y H:i" }}</td>
+                <td>{{ row.get_category_display }}</td>
+                <td>
+                  {{ row.get_destination_type_display }}
+                  · {{ row.destination }}
+                  {% if row.account_ref %}<span class="muted"> / {{ row.account_ref }}</span>{% endif %}
+                </td>
+                <td>KES {{ row.amount|floatformat:2 }}</td>
+                <td>
+                  {% if row.mpesa_reference %}
+                    <span class="mono">{{ row.mpesa_reference }}</span>
+                  {% else %}
+                    <span class="muted">—</span>
+                  {% endif %}
+                </td>
+                <td><span class="badge badge-{{ row.status|lower }}">{{ row.get_status_display }}</span></td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6" class="empty">No approved requests yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% else %}
+    <section class="page-intro">
+      <div class="page-intro-copy">
+        <h2>Ledger posture</h2>
+        <p>Today’s volume, connected systems, and approval backlog at a glance.</p>
+      </div>
+    </section>
+
+    <section class="stat-grid">
+      <article class="stat-card">
+        <p class="stat-label">Today</p>
+        <p class="stat-value">KES {{ today_volume|floatformat:2 }}</p>
+        <p class="stat-hint">Posted volume</p>
+      </article>
+      <article class="stat-card">
+        <p class="stat-label">Systems</p>
+        <p class="stat-value">{{ system_count }}</p>
+        <p class="stat-hint">Connected</p>
+      </article>
+      <article class="stat-card">
+        <p class="stat-label">Paybills</p>
+        <p class="stat-value">{{ paybill_count }}</p>
+        <p class="stat-hint">Accounts</p>
+      </article>
+      <article class="stat-card">
+        <p class="stat-label">Pending</p>
+        <p class="stat-value">{{ pending_people }}</p>
+        <p class="stat-hint">Approvals</p>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Latest postings</h2>
+          <p class="muted">Most recent ledger activity across paybill accounts.</p>
+        </div>
+        <a class="btn btn-ghost" href="{% url 'paybill:transactions' %}">View all</a>
+      </div>
+      <div class="table-wrap">
       <table class="data">
         <thead>
           <tr>
@@ -49,6 +256,7 @@
           {% endfor %}
         </tbody>
       </table>
-    </div>
-  </section>
+      </div>
+    </section>
+  {% endif %}
 {% endblock %}
