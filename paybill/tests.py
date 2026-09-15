@@ -463,6 +463,52 @@ class MpesaReferenceCaptureTests(TestCase):
         self.assertEqual(entry.payer_name, "Cap Ture")
         self.assertEqual(entry.money_request_id, req.pk)
 
+    def test_failed_result_marks_request_and_ledger_failed(self):
+        from integrations.callbacks import apply_result_callback
+        from integrations.models import DarajaOperation
+        from paybill.models import LedgerEntry
+        from paybill.services import ensure_money_request_ledger_entry
+
+        operation = DarajaOperation.objects.create(
+            kind=DarajaOperation.Kind.B2C,
+            status=DarajaOperation.Status.QUEUED,
+            destination="254712345678",
+            amount=Decimal("250.00"),
+            originator_conversation_id="ORIG_FAIL_1",
+            conversation_id="AG_FAIL_1",
+        )
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("250.00"),
+            reason="Site visit",
+            status=MoneyRequest.Status.APPROVED,
+            daraja_operation=operation,
+        )
+        ensure_money_request_ledger_entry(req, operation)
+        apply_result_callback(
+            {
+                "Result": {
+                    "ResultType": 0,
+                    "ResultCode": 1,
+                    "ResultDesc": "The balance is insufficient for the transaction.",
+                    "OriginatorConversationID": "ORIG_FAIL_1",
+                    "ConversationID": "AG_FAIL_1",
+                    "TransactionID": "",
+                }
+            }
+        )
+        operation.refresh_from_db()
+        req.refresh_from_db()
+        entry = LedgerEntry.objects.get(money_request=req)
+        self.assertEqual(operation.status, DarajaOperation.Status.FAILED)
+        self.assertEqual(req.status, MoneyRequest.Status.FAILED)
+        self.assertEqual(req.daraja_operation_id, operation.pk)
+        self.assertEqual(entry.status, LedgerEntry.Status.FAILED)
+
 
 class EnsureLedgerShowsInitiatorCategoryTests(TestCase):
     def setUp(self):
@@ -526,3 +572,163 @@ class EnsureLedgerShowsInitiatorCategoryTests(TestCase):
         self.assertContains(response, "Kimathi Mbae")
         self.assertContains(response, "Office supplies")
         self.assertContains(response, "testnsubject")
+
+
+class DestinationLookupTests(TestCase):
+    def setUp(self):
+        self.paybill = PaybillAccount.objects.create(
+            paybill_number="888111",
+            account_name="Hub Paybill",
+            is_active=True,
+        )
+        self.merchant = PaybillAccount.objects.create(
+            paybill_number="888222",
+            account_name="Acme Supplies Ltd",
+            is_active=True,
+        )
+        self.employee = UserModel.objects.create_user(
+            staff_code="300101",
+            password="test-pass-123",
+            email="employee.lookup@example.com",
+            first_name="Look",
+            last_name="Up",
+            role=User.Role.EMPLOYEE,
+            is_approved=True,
+        )
+        self.admin = UserModel.objects.create_user(
+            staff_code="300102",
+            password="test-pass-123",
+            email="admin.lookup@example.com",
+            first_name="Ad",
+            last_name="Min",
+            role=User.Role.ADMIN,
+            is_approved=True,
+        )
+
+    def _url(self, role: str) -> str:
+        token = set_current_role_slug(role_to_slug(role))
+        try:
+            return reverse("core:destination-lookup")
+        finally:
+            reset_current_role_slug(token)
+
+    def test_catalog_paybill_lookup(self):
+        self.client.force_login(self.employee)
+        response = self.client.get(
+            self._url(User.Role.EMPLOYEE),
+            {
+                "destination_type": MoneyRequest.DestinationType.PAYBILL,
+                "destination": "888222",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["found"])
+        self.assertEqual(payload["name"], "Acme Supplies Ltd")
+        self.assertEqual(payload["source"], "catalog")
+
+    def test_incomplete_phone_is_rejected(self):
+        self.client.force_login(self.employee)
+        response = self.client.get(
+            self._url(User.Role.EMPLOYEE),
+            {
+                "destination_type": MoneyRequest.DestinationType.PHONE,
+                "destination": "07123",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["ok"])
+        self.assertFalse(payload["found"])
+
+    def test_history_phone_name(self):
+        MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            recipient_name="Jane Wanjiku",
+            amount=Decimal("100.00"),
+            reason="Earlier trip",
+            status=MoneyRequest.Status.PAID,
+        )
+        self.client.force_login(self.employee)
+        response = self.client.get(
+            self._url(User.Role.EMPLOYEE),
+            {
+                "destination_type": MoneyRequest.DestinationType.PHONE,
+                "destination": "254712345678",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["found"])
+        self.assertEqual(payload["name"], "Jane Wanjiku")
+        self.assertEqual(payload["source"], "history")
+
+    def test_daraja_hakikisha_for_till(self):
+        from unittest.mock import patch
+
+        from integrations.models import DarajaConfig
+
+        config = DarajaConfig.load()
+        config.consumer_key = "key"
+        config.consumer_secret = "secret"
+        config.save()
+
+        self.client.force_login(self.employee)
+        with patch(
+            "paybill.lookup.DarajaClient.hakikisha",
+            return_value={
+                "ResponseCode": "4000",
+                "OrganizationName": "Corner Shop Till",
+                "OrganizationShortCode": "654321",
+            },
+        ):
+            response = self.client.get(
+                self._url(User.Role.EMPLOYEE),
+                {
+                    "destination_type": MoneyRequest.DestinationType.TILL,
+                    "destination": "654321",
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["found"])
+        self.assertEqual(payload["name"], "Corner Shop Till")
+        self.assertEqual(payload["source"], "daraja")
+
+    def test_non_employee_forbidden(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(
+            self._url(User.Role.ADMIN),
+            {
+                "destination_type": MoneyRequest.DestinationType.PAYBILL,
+                "destination": "888222",
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_submit_stores_catalog_recipient_name(self):
+        self.client.force_login(self.employee)
+        token = set_current_role_slug(role_to_slug(User.Role.EMPLOYEE))
+        try:
+            dash = reverse("core:dashboard")
+        finally:
+            reset_current_role_slug(token)
+        response = self.client.post(
+            dash,
+            {
+                "category": MoneyRequest.Category.OFFICE,
+                "destination_type": MoneyRequest.DestinationType.PAYBILL,
+                "destination": "888222",
+                "account_ref": "INV-9",
+                "amount": "250.00",
+                "reason": "Office stationery order",
+            },
+        )
+        self.assertRedirects(response, dash, fetch_redirect_response=False)
+        req = MoneyRequest.objects.get(requester=self.employee)
+        self.assertEqual(req.recipient_name, "Acme Supplies Ltd")

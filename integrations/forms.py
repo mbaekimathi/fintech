@@ -140,11 +140,11 @@ DARAJA_LABELS = {
     "b2c_command_id": "B2C command",
     "b2c_remarks": "B2C remarks",
     "b2c_occasion": "B2C occasion",
-    "b2b_enabled": "Enable send to paybill or till (B2B)",
-    "b2b_sender_identifier_type": "B2B sender identifier",
-    "b2b_paybill_command": "Command when sending to a paybill",
-    "b2b_till_command": "Command when sending to a till",
-    "b2b_remarks": "B2B remarks",
+    "b2b_enabled": "Enable paybill and till payouts",
+    "b2b_sender_identifier_type": "Float source type",
+    "b2b_paybill_command": "Command when paying a paybill",
+    "b2b_till_command": "Command when paying a till",
+    "b2b_remarks": "Remarks on each transfer",
     "agent_shop_enabled": "Enable agent shop logic",
     "agent_channel": "Agent channel",
     "agent_till_number": "Agent till number",
@@ -202,11 +202,11 @@ DARAJA_HELP = {
     "b2c_command_id": "BusinessPayment for general payouts. SalaryPayment or PromotionPayment if that is how the shortcode is configured.",
     "b2c_remarks": "Sent with each B2C payout.",
     "b2c_occasion": "Optional occasion string on the B2C request.",
-    "b2b_enabled": "Turn on Daraja B2B so this shortcode can send to another paybill or till.",
-    "b2b_sender_identifier_type": "Almost always paybill/organization shortcode (4) — this is your source account.",
-    "b2b_paybill_command": "BusinessPayBill when the destination is another paybill.",
-    "b2b_till_command": "BusinessBuyGoods when the destination is a till.",
-    "b2b_remarks": "Sent with each B2B transfer.",
+    "b2b_enabled": "Allows money requests and the test page to pay a paybill or Buy Goods till.",
+    "b2b_sender_identifier_type": "Leave as paybill/organization shortcode unless your float sits on a till.",
+    "b2b_paybill_command": "Leave as BusinessPayBill unless Safaricom told you otherwise.",
+    "b2b_till_command": "Leave as BusinessBuyGoods unless Safaricom told you otherwise.",
+    "b2b_remarks": "Shown on the M-Pesa statement for each transfer.",
     "agent_shop_enabled": "Turn on deposit and withdraw for customer phones from this hub.",
     "agent_channel": "Business shop uses STK + B2C today. Official Safaricom agent is for after you register and receive API access.",
     "agent_till_number": "Till / outlet number from your M-Pesa agent registration.",
@@ -526,8 +526,31 @@ class DarajaB2BForm(_DarajaFormBase):
         labels = DARAJA_LABELS
         help_texts = DARAJA_HELP
 
+    def __init__(self, *args, request=None, **kwargs):
+        super().__init__(*args, request=request, **kwargs)
+        # Pre-fill the usual Safaricom defaults so Advanced is ready without typing.
+        if not self.is_bound:
+            if not self.fields["b2b_sender_identifier_type"].initial and not getattr(
+                self.instance, "b2b_sender_identifier_type", None
+            ):
+                self.fields["b2b_sender_identifier_type"].initial = DarajaConfig.IdentifierType.SHORTCODE
+            if not getattr(self.instance, "b2b_paybill_command", None):
+                self.fields["b2b_paybill_command"].initial = DarajaConfig.B2BCommand.PAYBILL
+            if not getattr(self.instance, "b2b_till_command", None):
+                self.fields["b2b_till_command"].initial = DarajaConfig.B2BCommand.BUY_GOODS
+            if not (getattr(self.instance, "b2b_remarks", None) or "").strip():
+                self.fields["b2b_remarks"].initial = SANDBOX_B2B_REMARKS
+
     def save(self, commit=True):
         instance = super().save(commit=False)
+        # Keep both payout paths ready whenever B2B is on — no extra fields required.
+        if instance.b2b_enabled:
+            if not instance.b2b_paybill_command:
+                instance.b2b_paybill_command = DarajaConfig.B2BCommand.PAYBILL
+            if not instance.b2b_till_command:
+                instance.b2b_till_command = DarajaConfig.B2BCommand.BUY_GOODS
+            if not instance.b2b_sender_identifier_type:
+                instance.b2b_sender_identifier_type = DarajaConfig.IdentifierType.SHORTCODE
         self._fill_empty(instance, b2b_remarks=SANDBOX_B2B_REMARKS)
         if commit:
             instance.save()

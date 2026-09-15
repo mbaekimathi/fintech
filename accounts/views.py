@@ -91,6 +91,11 @@ def register_done(request):
 def logout_view(request):
     if request.user.is_authenticated:
         write_audit(request, "logout", object_type="user", object_id=request.user.pk)
+        # Drop this user's browser push bindings so the next session user on a
+        # shared device does not receive the previous employee's tray alerts.
+        from core.models import PushSubscription
+
+        PushSubscription.objects.filter(user=request.user).delete()
     clear_view_as_role(request)
     logout(request)
     return redirect("accounts:login")
@@ -293,7 +298,12 @@ class HRSalaryRegisterView(RoleRequiredMixin, CreateView):
             "hr.salary.register",
             object_type="employee_salary",
             object_id=self.object.pk,
-            detail={"staff_code": self.employee.staff_code, "amount": str(self.object.amount)},
+            detail={
+                "staff_code": self.employee.staff_code,
+                "basic_salary": str(self.object.basic_salary),
+                "amount": str(self.object.amount),
+                "kra_pin": self.object.kra_pin,
+            },
         )
         messages.success(self.request, f"Registered salary for {self.employee.staff_code}.")
         return response
@@ -330,7 +340,12 @@ class HRSalaryUpdateView(RoleRequiredMixin, UpdateView):
             "hr.salary.update",
             object_type="employee_salary",
             object_id=self.object.pk,
-            detail={"staff_code": self.employee.staff_code, "amount": str(self.object.amount)},
+            detail={
+                "staff_code": self.employee.staff_code,
+                "basic_salary": str(self.object.basic_salary),
+                "amount": str(self.object.amount),
+                "kra_pin": self.object.kra_pin,
+            },
         )
         messages.success(self.request, f"Updated salary for {self.employee.staff_code}.")
         return response

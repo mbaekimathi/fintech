@@ -217,13 +217,52 @@ class AuditEvent(models.Model):
 
 
 class EmployeeSalary(models.Model):
+    """Monthly salary package and Kenya statutory master data for an employee."""
+
+    class PaymentMethod(models.TextChoices):
+        BANK = "BANK", "Bank transfer"
+        MPESA = "MPESA", "M-Pesa"
+        CASH = "CASH", "Cash"
+
     employee = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
         related_name="salary",
     )
+    basic_salary = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    house_allowance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    transport_allowance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    other_allowances = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    # Gross cash pay (basic + allowances). Kept for list/admin compatibility.
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     currency = models.CharField(max_length=3, default="KES")
+
+    national_id = models.CharField("national ID / passport", max_length=20, blank=True)
+    kra_pin = models.CharField("KRA PIN", max_length=11, blank=True)
+    nssf_number = models.CharField("NSSF number", max_length=20, blank=True)
+    shif_number = models.CharField("SHIF / SHA number", max_length=20, blank=True)
+
+    is_resident = models.BooleanField(default=True)
+    is_person_with_disability = models.BooleanField(
+        "person with disability (PWD)",
+        default=False,
+    )
+    pwd_exemption_certificate = models.CharField(
+        "PWD IT exemption certificate",
+        max_length=40,
+        blank=True,
+    )
+
+    payment_method = models.CharField(
+        max_length=10,
+        choices=PaymentMethod.choices,
+        default=PaymentMethod.BANK,
+    )
+    bank_name = models.CharField(max_length=80, blank=True)
+    bank_branch = models.CharField(max_length=80, blank=True)
+    bank_account_number = models.CharField(max_length=34, blank=True)
+    mpesa_number = models.CharField("M-Pesa number", max_length=15, blank=True)
+
     notes = models.CharField(max_length=255, blank=True)
     updated_by = models.ForeignKey(
         User,
@@ -242,3 +281,44 @@ class EmployeeSalary(models.Model):
 
     def __str__(self):
         return f"{self.employee.staff_code} · {self.currency} {self.amount}"
+
+    def compute_gross(self):
+        from accounts.kenya_payroll import gross_pay
+
+        return gross_pay(
+            self.basic_salary,
+            self.house_allowance,
+            self.transport_allowance,
+            self.other_allowances,
+        )
+
+    def statutory_estimate(self):
+        from accounts.kenya_payroll import estimate_statutory
+
+        return estimate_statutory(
+            basic_salary=self.basic_salary,
+            house_allowance=self.house_allowance,
+            transport_allowance=self.transport_allowance,
+            other_allowances=self.other_allowances,
+            is_resident=self.is_resident,
+            is_person_with_disability=self.is_person_with_disability,
+        )
+
+    def save(self, *args, **kwargs):
+        self.amount = self.compute_gross()
+        if self.kra_pin:
+            self.kra_pin = self.kra_pin.strip().upper()
+        if self.currency:
+            self.currency = self.currency.strip().upper()
+        if self.payment_method == self.PaymentMethod.BANK:
+            self.mpesa_number = ""
+        elif self.payment_method == self.PaymentMethod.MPESA:
+            self.bank_name = ""
+            self.bank_branch = ""
+            self.bank_account_number = ""
+        elif self.payment_method == self.PaymentMethod.CASH:
+            self.bank_name = ""
+            self.bank_branch = ""
+            self.bank_account_number = ""
+            self.mpesa_number = ""
+        super().save(*args, **kwargs)

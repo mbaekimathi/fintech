@@ -135,6 +135,7 @@ class MoneyRequest(models.Model):
         APPROVED = "APPROVED", "Approved"
         REJECTED = "REJECTED", "Rejected"
         PAID = "PAID", "Paid"
+        FAILED = "FAILED", "Failed"
 
     requester = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -150,6 +151,11 @@ class MoneyRequest(models.Model):
     category = models.CharField(max_length=20, choices=Category.choices)
     destination_type = models.CharField(max_length=12, choices=DestinationType.choices)
     destination = models.CharField(max_length=20)
+    recipient_name = models.CharField(
+        max_length=160,
+        blank=True,
+        help_text="Verified recipient or business name from live lookup.",
+    )
     account_ref = models.CharField(
         max_length=64,
         blank=True,

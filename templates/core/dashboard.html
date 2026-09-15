@@ -36,7 +36,8 @@
           x-data="moneyRequestPanel({
             type: '{{ money_form.destination_type.value|default:money_form.destination_type.field.initial|default:'PHONE'|escapejs }}',
             destination: '{{ money_form.destination.value|default_if_none:''|escapejs }}',
-            accountRef: '{{ money_form.account_ref.value|default_if_none:''|escapejs }}'
+            accountRef: '{{ money_form.account_ref.value|default_if_none:''|escapejs }}',
+            lookupUrl: '{% url 'core:destination-lookup' %}'
           })"
         >
           {% csrf_token %}
@@ -78,6 +79,24 @@
                 :placeholder="destinationPlaceholder"
               >
               <span class="field-hint" x-text="destinationHint"></span>
+              <span
+                class="recipient-lookup"
+                x-show="showLookup"
+                x-cloak
+                :class="{
+                  'is-loading': lookupState === 'loading',
+                  'is-found': lookupState === 'found',
+                  'is-missing': lookupState === 'missing'
+                }"
+                role="status"
+                aria-live="polite"
+              >
+                <span x-show="lookupState === 'found'">
+                  Recipient:
+                  <strong x-text="recipientName"></strong>
+                </span>
+                <span x-show="lookupState !== 'found'" x-text="lookupDetail"></span>
+              </span>
               {% if money_form.destination.errors %}
                 <span class="field-error">{{ money_form.destination.errors|join:", " }}</span>
               {% endif %}
@@ -135,6 +154,7 @@
                 <td>
                   {{ row.get_destination_type_display }}
                   · {{ row.destination }}
+                  {% if row.recipient_name %}<span class="muted"> · {{ row.recipient_name }}</span>{% endif %}
                   {% if row.account_ref %}<span class="muted"> / {{ row.account_ref }}</span>{% endif %}
                 </td>
                 <td>KES {{ row.amount|floatformat:2 }}</td>
@@ -152,7 +172,7 @@
       <div class="panel-head">
         <div>
           <h2>Approved requests</h2>
-          <p class="muted">Approved and paid transfers with their M-Pesa reference.</p>
+          <p class="muted">Approved, paid, and failed transfers with their M-Pesa reference when available.</p>
         </div>
       </div>
       <div class="table-wrap">
@@ -175,6 +195,7 @@
                 <td>
                   {{ row.get_destination_type_display }}
                   · {{ row.destination }}
+                  {% if row.recipient_name %}<span class="muted"> · {{ row.recipient_name }}</span>{% endif %}
                   {% if row.account_ref %}<span class="muted"> / {{ row.account_ref }}</span>{% endif %}
                 </td>
                 <td>KES {{ row.amount|floatformat:2 }}</td>

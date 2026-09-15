@@ -175,6 +175,7 @@ class MoneyRequestReviewView(RoleRequiredMixin, View):
         if money_request.status in {
             MoneyRequest.Status.PAID,
             MoneyRequest.Status.APPROVED,
+            MoneyRequest.Status.FAILED,
         }:
             notify_money_request_result(money_request, actor=request.user)
 
@@ -194,7 +195,7 @@ class MoneyRequestReviewView(RoleRequiredMixin, View):
                 request,
                 operation.summary
                 or operation.result_desc
-                or "Transfer did not complete. Request left pending so you can retry.",
+                or "Transfer failed. Request marked as failed.",
             )
         return redirect(next_url)
 

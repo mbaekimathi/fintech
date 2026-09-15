@@ -123,6 +123,95 @@ class NotificationFlowTests(TestCase):
         )
         self.assertIn("rejected", employee_note.title.lower())
 
+    def test_header_shows_only_session_user_notifications(self):
+        other = UserModel.objects.create_user(
+            staff_code="400099",
+            password="test-pass-123",
+            email="other.notify@example.com",
+            first_name="Other",
+            last_name="Emp",
+            role=User.Role.EMPLOYEE,
+            is_approved=True,
+        )
+        mine = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("100.00"),
+            reason="Mine",
+            status=MoneyRequest.Status.PAID,
+        )
+        theirs = MoneyRequest.objects.create(
+            requester=other,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.MEALS,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0799999999",
+            amount=Decimal("200.00"),
+            reason="Theirs",
+            status=MoneyRequest.Status.PAID,
+        )
+        Notification.objects.create(
+            recipient=self.employee,
+            kind=Notification.Kind.MONEY_REQUEST_RESULT,
+            title="Request paid: KES 100.00",
+            body="Phone number · 0712345678",
+            money_request=mine,
+        )
+        Notification.objects.create(
+            recipient=other,
+            kind=Notification.Kind.MONEY_REQUEST_RESULT,
+            title="Request paid: KES 200.00",
+            body="Phone number · 0799999999",
+            money_request=theirs,
+        )
+        # Review-queue copy must not appear for an employee session.
+        Notification.objects.create(
+            recipient=self.employee,
+            actor=other,
+            kind=Notification.Kind.MONEY_REQUEST,
+            title="Other Emp requested KES 200.00",
+            body="Phone number · 0799999999",
+            money_request=theirs,
+        )
+
+        self.client.force_login(self.employee)
+        page = self.client.get(self._url(User.Role.EMPLOYEE, "core:dashboard"))
+        self.assertContains(page, "Request paid: KES 100.00")
+        self.assertNotContains(page, "Request paid: KES 200.00")
+        self.assertNotContains(page, "Other Emp requested")
+
+    def test_role_switch_hides_review_queue_for_employee_view(self):
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("750.00"),
+            reason="Field visit fuel",
+            status=MoneyRequest.Status.PENDING,
+        )
+        Notification.objects.create(
+            recipient=self.it_support,
+            actor=self.employee,
+            kind=Notification.Kind.MONEY_REQUEST,
+            title="Emp Loyee requested KES 750.00",
+            body="Phone number · 0712345678",
+            money_request=req,
+        )
+        self.client.force_login(self.it_support)
+        as_it = self.client.get(self._url(User.Role.IT_SUPPORT, "core:dashboard"))
+        self.assertContains(as_it, "Emp Loyee requested KES 750.00")
+
+        session = self.client.session
+        session["view_as_role"] = User.Role.EMPLOYEE
+        session.save()
+        as_employee = self.client.get(self._url(User.Role.EMPLOYEE, "core:dashboard"))
+        self.assertNotContains(as_employee, "Emp Loyee requested KES 750.00")
+
     def test_approve_from_notification_triggers_transfer(self):
         req = MoneyRequest.objects.create(
             requester=self.employee,
@@ -231,6 +320,25 @@ class WebPushTests(TestCase):
         row = PushSubscription.objects.get(user=self.it_support)
         self.assertEqual(row.endpoint, "https://push.example/x")
         self.assertEqual(row.endpoint_hash, PushSubscription.hash_endpoint(row.endpoint))
+
+    def test_subscribe_rebinds_endpoint_to_session_user(self):
+        PushSubscription.objects.create(
+            user=self.it_support,
+            endpoint="https://push.example/shared",
+            endpoint_hash=PushSubscription.hash_endpoint("https://push.example/shared"),
+            p256dh="abc",
+            auth="def",
+        )
+        self.client.force_login(self.employee)
+        response = self.client.post(
+            self._url(User.Role.EMPLOYEE, "core:push-subscribe"),
+            data='{"endpoint":"https://push.example/shared","keys":{"p256dh":"abc","auth":"def"}}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        row = PushSubscription.objects.get(endpoint="https://push.example/shared")
+        self.assertEqual(row.user_id, self.employee.pk)
+        self.assertFalse(PushSubscription.objects.filter(user=self.it_support).exists())
 
     def test_money_request_triggers_web_push(self):
         PushSubscription.objects.create(

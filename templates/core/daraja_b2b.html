@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Paybill payout{% endblock %}
+{% block title %}Paybill &amp; till payout{% endblock %}
 {% block eyebrow %}Daraja{% endblock %}
-{% block heading %}Paybill payout{% endblock %}
+{% block heading %}Paybill &amp; till payout{% endblock %}
 {% block content %}
   <section class="page-intro">
     <div class="page-intro-copy">
-      <h2>B2B paybill &amp; till payouts</h2>
-      <p>Send to another paybill or till using the shared initiator and command settings.</p>
+      <h2>Send to a paybill or till</h2>
+      <p>One switch. Uses the same float and initiator as live balance. Pick paybill or till on each transfer.</p>
     </div>
   </section>
   {% include "partials/daraja_status.html" %}
@@ -20,23 +20,51 @@
     <section class="panel">
       <div class="panel-head">
         <div>
-          <h2>Send to another paybill or till (B2B)</h2>
-          <p class="muted">Same initiator as balance. Destination shortcode or till is entered per transfer on the test page.</p>
+          <h2>Turn on B2B</h2>
+          <p class="muted">
+            {% if config.balance_ready %}
+              Live balance is ready — you only need to enable payouts below.
+            {% else %}
+              Finish <a href="{% url 'core:daraja-balance' %}">live balance</a> first (initiator + organization shortcode), then come back here.
+            {% endif %}
+          </p>
         </div>
       </div>
+
       <div class="form-grid">
         {% include "partials/labeled_field.html" with field=form.b2b_enabled span="2" %}
-        {% include "partials/labeled_field.html" with field=form.b2b_sender_identifier_type %}
-        {% include "partials/labeled_field.html" with field=form.b2b_paybill_command %}
-        {% include "partials/labeled_field.html" with field=form.b2b_till_command %}
-        {% include "partials/labeled_field.html" with field=form.b2b_remarks %}
       </div>
+
+      <ol class="setup-guide">
+        <li>Uses your organization shortcode float (same as balance).</li>
+        <li>Paybill destinations use <strong>BusinessPayBill</strong>.</li>
+        <li>Till destinations use <strong>BusinessBuyGoods</strong>.</li>
+        <li>Enter the destination number and amount per transfer on money requests or the test page.</li>
+      </ol>
+
+      <details class="advanced-fields"{% if form.b2b_sender_identifier_type.errors or form.b2b_paybill_command.errors or form.b2b_till_command.errors or form.b2b_remarks.errors %} open{% endif %}>
+        <summary>Advanced (rarely needed)</summary>
+        <p class="muted">Defaults are correct for almost every paybill. Change only if Safaricom configured your shortcode differently.</p>
+        <div class="form-grid">
+          {% include "partials/labeled_field.html" with field=form.b2b_sender_identifier_type %}
+          {% include "partials/labeled_field.html" with field=form.b2b_remarks %}
+          {% include "partials/labeled_field.html" with field=form.b2b_paybill_command %}
+          {% include "partials/labeled_field.html" with field=form.b2b_till_command %}
+        </div>
+      </details>
     </section>
 
     <div class="toolbar">
-      <button type="submit" class="btn btn-primary" name="intent" value="save">Save paybill payout</button>
-      <a class="btn btn-ghost" href="{% url 'core:daraja-balance' %}">Live balance</a>
-      <a class="btn btn-ghost" href="{% url 'core:daraja-test' %}">Test credentials</a>
+      {% if config.b2b_enabled %}
+        <button type="submit" class="btn btn-primary" name="intent" value="save">Save B2B</button>
+      {% else %}
+        <button type="submit" class="btn btn-primary" name="intent" value="enable">Enable B2B</button>
+      {% endif %}
+      {% if not config.balance_ready %}
+        <a class="btn btn-ghost" href="{% url 'core:daraja-balance' %}">Set up live balance</a>
+      {% else %}
+        <a class="btn btn-ghost" href="{% url 'core:daraja-test' %}">Test a payout</a>
+      {% endif %}
     </div>
   </form>
 {% endblock %}

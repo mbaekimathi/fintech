@@ -9,6 +9,7 @@ from core.views import (
     DarajaSetupView,
     DarajaStkSetupView,
     DarajaTestView,
+    DestinationLookupView,
     NotificationMarkReadView,
     NotificationOpenView,
     NotificationReviewView,
@@ -22,6 +23,11 @@ app_name = "core"
 
 urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),
+    path(
+        "money-requests/lookup/",
+        DestinationLookupView.as_view(),
+        name="destination-lookup",
+    ),
     path("settings/", SettingsView.as_view(), name="settings"),
     path("settings/daraja/", DarajaSetupView.as_view(), name="daraja"),
     path("settings/daraja/stk/", DarajaStkSetupView.as_view(), name="daraja-stk"),

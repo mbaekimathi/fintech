@@ -6,7 +6,7 @@
   <section class="page-intro">
     <div class="page-intro-copy">
       <h2>Salary register</h2>
-      <p>Register or update compensation for each active employee.</p>
+      <p>Register Kenyan salary packages: basic pay, allowances, KRA/NSSF/SHIF IDs, and payout method.</p>
     </div>
   </section>
 
@@ -14,7 +14,7 @@
     <div class="panel-head">
       <div>
         <h2>Salaries</h2>
-        <p class="muted">Amounts shown in registered currency.</p>
+        <p class="muted">Gross cash pay shown in registered currency.</p>
       </div>
     </div>
     <div class="table-wrap">
@@ -24,7 +24,10 @@
             <th>Code</th>
             <th>Name</th>
             <th>Role</th>
-            <th>Salary</th>
+            <th>Basic</th>
+            <th>Gross</th>
+            <th>Payout</th>
+            <th>KRA PIN</th>
             <th></th>
           </tr>
         </thead>
@@ -36,9 +39,30 @@
               <td>{{ person.get_role_display }}</td>
               <td>
                 {% if person.salary %}
+                  {{ person.salary.currency }} {{ person.salary.basic_salary }}
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if person.salary %}
                   {{ person.salary.currency }} {{ person.salary.amount }}
                 {% else %}
                   <span class="muted">Not registered</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if person.salary %}
+                  {{ person.salary.get_payment_method_display }}
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if person.salary and person.salary.kra_pin %}
+                  <span class="mono">{{ person.salary.kra_pin }}</span>
+                {% else %}
+                  <span class="muted">—</span>
                 {% endif %}
               </td>
               <td>
@@ -50,7 +74,7 @@
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="5" class="empty">No active employees.</td></tr>
+            <tr><td colspan="8" class="empty">No active employees.</td></tr>
           {% endfor %}
         </tbody>
       </table>

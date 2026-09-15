@@ -28,7 +28,10 @@ def notify_money_request_submitted(money_request: MoneyRequest) -> int:
     name = requester.get_full_name() or requester.staff_code
     dest = money_request.get_destination_type_display()
     title = f"{name} requested KES {money_request.amount:,.2f}"
+    recipient = (money_request.recipient_name or "").strip()
     body = f"{dest} · {money_request.destination}"
+    if recipient:
+        body = f"{body} ({recipient})"
     if money_request.account_ref:
         body = f"{body} / {money_request.account_ref}"
     url = "/paybill/transactions/"
@@ -69,6 +72,7 @@ def notify_money_request_result(money_request: MoneyRequest, *, actor=None) -> N
 
 
 def mark_money_request_notifications_read(money_request: MoneyRequest) -> int:
+    """Mark every reviewer's copy for this request as read (request is resolved)."""
     return Notification.objects.filter(
         money_request=money_request,
         kind=Notification.Kind.MONEY_REQUEST,
@@ -82,12 +86,42 @@ def mark_notification_read(notification: Notification) -> None:
         notification.save(update_fields=["is_read"])
 
 
+def _session_user_id(user) -> int | None:
+    if not user or not getattr(user, "is_authenticated", False):
+        return None
+    pk = getattr(user, "pk", None)
+    return int(pk) if pk else None
+
+
+def notifications_for_session_user(user):
+    """
+    Notifications visible to the authenticated session user only.
+
+    Rows are always scoped to recipient=user. Kind is further limited by the
+    effective role in this request (so a role-switched session does not show
+    another workspace's review queue).
+    """
+    user_id = _session_user_id(user)
+    if user_id is None:
+        return Notification.objects.none()
+
+    qs = Notification.objects.filter(recipient_id=user_id)
+    role = getattr(user, "effective_role", None) or getattr(user, "role", None)
+    if role in REVIEW_ROLES or (
+        getattr(user, "is_superuser", False) and not getattr(user, "is_role_switched", False)
+    ):
+        return qs
+    # Employees and other non-review sessions only see their own result updates.
+    return qs.filter(kind=Notification.Kind.MONEY_REQUEST_RESULT)
+
+
 def user_notifications(user, *, limit: int = 12):
-    return (
-        Notification.objects.filter(recipient=user)
-        .select_related("actor", "money_request", "money_request__requester")[:limit]
-    )
+    return notifications_for_session_user(user).select_related(
+        "actor",
+        "money_request",
+        "money_request__requester",
+    )[:limit]
 
 
 def unread_notification_count(user) -> int:
-    return Notification.objects.filter(recipient=user, is_read=False).count()
+    return notifications_for_session_user(user).filter(is_read=False).count()

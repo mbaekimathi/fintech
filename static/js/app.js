@@ -1,3 +1,88 @@
+function kenyaSalaryForm(config) {
+  const num = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const money = (value) => Math.round((num(value) + Number.EPSILON) * 100) / 100;
+  const NSSF_LEL = 9000;
+  const NSSF_UEL = 108000;
+  const NSSF_RATE = 0.06;
+  const SHIF_RATE = 0.0275;
+  const SHIF_MIN = 300;
+  const AHL_RATE = 0.015;
+  const PERSONAL_RELIEF = 2400;
+  const PAYE_BANDS = [
+    [24000, 0.1],
+    [32333, 0.25],
+    [500000, 0.3],
+    [800000, 0.325],
+    [null, 0.35],
+  ];
+
+  const nssfEmployee = (pensionable) => {
+    const pay = Math.min(Math.max(money(pensionable), 0), NSSF_UEL);
+    const tierI = money(Math.min(pay, NSSF_LEL) * NSSF_RATE);
+    const tierII = money(Math.max(pay - NSSF_LEL, 0) * NSSF_RATE);
+    return money(tierI + tierII);
+  };
+
+  const payeBeforeRelief = (taxable) => {
+    let remaining = Math.max(money(taxable), 0);
+    let tax = 0;
+    let lower = 0;
+    for (const [upper, rate] of PAYE_BANDS) {
+      if (remaining <= 0) break;
+      const width = upper == null ? remaining : Math.max(Math.min(remaining, upper - lower), 0);
+      tax += width * rate;
+      remaining -= width;
+      if (upper != null) lower = upper;
+    }
+    return money(tax);
+  };
+
+  return {
+    basic: num(config.basic),
+    house: num(config.house),
+    transport: num(config.transport),
+    other: num(config.other),
+    isResident: Boolean(config.isResident),
+    isPwd: Boolean(config.isPwd),
+    paymentMethod: config.paymentMethod || "BANK",
+    get gross() {
+      return money(this.basic + this.house + this.transport + this.other);
+    },
+    get estimate() {
+      const gross = this.gross;
+      const nssf = nssfEmployee(gross);
+      const shif = gross > 0 ? money(Math.max(gross * SHIF_RATE, SHIF_MIN)) : 0;
+      const ahl = money(gross * AHL_RATE);
+      let paye = 0;
+      if (!this.isPwd) {
+        const taxable = money(Math.max(gross - nssf - shif - ahl, 0));
+        paye = payeBeforeRelief(taxable);
+        if (this.isResident) paye = money(Math.max(paye - PERSONAL_RELIEF, 0));
+      }
+      const employeeDeductions = money(nssf + shif + ahl + paye);
+      return {
+        nssfEmployee: nssf,
+        nssfEmployer: nssf,
+        shif,
+        ahlEmployee: ahl,
+        ahlEmployer: ahl,
+        paye,
+        employeeDeductions,
+        netPay: money(gross - employeeDeductions),
+      };
+    },
+    formatMoney(value) {
+      return `KES ${money(value).toLocaleString("en-KE", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
+    },
+  };
+}
+
 function sendMoneyPanel(config) {
   const digits = (value) => String(value || "").replace(/\D/g, "");
   return {
@@ -76,8 +161,17 @@ function moneyRequestPanel(config) {
     type: config.type || "PHONE",
     destination: digits(config.destination),
     accountRef: config.accountRef || "",
+    lookupUrl: config.lookupUrl || "",
+    lookupTimer: null,
+    lookupToken: 0,
+    lookupState: "idle",
+    recipientName: "",
+    lookupDetail: "",
     init() {
       this.onTypeChange(true);
+      this.$watch("destination", () => this.scheduleLookup());
+      this.$watch("type", () => this.scheduleLookup());
+      this.scheduleLookup();
     },
     get destinationLabel() {
       if (this.type === "PHONE") return "Phone number";
@@ -99,6 +193,74 @@ function moneyRequestPanel(config) {
       if (this.type === "TILL") return "Request transfer to till";
       return "Request transfer to paybill";
     },
+    get showLookup() {
+      return this.lookupState === "loading" || this.lookupState === "found" || this.lookupState === "missing";
+    },
+    readyForLookup(value) {
+      const dest = digits(value);
+      if (this.type === "PHONE") {
+        return (
+          (dest.startsWith("254") && dest.length === 12) ||
+          (dest.startsWith("0") && dest.length === 10) ||
+          dest.length === 9
+        );
+      }
+      return dest.length >= 5 && dest.length <= 8 && !dest.startsWith("254");
+    },
+    clearLookup() {
+      this.lookupState = "idle";
+      this.recipientName = "";
+      this.lookupDetail = "";
+    },
+    scheduleLookup() {
+      if (this.lookupTimer) {
+        clearTimeout(this.lookupTimer);
+        this.lookupTimer = null;
+      }
+      this.clearLookup();
+      if (!this.lookupUrl || !this.readyForLookup(this.destination)) return;
+      this.lookupState = "loading";
+      this.lookupTimer = setTimeout(() => this.runLookup(), 450);
+    },
+    async runLookup() {
+      if (!this.lookupUrl || !this.readyForLookup(this.destination)) {
+        this.clearLookup();
+        return;
+      }
+      const token = ++this.lookupToken;
+      const dest = digits(this.destination);
+      const type = this.type;
+      this.lookupState = "loading";
+      this.recipientName = "";
+      this.lookupDetail = "Checking recipient…";
+      try {
+        const url = new URL(this.lookupUrl, window.location.origin);
+        url.searchParams.set("destination_type", type);
+        url.searchParams.set("destination", dest);
+        const response = await fetch(url.toString(), {
+          headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+          credentials: "same-origin",
+        });
+        const data = await response.json().catch(() => ({}));
+        if (token !== this.lookupToken || digits(this.destination) !== dest || this.type !== type) {
+          return;
+        }
+        if (data.found && data.name) {
+          this.lookupState = "found";
+          this.recipientName = data.name;
+          this.lookupDetail = "";
+          return;
+        }
+        this.lookupState = "missing";
+        this.recipientName = "";
+        this.lookupDetail = data.detail || "Name not available yet.";
+      } catch (error) {
+        if (token !== this.lookupToken) return;
+        this.lookupState = "missing";
+        this.recipientName = "";
+        this.lookupDetail = "Could not check recipient right now.";
+      }
+    },
     onTypeChange(fromInit = false) {
       const current = digits(this.destination);
       const looksPhone = current.startsWith("254") || current.startsWith("0") || current.length >= 9;
@@ -110,6 +272,7 @@ function moneyRequestPanel(config) {
       } else if (!fromInit && (looksPhone || !looksShortcode)) {
         this.destination = "";
       }
+      if (!fromInit) this.scheduleLookup();
     },
   };
 }
@@ -445,6 +608,34 @@ function initWebPush() {
     }
   };
 
+  const postSubscription = async (sub) => {
+    const response = await fetch(config.subscribeUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "X-CSRFToken": csrf,
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      body: JSON.stringify(sub.toJSON()),
+      credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error("Subscribe failed");
+  };
+
+  const bindExistingSubscription = async () => {
+    // Re-attach an existing browser push endpoint to the current session user
+    // so shared devices do not keep delivering another employee's alerts.
+    if (Notification.permission !== "granted") return;
+    try {
+      const reg = await navigator.serviceWorker.getRegistration(config.swUrl);
+      const sub = reg && (await reg.pushManager.getSubscription());
+      if (sub) await postSubscription(sub);
+    } catch (_err) {
+      /* ignore bind failures; user can re-enable manually */
+    }
+  };
+
   const subscribe = async () => {
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
@@ -460,23 +651,12 @@ function initWebPush() {
         applicationServerKey: urlBase64ToUint8Array(vapidKey),
       });
     }
-    const response = await fetch(config.subscribeUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "X-CSRFToken": csrf,
-        "X-Requested-With": "XMLHttpRequest",
-      },
-      body: JSON.stringify(sub.toJSON()),
-      credentials: "same-origin",
-    });
-    if (!response.ok) throw new Error("Subscribe failed");
+    await postSubscription(sub);
     await syncLabel();
   };
 
   navigator.serviceWorker.register(config.swUrl, { scope: "/" }).catch(() => {});
-  syncLabel();
+  bindExistingSubscription().finally(syncLabel);
   if (enableBtn) {
     enableBtn.addEventListener("click", async () => {
       enableBtn.disabled = true;

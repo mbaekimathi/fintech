@@ -97,3 +97,113 @@ class RoleSwitchTests(TestCase):
         self.client.post(reverse("accounts:logout"))
         self.client.force_login(self.it)
         self.assertIsNone(self.client.session.get(SESSION_KEY))
+
+
+class KenyaSalaryRegisterTests(TestCase):
+    def setUp(self):
+        self.hr = UserModel.objects.create_user(
+            staff_code="200001",
+            password="test-pass-123",
+            email="hr.manager@example.com",
+            first_name="Ada",
+            last_name="Okello",
+            role=User.Role.MANAGER,
+            is_approved=True,
+        )
+        self.employee = UserModel.objects.create_user(
+            staff_code="200002",
+            password="test-pass-123",
+            email="paid.staff@example.com",
+            first_name="Paid",
+            last_name="Staff",
+            role=User.Role.EMPLOYEE,
+            is_approved=True,
+        )
+
+    def _url(self, name, *args):
+        token = set_current_role_slug("manager")
+        try:
+            return reverse(name, args=args)
+        finally:
+            reset_current_role_slug(token)
+
+    def test_register_page_shows_kenya_fields(self):
+        self.client.force_login(self.hr)
+        response = self.client.get(self._url("accounts:hr-salary-register", self.employee.pk))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Basic salary")
+        self.assertContains(response, "KRA PIN")
+        self.assertContains(response, "NSSF number")
+        self.assertContains(response, "SHIF / SHA number")
+        self.assertContains(response, "Estimated statutory deductions")
+        self.assertContains(response, "Payment method")
+        self.assertContains(response, "M-Pesa")
+
+    def test_register_persists_kenya_package(self):
+        from decimal import Decimal
+
+        from accounts.models import EmployeeSalary
+
+        self.client.force_login(self.hr)
+        response = self.client.post(
+            self._url("accounts:hr-salary-register", self.employee.pk),
+            {
+                "basic_salary": "80000",
+                "house_allowance": "15000",
+                "transport_allowance": "5000",
+                "other_allowances": "0",
+                "currency": "KES",
+                "national_id": "32109876",
+                "kra_pin": "a123456789z",
+                "nssf_number": "987654321",
+                "shif_number": "7654321",
+                "is_resident": "on",
+                "payment_method": "BANK",
+                "bank_name": "Equity Bank",
+                "bank_branch": "Kisumu",
+                "bank_account_number": "012345678901",
+                "mpesa_number": "",
+                "notes": "",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        salary = EmployeeSalary.objects.get(employee=self.employee)
+        self.assertEqual(salary.basic_salary, Decimal("80000.00"))
+        self.assertEqual(salary.amount, Decimal("100000.00"))
+        self.assertEqual(salary.kra_pin, "A123456789Z")
+        self.assertEqual(salary.nssf_number, "987654321")
+        self.assertEqual(salary.shif_number, "7654321")
+        self.assertEqual(salary.payment_method, EmployeeSalary.PaymentMethod.BANK)
+        self.assertTrue(salary.is_resident)
+
+    def test_register_mpesa_payout(self):
+        from accounts.models import EmployeeSalary
+
+        self.client.force_login(self.hr)
+        response = self.client.post(
+            self._url("accounts:hr-salary-register", self.employee.pk),
+            {
+                "basic_salary": "50000",
+                "house_allowance": "0",
+                "transport_allowance": "0",
+                "other_allowances": "0",
+                "currency": "KES",
+                "national_id": "32109876",
+                "kra_pin": "A123456789Z",
+                "nssf_number": "987654321",
+                "shif_number": "7654321",
+                "is_resident": "on",
+                "payment_method": "MPESA",
+                "bank_name": "Equity Bank",
+                "bank_branch": "Kisumu",
+                "bank_account_number": "012345678901",
+                "mpesa_number": "0712345678",
+                "notes": "",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        salary = EmployeeSalary.objects.get(employee=self.employee)
+        self.assertEqual(salary.payment_method, EmployeeSalary.PaymentMethod.MPESA)
+        self.assertEqual(salary.mpesa_number, "254712345678")
+        self.assertEqual(salary.bank_name, "")
+        self.assertEqual(salary.bank_account_number, "")

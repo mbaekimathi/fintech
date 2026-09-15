@@ -198,25 +198,129 @@ class EmployeeEditForm(forms.ModelForm):
 class EmployeeSalaryForm(forms.ModelForm):
     class Meta:
         model = EmployeeSalary
-        fields = ("amount", "currency", "notes")
+        fields = (
+            "basic_salary",
+            "house_allowance",
+            "transport_allowance",
+            "other_allowances",
+            "currency",
+            "national_id",
+            "kra_pin",
+            "nssf_number",
+            "shif_number",
+            "is_resident",
+            "is_person_with_disability",
+            "pwd_exemption_certificate",
+            "payment_method",
+            "bank_name",
+            "bank_branch",
+            "bank_account_number",
+            "mpesa_number",
+            "notes",
+        )
         widgets = {
-            "amount": forms.NumberInput(
-                attrs={"class": "field", "step": "0.01", "min": "0", "inputmode": "decimal"}
+            "basic_salary": forms.NumberInput(
+                attrs={"class": "field", "step": "0.01", "min": "0", "inputmode": "decimal", "x-model.number": "basic"}
+            ),
+            "house_allowance": forms.NumberInput(
+                attrs={"class": "field", "step": "0.01", "min": "0", "inputmode": "decimal", "x-model.number": "house"}
+            ),
+            "transport_allowance": forms.NumberInput(
+                attrs={
+                    "class": "field",
+                    "step": "0.01",
+                    "min": "0",
+                    "inputmode": "decimal",
+                    "x-model.number": "transport",
+                }
+            ),
+            "other_allowances": forms.NumberInput(
+                attrs={"class": "field", "step": "0.01", "min": "0", "inputmode": "decimal", "x-model.number": "other"}
             ),
             "currency": forms.TextInput(attrs={"class": "field", "maxlength": "3"}),
+            "national_id": forms.TextInput(attrs={"class": "field", "autocomplete": "off"}),
+            "kra_pin": forms.TextInput(
+                attrs={"class": "field", "maxlength": "11", "placeholder": "A000000000Z", "autocomplete": "off"}
+            ),
+            "nssf_number": forms.TextInput(attrs={"class": "field", "autocomplete": "off"}),
+            "shif_number": forms.TextInput(attrs={"class": "field", "autocomplete": "off"}),
+            "is_resident": forms.CheckboxInput(attrs={"class": "check", "x-model": "isResident"}),
+            "is_person_with_disability": forms.CheckboxInput(attrs={"class": "check", "x-model": "isPwd"}),
+            "pwd_exemption_certificate": forms.TextInput(attrs={"class": "field", "autocomplete": "off"}),
+            "payment_method": forms.Select(attrs={"class": "select", "x-model": "paymentMethod"}),
+            "bank_name": forms.TextInput(attrs={"class": "field"}),
+            "bank_branch": forms.TextInput(attrs={"class": "field"}),
+            "bank_account_number": forms.TextInput(attrs={"class": "field", "autocomplete": "off"}),
+            "mpesa_number": forms.TextInput(
+                attrs={
+                    "class": "field",
+                    "inputmode": "tel",
+                    "placeholder": "07XXXXXXXX or 2547XXXXXXXX",
+                    "autocomplete": "tel",
+                }
+            ),
             "notes": forms.TextInput(attrs={"class": "field"}),
         }
         labels = {
-            "amount": "Gross salary",
+            "basic_salary": "Basic salary",
+            "house_allowance": "House allowance",
+            "transport_allowance": "Transport / commuter allowance",
+            "other_allowances": "Other cash allowances",
             "currency": "Currency",
+            "national_id": "National ID / passport",
+            "kra_pin": "KRA PIN",
+            "nssf_number": "NSSF number",
+            "shif_number": "SHIF / SHA number",
+            "is_resident": "Tax resident in Kenya",
+            "is_person_with_disability": "Person with disability (PWD tax exemption)",
+            "pwd_exemption_certificate": "PWD IT exemption certificate number",
+            "payment_method": "Payment method",
+            "bank_name": "Bank name",
+            "bank_branch": "Bank branch",
+            "bank_account_number": "Bank account number",
+            "mpesa_number": "M-Pesa number",
             "notes": "Notes",
+        }
+        help_texts = {
+            "basic_salary": "Contractual monthly basic pay before allowances.",
+            "house_allowance": "Cash housing allowance paid with salary (not housing benefit in kind).",
+            "transport_allowance": "Monthly transport or commuter cash allowance.",
+            "other_allowances": "Airtime, leave pay, and other fixed cash allowances.",
+            "kra_pin": "11-character PIN required for PAYE / P9 / P10 filing.",
+            "nssf_number": "Member number for NSSF remittance returns.",
+            "shif_number": "Social Health Authority member number (replaces NHIF).",
+            "is_resident": "Residents receive the monthly personal relief of KES 2,400.",
+            "is_person_with_disability": "When certified, PAYE is treated as exempt on this estimate.",
+            "payment_method": "How this employee should receive net pay each month.",
+            "bank_account_number": "Account that should receive net pay.",
+            "mpesa_number": "Kenyan mobile number that should receive net pay.",
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["currency"].required = True
+        self.fields["basic_salary"].required = True
+        self.fields["kra_pin"].required = True
+        self.fields["national_id"].required = True
+        self.fields["nssf_number"].required = True
+        self.fields["shif_number"].required = True
+        self.fields["payment_method"].required = True
+        for name in (
+            "house_allowance",
+            "transport_allowance",
+            "other_allowances",
+            "bank_name",
+            "bank_branch",
+            "bank_account_number",
+            "mpesa_number",
+        ):
+            self.fields[name].required = False
         if not self.instance.pk and not self.initial.get("currency"):
             self.fields["currency"].initial = "KES"
+        if not self.instance.pk and not self.initial.get("payment_method"):
+            self.fields["payment_method"].initial = EmployeeSalary.PaymentMethod.BANK
+        if self.instance.pk and self.instance.is_person_with_disability:
+            self.fields["pwd_exemption_certificate"].required = True
 
     def clean_currency(self):
         currency = (self.cleaned_data.get("currency") or "").strip().upper()
@@ -224,8 +328,112 @@ class EmployeeSalaryForm(forms.ModelForm):
             raise ValidationError("Enter a 3-letter currency code, e.g. KES.")
         return currency
 
-    def clean_amount(self):
-        amount = self.cleaned_data.get("amount")
+    def clean_basic_salary(self):
+        amount = self.cleaned_data.get("basic_salary")
         if amount is not None and amount <= 0:
-            raise ValidationError("Salary must be greater than zero.")
+            raise ValidationError("Basic salary must be greater than zero.")
         return amount
+
+    def _clean_non_negative(self, field_name: str):
+        amount = self.cleaned_data.get(field_name)
+        if amount is None:
+            return 0
+        if amount < 0:
+            raise ValidationError("Amount cannot be negative.")
+        return amount
+
+    def clean_house_allowance(self):
+        return self._clean_non_negative("house_allowance")
+
+    def clean_transport_allowance(self):
+        return self._clean_non_negative("transport_allowance")
+
+    def clean_other_allowances(self):
+        return self._clean_non_negative("other_allowances")
+
+    def clean_kra_pin(self):
+        pin = (self.cleaned_data.get("kra_pin") or "").strip().upper()
+        if not pin:
+            raise ValidationError("KRA PIN is required for Kenyan payroll filing.")
+        if len(pin) != 11 or not pin[0].isalpha() or not pin[-1].isalpha() or not pin[1:-1].isdigit():
+            raise ValidationError("Enter a valid KRA PIN, e.g. A123456789Z.")
+        return pin
+
+    def clean_national_id(self):
+        value = (self.cleaned_data.get("national_id") or "").strip().upper()
+        if not value:
+            raise ValidationError("National ID or passport number is required.")
+        if len(value) < 5:
+            raise ValidationError("Enter a valid national ID or passport number.")
+        return value
+
+    def clean_nssf_number(self):
+        value = (self.cleaned_data.get("nssf_number") or "").strip()
+        if not value:
+            raise ValidationError("NSSF number is required.")
+        if not value.isdigit() or not (7 <= len(value) <= 12):
+            raise ValidationError("NSSF numbers are usually 7–12 digits.")
+        return value
+
+    def clean_shif_number(self):
+        value = (self.cleaned_data.get("shif_number") or "").strip()
+        if not value:
+            raise ValidationError("SHIF / SHA number is required.")
+        if not value.isdigit() or not (6 <= len(value) <= 12):
+            raise ValidationError("SHIF / SHA numbers are usually 6–12 digits.")
+        return value
+
+    def clean_mpesa_number(self):
+        import re
+
+        raw = (self.cleaned_data.get("mpesa_number") or "").strip()
+        digits = re.sub(r"\D", "", raw)
+        if not digits:
+            return ""
+        if digits.startswith("254") and len(digits) == 12:
+            return digits
+        if digits.startswith("0") and len(digits) == 10:
+            return "254" + digits[1:]
+        if len(digits) == 9:
+            return "254" + digits
+        raise ValidationError("Enter a Kenyan mobile number such as 07XXXXXXXX or 2547XXXXXXXX.")
+
+    def clean(self):
+        cleaned = super().clean()
+        is_pwd = cleaned.get("is_person_with_disability")
+        cert = (cleaned.get("pwd_exemption_certificate") or "").strip()
+        if is_pwd and not cert:
+            self.add_error(
+                "pwd_exemption_certificate",
+                "Enter the PWD IT exemption certificate number when PWD is selected.",
+            )
+        cleaned["pwd_exemption_certificate"] = cert
+
+        method = cleaned.get("payment_method") or EmployeeSalary.PaymentMethod.BANK
+        bank_name = (cleaned.get("bank_name") or "").strip()
+        bank_branch = (cleaned.get("bank_branch") or "").strip()
+        bank_account = (cleaned.get("bank_account_number") or "").strip()
+        mpesa = cleaned.get("mpesa_number") or ""
+
+        if method == EmployeeSalary.PaymentMethod.BANK:
+            if not bank_name:
+                self.add_error("bank_name", "Enter the bank name for bank transfer.")
+            if not bank_account:
+                self.add_error("bank_account_number", "Enter the bank account number.")
+            cleaned["bank_name"] = bank_name
+            cleaned["bank_branch"] = bank_branch
+            cleaned["bank_account_number"] = bank_account
+            cleaned["mpesa_number"] = ""
+        elif method == EmployeeSalary.PaymentMethod.MPESA:
+            if not mpesa:
+                self.add_error("mpesa_number", "Enter the M-Pesa number for mobile payouts.")
+            cleaned["bank_name"] = ""
+            cleaned["bank_branch"] = ""
+            cleaned["bank_account_number"] = ""
+            cleaned["mpesa_number"] = mpesa
+        else:
+            cleaned["bank_name"] = ""
+            cleaned["bank_branch"] = ""
+            cleaned["bank_account_number"] = ""
+            cleaned["mpesa_number"] = ""
+        return cleaned

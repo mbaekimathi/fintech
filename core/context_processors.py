@@ -14,7 +14,7 @@ DARAJA_NAV = [
     {"name": "STK push", "url": "core:daraja-stk", "icon": "flow"},
     {"name": "Live balance", "url": "core:daraja-balance", "icon": "card"},
     {"name": "Phone payout", "url": "core:daraja-b2c", "icon": "flow"},
-    {"name": "Paybill payout", "url": "core:daraja-b2b", "icon": "nodes"},
+    {"name": "Paybill & till", "url": "core:daraja-b2b", "icon": "nodes"},
     {"name": "Agent shop", "url": "core:daraja-agent", "icon": "people"},
     {"name": "Test credentials", "url": "core:daraja-test", "icon": "flow"},
 ]

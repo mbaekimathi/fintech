@@ -153,11 +153,33 @@ class DarajaSettingsTests(TestCase):
                 'STK push',
                 'Live balance',
                 'Phone payout',
-                'Paybill payout',
+                'Paybill &amp; till',
                 'Agent shop',
                 'Test credentials',
             ):
                 self.assertContains(response, item, msg_prefix=name)
+
+    def test_b2b_enable_button_turns_on_without_checkbox(self):
+        self.client.force_login(self.admin)
+        self.client.post(
+            self.url,
+            {
+                "environment": DarajaConfig.Environment.SANDBOX,
+                "channel": "PAYBILL",
+                "consumer_key": "sandbox-consumer-key",
+                "consumer_secret": "sandbox-consumer-secret",
+            },
+        )
+        config = DarajaConfig.load()
+        config.b2b_enabled = False
+        config.save(update_fields=["b2b_enabled"])
+        b2b_url = role_url("core:daraja-b2b", User.Role.ADMIN)
+        response = self.client.post(b2b_url, {"intent": "enable"}, follow=True)
+        self.assertEqual(response.status_code, 200)
+        config = DarajaConfig.load()
+        self.assertTrue(config.b2b_enabled)
+        self.assertEqual(config.b2b_paybill_command, DarajaConfig.B2BCommand.PAYBILL)
+        self.assertEqual(config.b2b_till_command, DarajaConfig.B2BCommand.BUY_GOODS)
 
     def test_admin_saves_daraja_setup(self):
         self.client.force_login(self.admin)
@@ -611,7 +633,10 @@ class DarajaB2BPayloadTests(TestCase):
                 )
         self.assertEqual(till_dest, "600000")
         self.assertEqual(till_payload["CommandID"], "BusinessBuyGoods")
-        self.assertEqual(till_payload["RecieverIdentifierType"], "2")
+        self.assertEqual(till_payload["RecieverIdentifierType"], "4")
+        self.assertEqual(till_payload["SenderIdentifierType"], "4")
+        self.assertEqual(till_payload["PartyA"], "600996")
+        self.assertEqual(till_payload["AccountReference"], "NEXUS")
 
     def test_b2b_rejects_phone_as_destination(self):
         from integrations.daraja_client import DarajaClient, DarajaError

@@ -3,30 +3,156 @@
 {% block eyebrow %}HR{% endblock %}
 {% block heading %}{% if mode == 'update' %}Update salary{% else %}Register salary{% endif %}{% endblock %}
 {% block content %}
-  <section class="panel">
-    <div class="panel-head">
-      <div>
-        <h2>{{ employee.staff_code }} · {{ employee.get_full_name|default:employee.email }}</h2>
-        <p class="muted">{{ employee.get_role_display }}</p>
-      </div>
-      <a class="btn btn-ghost" href="{% url 'accounts:hr-salaries' %}">Back</a>
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>{{ employee.staff_code }} · {{ employee.get_full_name|default:employee.email }}</h2>
+      <p>Capture Kenyan payroll master data: cash earnings, statutory IDs, tax status, and payout details.</p>
     </div>
-    <form method="post" class="stack-panels" novalidate>
-      {% csrf_token %}
-      {% if form.non_field_errors %}
-        <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
-      {% endif %}
+  </section>
+
+  <form
+    method="post"
+    class="stack-panels salary-setup"
+    novalidate
+    autocomplete="off"
+    x-data="kenyaSalaryForm({
+      basic: {{ form.basic_salary.value|default:'0' }},
+      house: {{ form.house_allowance.value|default:'0' }},
+      transport: {{ form.transport_allowance.value|default:'0' }},
+      other: {{ form.other_allowances.value|default:'0' }},
+      isResident: {% if form.is_resident.value == False %}false{% else %}true{% endif %},
+      isPwd: {% if form.is_person_with_disability.value %}true{% else %}false{% endif %},
+      paymentMethod: '{{ form.payment_method.value|default:"BANK" }}'
+    })"
+  >
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Monthly cash earnings</h2>
+          <p class="muted">Break down total cash pay the way KRA and NSSF expect it (basic + allowances).</p>
+        </div>
+      </div>
       <div class="form-grid">
-        {% include "partials/labeled_field.html" with field=form.amount %}
+        {% include "partials/labeled_field.html" with field=form.basic_salary %}
         {% include "partials/labeled_field.html" with field=form.currency %}
+        {% include "partials/labeled_field.html" with field=form.house_allowance %}
+        {% include "partials/labeled_field.html" with field=form.transport_allowance %}
+        {% include "partials/labeled_field.html" with field=form.other_allowances span="2" %}
+      </div>
+      <div class="salary-gross-row">
+        <span class="muted">Gross cash pay</span>
+        <strong x-text="formatMoney(gross)"></strong>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Statutory identifiers</h2>
+          <p class="muted">Required for PAYE, NSSF, and SHIF remittance files.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.national_id %}
+        {% include "partials/labeled_field.html" with field=form.kra_pin %}
+        {% include "partials/labeled_field.html" with field=form.nssf_number %}
+        {% include "partials/labeled_field.html" with field=form.shif_number %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Tax status</h2>
+          <p class="muted">Affects personal relief and PWD exemption on the estimate below.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.is_resident span="2" %}
+        {% include "partials/labeled_field.html" with field=form.is_person_with_disability span="2" %}
+        <div class="span-2" x-show="isPwd" x-cloak>
+          {% include "partials/labeled_field.html" with field=form.pwd_exemption_certificate span="2" %}
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Salary payment</h2>
+          <p class="muted">Choose how net pay should be paid each month: bank, M-Pesa, or cash.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.payment_method span="2" %}
+        <div class="span-2 form-grid" x-show="paymentMethod === 'BANK'" x-cloak>
+          {% include "partials/labeled_field.html" with field=form.bank_name %}
+          {% include "partials/labeled_field.html" with field=form.bank_branch %}
+          {% include "partials/labeled_field.html" with field=form.bank_account_number span="2" %}
+        </div>
+        <div class="span-2" x-show="paymentMethod === 'MPESA'" x-cloak>
+          {% include "partials/labeled_field.html" with field=form.mpesa_number span="2" %}
+        </div>
+        <div class="span-2" x-show="paymentMethod === 'CASH'" x-cloak>
+          <p class="muted">Cash payout — no account details required. Record who collected the cash in notes if needed.</p>
+        </div>
         {% include "partials/labeled_field.html" with field=form.notes span="2" %}
       </div>
-      <div class="toolbar">
-        <button type="submit" class="btn btn-primary">
-          {% if mode == 'update' %}Save salary{% else %}Register salary{% endif %}
-        </button>
-        <a class="btn btn-ghost" href="{% url 'accounts:hr-salaries' %}">Cancel</a>
+    </section>
+
+    <section class="panel salary-estimate">
+      <div class="panel-head">
+        <div>
+          <h2>Estimated statutory deductions</h2>
+          <p class="muted">Indicative only from current rates (NSSF, SHIF, AHL, PAYE). Confirm before first payroll run.</p>
+        </div>
       </div>
-    </form>
-  </section>
+      <div class="salary-estimate-grid">
+        <div>
+          <span class="muted">NSSF (employee)</span>
+          <strong x-text="formatMoney(estimate.nssfEmployee)"></strong>
+        </div>
+        <div>
+          <span class="muted">SHIF (2.75%)</span>
+          <strong x-text="formatMoney(estimate.shif)"></strong>
+        </div>
+        <div>
+          <span class="muted">Housing levy (1.5%)</span>
+          <strong x-text="formatMoney(estimate.ahlEmployee)"></strong>
+        </div>
+        <div>
+          <span class="muted">PAYE (est.)</span>
+          <strong x-text="formatMoney(estimate.paye)"></strong>
+        </div>
+        <div>
+          <span class="muted">Total deductions</span>
+          <strong x-text="formatMoney(estimate.employeeDeductions)"></strong>
+        </div>
+        <div>
+          <span class="muted">Net pay (est.)</span>
+          <strong x-text="formatMoney(estimate.netPay)"></strong>
+        </div>
+        <div>
+          <span class="muted">NSSF (employer)</span>
+          <strong x-text="formatMoney(estimate.nssfEmployer)"></strong>
+        </div>
+        <div>
+          <span class="muted">Housing levy (employer)</span>
+          <strong x-text="formatMoney(estimate.ahlEmployer)"></strong>
+        </div>
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <button type="submit" class="btn btn-primary">
+        {% if mode == 'update' %}Save salary{% else %}Register salary{% endif %}
+      </button>
+      <a class="btn btn-ghost" href="{% url 'accounts:hr-salaries' %}">Cancel</a>
+    </div>
+  </form>
 {% endblock %}

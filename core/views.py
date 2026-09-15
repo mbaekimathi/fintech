@@ -14,11 +14,12 @@ from pathlib import Path
 from accounts.mixins import ApprovedRequiredMixin, RoleRequiredMixin
 from accounts.models import User
 from accounts.utils import write_audit
-from core.models import Notification, PushSubscription
+from core.models import PushSubscription
 from core.notifications import (
     REVIEW_ROLES,
     mark_money_request_notifications_read,
     mark_notification_read,
+    notifications_for_session_user,
     notify_money_request_result,
     notify_money_request_submitted,
 )
@@ -48,6 +49,7 @@ from integrations.forms import (
 )
 from integrations.models import DarajaConfig, DarajaOperation
 from paybill.forms import MoneyRequestForm
+from paybill.lookup import lookup_destination, resolve_recipient_name
 from paybill.models import ConnectedSystem, LedgerEntry, MoneyRequest, PaybillAccount
 from paybill.services import approve_and_transfer, mpesa_receipt_from_operation, reject_money_request
 
@@ -85,6 +87,10 @@ class DashboardView(ApprovedRequiredMixin, TemplateView):
             money_request.requester = request.user
             money_request.source_paybill = source
             money_request.status = MoneyRequest.Status.PENDING
+            money_request.recipient_name = resolve_recipient_name(
+                destination_type=money_request.destination_type,
+                destination=money_request.destination,
+            )
             money_request.save()
             notify_money_request_submitted(money_request)
             write_audit(
@@ -97,6 +103,7 @@ class DashboardView(ApprovedRequiredMixin, TemplateView):
                     "category": money_request.category,
                     "destination_type": money_request.destination_type,
                     "destination": money_request.destination,
+                    "recipient_name": money_request.recipient_name,
                 },
             )
             messages.success(
@@ -148,6 +155,7 @@ class DashboardView(ApprovedRequiredMixin, TemplateView):
                     status__in=(
                         MoneyRequest.Status.APPROVED,
                         MoneyRequest.Status.PAID,
+                        MoneyRequest.Status.FAILED,
                     )
                 )[:12]
             )
@@ -160,15 +168,34 @@ class DashboardView(ApprovedRequiredMixin, TemplateView):
         return context
 
 
+class DestinationLookupView(ApprovedRequiredMixin, View):
+    """Live recipient / business-name check for the employee money-request form."""
+
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request, *args, **kwargs):
+        if request.user.effective_role != User.Role.EMPLOYEE:
+            return JsonResponse(
+                {"ok": False, "found": False, "detail": "Only employees can look up destinations."},
+                status=403,
+            )
+        payload = lookup_destination(
+            destination_type=request.GET.get("destination_type") or "",
+            destination=request.GET.get("destination") or "",
+        )
+        return JsonResponse(payload)
+
+
 class NotificationMarkReadView(ApprovedRequiredMixin, View):
     def post(self, request, *args, **kwargs):
         next_url = _safe_next_url(request)
+        visible = notifications_for_session_user(request.user)
         if request.POST.get("intent") == "all":
-            Notification.objects.filter(recipient=request.user, is_read=False).update(is_read=True)
+            visible.filter(is_read=False).update(is_read=True)
             messages.success(request, "Notifications marked as read.")
             return redirect(next_url)
         pk = request.POST.get("notification_id")
-        notification = get_object_or_404(Notification, pk=pk, recipient=request.user)
+        notification = get_object_or_404(visible, pk=pk)
         mark_notification_read(notification)
         return redirect(next_url)
 
@@ -178,9 +205,8 @@ class NotificationOpenView(ApprovedRequiredMixin, View):
 
     def post(self, request, pk, *args, **kwargs):
         notification = get_object_or_404(
-            Notification.objects.select_related("money_request"),
+            notifications_for_session_user(request.user).select_related("money_request"),
             pk=pk,
-            recipient=request.user,
         )
         mark_notification_read(notification)
         money_request = notification.money_request
@@ -194,9 +220,8 @@ class NotificationReviewView(RoleRequiredMixin, View):
 
     def post(self, request, pk, *args, **kwargs):
         notification = get_object_or_404(
-            Notification.objects.select_related("money_request"),
+            notifications_for_session_user(request.user).select_related("money_request"),
             pk=pk,
-            recipient=request.user,
         )
         next_url = _safe_next_url(request)
         money_request = notification.money_request
@@ -235,6 +260,7 @@ class NotificationReviewView(RoleRequiredMixin, View):
         if money_request.status in {
             MoneyRequest.Status.PAID,
             MoneyRequest.Status.APPROVED,
+            MoneyRequest.Status.FAILED,
         }:
             notify_money_request_result(money_request, actor=request.user)
 
@@ -254,7 +280,7 @@ class NotificationReviewView(RoleRequiredMixin, View):
                 request,
                 operation.summary
                 or operation.result_desc
-                or "Transfer did not complete. Request left pending so you can retry.",
+                or "Transfer failed. Request marked as failed.",
             )
         return redirect(next_url)
 
@@ -457,10 +483,16 @@ class DarajaB2BSetupView(DarajaSetupView):
     success_url = reverse_lazy("core:daraja-b2b")
     section_key = "b2b"
     audit_action = "daraja.b2b.saved"
-    success_prefix = "Paybill/till payout setup"
+    success_prefix = "Paybill and till payout setup"
 
     def get_object(self, queryset=None):
         return DarajaConfig.load()
+
+    def form_valid(self, form):
+        # One-click enable: button can turn B2B on without hunting for the checkbox.
+        if self.request.POST.get("intent") == "enable":
+            form.instance.b2b_enabled = True
+        return super().form_valid(form)
 
 
 class DarajaAgentShopSetupView(DarajaSetupView):

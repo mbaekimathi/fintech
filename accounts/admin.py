@@ -135,6 +135,68 @@ class AuditEventAdmin(admin.ModelAdmin):
 
 @admin.register(EmployeeSalary)
 class EmployeeSalaryAdmin(admin.ModelAdmin):
-    list_display = ("employee", "currency", "amount", "updated_by", "updated_at")
-    search_fields = ("employee__staff_code", "employee__email", "employee__first_name", "employee__last_name")
-    readonly_fields = ("created_at", "updated_at")
+    list_display = (
+        "employee",
+        "currency",
+        "basic_salary",
+        "amount",
+        "payment_method",
+        "kra_pin",
+        "updated_by",
+        "updated_at",
+    )
+    search_fields = (
+        "employee__staff_code",
+        "employee__email",
+        "employee__first_name",
+        "employee__last_name",
+        "kra_pin",
+        "national_id",
+        "nssf_number",
+        "shif_number",
+    )
+    readonly_fields = ("amount", "created_at", "updated_at")
+    fieldsets = (
+        (
+            "Earnings",
+            {
+                "fields": (
+                    "employee",
+                    "basic_salary",
+                    "house_allowance",
+                    "transport_allowance",
+                    "other_allowances",
+                    "amount",
+                    "currency",
+                )
+            },
+        ),
+        (
+            "Statutory identifiers",
+            {"fields": ("national_id", "kra_pin", "nssf_number", "shif_number")},
+        ),
+        (
+            "Tax status",
+            {
+                "fields": (
+                    "is_resident",
+                    "is_person_with_disability",
+                    "pwd_exemption_certificate",
+                )
+            },
+        ),
+        (
+            "Payment",
+            {
+                "fields": (
+                    "payment_method",
+                    "bank_name",
+                    "bank_branch",
+                    "bank_account_number",
+                    "mpesa_number",
+                    "notes",
+                )
+            },
+        ),
+        ("Audit", {"fields": ("updated_by", "created_at", "updated_at")}),
+    )

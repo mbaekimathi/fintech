@@ -315,12 +315,10 @@ def approve_and_transfer(request, money_request: MoneyRequest) -> tuple[MoneyReq
         DarajaOperation.Status.FAILED,
         DarajaOperation.Status.TIMEOUT,
     }:
-        # Keep APPROVED so staff can see it left pending queue, or reopen for retry.
-        # Revert to PENDING so Approve can be tried again after fixing Daraja.
         clear_pending_money_request_ledger(money_request)
-        money_request.status = MoneyRequest.Status.PENDING
-        money_request.daraja_operation = None
-        money_request.save(update_fields=["status", "daraja_operation", "updated_at"])
+        if money_request.status != MoneyRequest.Status.FAILED:
+            money_request.status = MoneyRequest.Status.FAILED
+            money_request.save(update_fields=["status", "updated_at"])
 
     write_audit(
         request,
@@ -371,7 +369,6 @@ def sync_money_request_from_operation(operation: DarajaOperation) -> MoneyReques
             MoneyRequest.Status.PENDING,
         }:
             clear_pending_money_request_ledger(money_request)
-            money_request.status = MoneyRequest.Status.PENDING
-            money_request.daraja_operation = None
-            money_request.save(update_fields=["status", "daraja_operation", "updated_at"])
+            money_request.status = MoneyRequest.Status.FAILED
+            money_request.save(update_fields=["status", "updated_at"])
     return money_request

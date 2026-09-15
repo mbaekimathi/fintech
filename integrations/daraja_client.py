@@ -130,7 +130,7 @@ class DarajaClient:
         self._token = token
         return token
 
-    def _post(self, path: str, payload: dict) -> dict:
+    def _post(self, path: str, payload: dict, *, ok_codes: set[str] | None = None) -> dict:
         status, body = _json_request(
             self.base_url + path,
             headers={
@@ -142,10 +142,33 @@ class DarajaClient:
         )
         if status >= 400:
             raise DarajaError(_error_message(body), body)
+        allowed = ok_codes or {"0", "00"}
         code = str(body.get("ResponseCode", "0"))
-        if code not in {"0", "00"}:
+        if code not in allowed:
             raise DarajaError(_error_message(body), body)
         return body
+
+    def hakikisha(self, *, identifier: str, identifier_type: str = "4") -> dict:
+        """Look up organization / party metadata via B2B Hakikisha.
+
+        Success responses use ResponseCode ``4000`` (not the usual ``0`` / ``00``).
+        """
+        key = (self.config.consumer_key or "").strip()
+        secret = (self.config.consumer_secret or "").strip()
+        if not key or not secret:
+            raise DarajaError("Save a consumer key and consumer secret on Daraja setup first.")
+        dest = re.sub(r"\D", "", identifier or "")
+        if not dest:
+            raise DarajaError("Enter a destination to look up.")
+        payload = {
+            "IdentifierType": str(identifier_type),
+            "Identifier": dest,
+        }
+        return self._post(
+            "/sfcverify/v1/query/info",
+            payload,
+            ok_codes={"0", "00", "4000"},
+        )
 
     def _callback(self, stored: str, fallback: str) -> str:
         from integrations.daraja import _is_public_https, callback_urls
@@ -263,7 +286,12 @@ class DarajaClient:
         if len(dest) < 5 or len(dest) > 8:
             raise DarajaError("Enter the destination paybill or till number (5–8 digits).")
         command = self.config.b2b_till_command if to_till else self.config.b2b_paybill_command
-        receiver_type = "2" if to_till else "4"
+        command = command or ("BusinessBuyGoods" if to_till else "BusinessPayBill")
+        sender_type = str(self.config.b2b_sender_identifier_type or "4")
+        # Safaricom BusinessPayBill / BusinessBuyGoods expect organization shortcode
+        # identifier (4) on both sides. Type 2 is for till balance checks; using it on
+        # Buy Goods B2B often returns ResultCode 2028 (product assignment).
+        receiver_type = "4"
         # Paybill B2B needs an account reference. Till (Buy Goods) does not — keep a short fallback.
         if to_till:
             reference = (account_ref or self.config.stk_account_reference or "NEXUS")[:12]
@@ -275,11 +303,11 @@ class DarajaClient:
         payload = {
             "Initiator": self.config.initiator_name,
             "SecurityCredential": self._security_credential(),
-            "CommandID": command or ("BusinessBuyGoods" if to_till else "BusinessPayBill"),
-            "SenderIdentifierType": str(self.config.b2b_sender_identifier_type or "4"),
+            "CommandID": command,
+            "SenderIdentifierType": sender_type,
             "RecieverIdentifierType": receiver_type,
             "Amount": whole_kes(amount),
-            "PartyA": self._payout_party_a(),
+            "PartyA": self._payout_party_a(identifier=sender_type),
             "PartyB": dest,
             "AccountReference": reference,
             "Remarks": (self.config.b2b_remarks or "Transfer")[:100],
