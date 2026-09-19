@@ -370,7 +370,9 @@ class WebPushTests(TestCase):
         self.assertIn(b"push", sw.content)
         manifest = self.client.get("/manifest.webmanifest")
         self.assertEqual(manifest.status_code, 200)
+        self.assertIn("application/manifest+json", manifest["Content-Type"])
         self.assertEqual(manifest.json()["short_name"], "NEXUS")
+        self.assertNotIn(b"<!DOCTYPE", manifest.content)
 
     def test_subscribe_saves_push_endpoint(self):
         self.client.force_login(self.it_support)

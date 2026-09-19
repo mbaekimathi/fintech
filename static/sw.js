@@ -1,6 +1,6 @@
 /* NEXUS Ledger service worker — Web Push + offline shell cache. */
-const CACHE = "nexus-shell-v1";
-const PRECACHE = ["/", "/manifest.webmanifest"];
+const CACHE = "nexus-shell-v2";
+const PRECACHE = ["/static/icons/icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -14,6 +14,13 @@ self.addEventListener("activate", (event) => {
       Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)))
     ).then(() => self.clients.claim())
   );
+});
+
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+  if (url.pathname === "/manifest.webmanifest") {
+    event.respondWith(fetch(event.request));
+  }
 });
 
 self.addEventListener("push", (event) => {

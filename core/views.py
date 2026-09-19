@@ -578,11 +578,16 @@ class WebManifestView(View):
                     "src": icon,
                     "sizes": "any",
                     "type": "image/svg+xml",
-                    "purpose": "any maskable",
+                    "purpose": "any",
                 }
             ],
         }
-        return JsonResponse(payload)
+        response = HttpResponse(
+            json.dumps(payload),
+            content_type="application/manifest+json; charset=utf-8",
+        )
+        response["Cache-Control"] = "public, max-age=3600"
+        return response
 
 
 class PushSubscribeView(ApprovedRequiredMixin, View):

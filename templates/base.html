@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0c1624">
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <link rel="manifest" href="{% url 'core:web-manifest' %}">
+  <link rel="manifest" href="/manifest.webmanifest">
   <title>{% block title %}Workspace{% endblock %} · {{ product_name }}</title>
   {% include "partials/asset_head.html" %}
   {% block extra_head %}{% endblock %}
