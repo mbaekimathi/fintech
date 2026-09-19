@@ -136,9 +136,13 @@ TIME_ZONE = "Africa/Nairobi"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+# Root-absolute URL so CSS/JS load on role-prefixed pages such as /as/it-support/...
+STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+ASSET_VERSION = os.getenv("ASSET_VERSION", "20260319").strip()
+WHITENOISE_MAX_AGE = 31536000 if not DEBUG else 0
+WHITENOISE_USE_FINDERS = DEBUG
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",

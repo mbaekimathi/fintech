@@ -1,6 +1,8 @@
 from accounts.models import User
 from accounts.role_switch import SWITCHABLE_ROLES
 from accounts.role_urls import role_to_slug, workspace_url
+from django.conf import settings as django_settings
+
 from core.models import AppSettings
 from core.notifications import unread_notification_count, user_notifications
 from core.webpush import vapid_public_key, webpush_enabled
@@ -111,4 +113,5 @@ def shell(request):
         "pin_approval_required_for_user": pin_approval_required_for_user,
         "webpush_enabled": webpush_enabled(),
         "webpush_vapid_public_key": vapid_public_key() if webpush_enabled() else "",
+        "asset_version": getattr(django_settings, "ASSET_VERSION", ""),
     }

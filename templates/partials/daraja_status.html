@@ -13,7 +13,7 @@
   {% endif %}
 </section>
 
-<div class="status-row daraja-status">
+<div class="status-row daraja-status daraja-status-compact">
   <span class="chip {% if config.has_app_credentials %}is-on{% endif %}">{% if config.has_app_credentials %}App ready{% else %}App missing{% endif %}</span>
   <span class="chip {% if config.stk_ready %}is-on{% endif %}">{% if config.stk_ready %}STK ready{% else %}STK missing{% endif %}</span>
   <span class="chip {% if config.balance_ready %}is-on{% endif %}">{% if config.balance_ready %}Balance ready{% else %}Balance missing{% endif %}</span>

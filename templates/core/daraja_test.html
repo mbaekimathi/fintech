@@ -3,10 +3,11 @@
 {% block eyebrow %}Daraja{% endblock %}
 {% block heading %}Test credentials{% endblock %}
 {% block content %}
-  <section class="daraja-test-intro">
-    <p class="muted">
-      Run live checks against Safaricom. {{ runnable_tests }} of 3 test areas are ready.
-    </p>
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Live capability checks</h2>
+      <p>Run probes against Safaricom. {{ runnable_tests }} of 3 test areas are ready.</p>
+    </div>
     <a class="btn btn-ghost btn-small" href="{% url 'core:daraja' %}">Edit setup</a>
   </section>
 

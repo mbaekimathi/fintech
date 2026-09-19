@@ -570,7 +570,9 @@ a:hover {
   white-space: nowrap;
 }
 
-.page-intro {
+.page-intro,
+.perm-intro,
+.daraja-test-intro {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -1185,7 +1187,16 @@ a:hover {
   border-color: rgba(6, 118, 71, 0.18);
 }
 
-.daraja-status-compact .chip {
+.daraja-status {
+  margin-top: 0.65rem;
+}
+
+.daraja-status-compact {
+  margin-top: 0;
+}
+
+.daraja-status-compact .chip,
+.daraja-status .chip {
   font-size: 0.72rem;
   padding: 0.22rem 0.55rem;
 }
@@ -1609,15 +1620,13 @@ a:hover {
 }
 
 .perm-intro {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  align-items: flex-start;
   margin-bottom: 0.85rem;
 }
 
 .perm-intro p {
   margin: 0;
+  max-width: 42rem;
 }
 
 .perm-legend {
@@ -1638,6 +1647,14 @@ a:hover {
 .perm-groups {
   display: grid;
   gap: 0.9rem;
+}
+
+.perm-role-group .panel-head h2 {
+  font-size: 1.05rem;
+}
+
+.perm-role-group .table-wrap {
+  margin-top: 0.35rem;
 }
 
 .perm-matrix {
@@ -1746,12 +1763,27 @@ a:hover {
   margin-top: 0.15rem;
 }
 
-.pin-approval-backdrop[hidden] {
-  display: none;
+.settings-links .card-grid {
+  margin-top: 0.35rem;
 }
 
-.pin-approval-backdrop:not([hidden]) {
-  display: flex;
+.check-list-spaced {
+  margin-top: 1rem;
+}
+
+.daraja-test-panel .panel-head h2 {
+  font-size: 1.02rem;
+}
+
+.integration-banner + .integration-banner,
+.integration-banner + .perm-legend,
+.integration-banner + .perm-groups,
+.page-intro + .integration-banner {
+  margin-top: 0.15rem;
+}
+
+.pin-approval-backdrop[hidden] {
+  display: none !important;
 }
 
 .pin-approval-dialog .toolbar {

@@ -68,7 +68,7 @@
         {% include "partials/labeled_field.html" with field=form.agent_api_notes span="2" %}
       </div>
       {% if config.agent_shop_enabled and config.is_safaricom_agent_channel %}
-        <ul class="check-list" style="margin-top:1rem">
+        <ul class="check-list check-list-spaced">
           <li class="{% if config.agent_safaricom_config_ready %}is-ok{% else %}is-bad{% endif %}">
             {% if config.agent_safaricom_config_ready %}Ready{% else %}Incomplete{% endif %} · Official agent config
           </li>
@@ -102,7 +102,7 @@
         {% include "partials/labeled_field.html" with field=form.agent_receipt_prefix %}
       </div>
       {% if config.agent_shop_enabled and not config.is_safaricom_agent_channel %}
-        <ul class="check-list" style="margin-top:1rem">
+        <ul class="check-list check-list-spaced">
           <li class="{% if config.agent_cash_in_ready %}is-ok{% else %}is-bad{% endif %}">
             {% if config.agent_cash_in_ready %}Ready{% else %}Needs STK{% endif %} · Deposit (STK)
           </li>

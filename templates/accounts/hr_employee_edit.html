@@ -3,14 +3,15 @@
 {% block eyebrow %}HR{% endblock %}
 {% block heading %}Edit employee{% endblock %}
 {% block content %}
-  <section class="panel">
-    <div class="panel-head">
-      <div>
-        <h2>{{ employee.staff_code }} · {{ employee.get_full_name|default:employee.email }}</h2>
-        <p class="muted">Update employee details. Change roles on People; toggle activities on Employee permissions.</p>
-      </div>
-      <a class="btn btn-ghost" href="{% url 'accounts:hr-employees' %}">Back</a>
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>{{ employee.staff_code }} · {{ employee.get_full_name|default:employee.email }}</h2>
+      <p>Update employee details. Change roles on People; toggle activities on Employee permissions.</p>
     </div>
+    <a class="btn btn-ghost btn-small" href="{% url 'accounts:hr-employees' %}">Back</a>
+  </section>
+
+  <section class="panel">
     <form method="post" class="stack-panels" novalidate>
       {% csrf_token %}
       {% if form.non_field_errors %}

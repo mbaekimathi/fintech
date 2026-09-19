@@ -7,12 +7,9 @@
   <meta name="theme-color" content="#0c1624">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <link rel="manifest" href="{% url 'core:web-manifest' %}">
-  <link rel="icon" href="{% static 'icons/icon.svg' %}" type="image/svg+xml">
   <title>{% block title %}Workspace{% endblock %} · {{ product_name }}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Manrope:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  {% include "partials/asset_head.html" %}
+  {% block extra_head %}{% endblock %}
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
 </head>
 <body class="app-body" x-data="nexusShell()" :class="{ 'nav-open': navOpen, 'nav-collapsed': collapsed && !isMobile }">
@@ -171,6 +168,6 @@
       }
     </script>
   {% endif %}
-  <script src="{% static 'js/app.js' %}"></script>
+  <script src="{% static 'js/app.js' %}?v={{ asset_version }}"></script>
 </body>
 </html>
