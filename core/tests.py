@@ -1,3 +1,5 @@
+import json
+import re
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -978,3 +980,22 @@ class AppSettingsTests(TestCase):
         self.assertContains(page, '"autoPrompt": true')
         self.assertContains(page, "data-approval-trigger")
         self.assertContains(page, f'data-money-request-id="{req.pk}"')
+
+    def test_approval_config_json_is_valid(self):
+        settings = AppSettings.load()
+        settings.app_approval_required = True
+        settings.stk_pin_approval_required = True
+        settings.save(update_fields=["app_approval_required", "stk_pin_approval_required"])
+        self.client.force_login(self.it_support)
+        page = self.client.get(self._url(User.Role.IT_SUPPORT, "core:dashboard"))
+        self.assertEqual(page.status_code, 200)
+        html = page.content.decode()
+        match = re.search(r'id="approval-config">\s*(\{.*?\})\s*</script>', html, re.DOTALL)
+        self.assertIsNotNone(match, "approval-config JSON block missing")
+        config_text = match.group(1)
+        self.assertNotIn(".replace", config_text)
+        config = json.loads(config_text)
+        self.assertTrue(config["hubApp"])
+        self.assertTrue(config["hubStk"])
+        self.assertTrue(config["stkPollUrl"].endswith("/"))
+        self.assertIn("/approval/stk/", config["stkPollUrl"])

@@ -1434,6 +1434,20 @@ function initReviewApproval() {
   if (!config) return;
   const runtime = initPaymentApproval(config);
   initApprovalLiveCheck(config, runtime);
+  window.nexusApproval = {
+    config,
+    beginApprovalFlow: runtime?.beginApprovalFlow || paymentApprovalApi.beginApprovalFlow,
+    triggerFromButton(button, event) {
+      const form = button?.closest?.("form[data-approval-form]");
+      if (!form) return;
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      (runtime?.beginApprovalFlow || paymentApprovalApi.beginApprovalFlow)(form, {
+        force: true,
+        manual: true,
+      });
+    },
+  };
 }
 
 function initEmployeePermissions() {
@@ -1482,26 +1496,34 @@ function initEmployeePermissions() {
   });
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => {
-    initDarajaSetup();
-    initDarajaTests();
-    initHubBalance();
-    initUtilityTransfer();
-    initWebPush();
-    initEmployeePermissions();
-    initAppSettings();
+function runShellInits() {
+  try {
     initReviewApproval();
+  } catch (_err) {
+    /* keep shell usable if a secondary init fails */
+  }
+  const secondaryInits = [
+    initDarajaSetup,
+    initDarajaTests,
+    initHubBalance,
+    initUtilityTransfer,
+    initWebPush,
+    initEmployeePermissions,
+    initAppSettings,
+  ];
+  secondaryInits.forEach((initFn) => {
+    try {
+      initFn();
+    } catch (_err) {
+      /* non-critical page widgets */
+    }
   });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", runShellInits);
 } else {
-  initDarajaSetup();
-  initDarajaTests();
-  initHubBalance();
-  initUtilityTransfer();
-  initWebPush();
-  initEmployeePermissions();
-  initAppSettings();
-  initReviewApproval();
+  runShellInits();
 }
 
 function initWebPush() {

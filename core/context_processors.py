@@ -1,6 +1,7 @@
 from accounts.models import User
 from accounts.role_switch import SWITCHABLE_ROLES
-from accounts.role_urls import role_to_slug, workspace_url
+from accounts.role_urls import get_current_role_slug, role_to_slug, workspace_url
+from django.urls import reverse
 from django.conf import settings as django_settings
 
 from core.models import AppSettings
@@ -61,6 +62,7 @@ def shell(request):
     stk_pin_approval_required = False
     app_approval_required_for_user = False
     stk_pin_approval_required_for_user = False
+    approval_stk_poll_url_base = ""
     if user and user.is_authenticated and not user.is_pending:
         current = getattr(getattr(request, "resolver_match", None), "view_name", "")
         sections = _section_items(user)
@@ -104,6 +106,11 @@ def shell(request):
         header_notifications = list(user_notifications(user))
         unread_count = unread_notification_count(user)
         can_review_money_requests = user.can_review_requests()
+        if can_review_money_requests and get_current_role_slug():
+            approval_stk_poll_url_base = reverse(
+                "core:approval-stk-poll",
+                kwargs={"pk": 0},
+            ).replace("/0/", "/")
     return {
         "product_name": "NEXUS",
         "product_tag": "Financial architecture",
@@ -118,6 +125,7 @@ def shell(request):
         "stk_pin_approval_required": stk_pin_approval_required,
         "app_approval_required_for_user": app_approval_required_for_user,
         "stk_pin_approval_required_for_user": stk_pin_approval_required_for_user,
+        "approval_stk_poll_url_base": approval_stk_poll_url_base,
         "webpush_enabled": webpush_enabled(),
         "webpush_vapid_public_key": vapid_public_key() if webpush_enabled() else "",
         "asset_version": getattr(django_settings, "ASSET_VERSION", ""),

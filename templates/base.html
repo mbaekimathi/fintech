@@ -98,7 +98,7 @@
                         <button
                           type="{% if app_approval_required_for_user or stk_pin_approval_required_for_user %}button{% else %}submit{% endif %}"
                           class="btn btn-primary btn-small"
-                          {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}data-approval-trigger{% endif %}
+                          {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}data-approval-trigger onclick="window.nexusApproval && window.nexusApproval.triggerFromButton(this, event)"{% endif %}
                         >Approve &amp; send</button>
                       </form>
                       <form method="post" action="{% url 'core:notification-review' note.pk %}" class="inline-form">
@@ -169,10 +169,10 @@
     {% include "partials/footer.html" %}
   </div>
   <div class="nav-backdrop" @click="navOpen = false" x-cloak x-show="navOpen"></div>
-  {% if can_review_money_requests and app_approval_required %}
+  {% if can_review_money_requests and app_approval_required_for_user %}
     {% include "partials/pin_approval_dialog.html" %}
   {% endif %}
-  {% if can_review_money_requests and stk_pin_approval_required %}
+  {% if can_review_money_requests and stk_pin_approval_required_for_user %}
     {% include "partials/stk_approval_dialog.html" %}
   {% endif %}
   {% if can_review_money_requests %}
@@ -183,7 +183,7 @@
         "hubApp": {% if app_approval_required %}true{% else %}false{% endif %},
         "hubStk": {% if stk_pin_approval_required %}true{% else %}false{% endif %},
         "stkInitiateUrl": "{% url 'core:approval-stk-initiate' %}",
-        "stkPollUrl": "{% url 'core:approval-stk-poll' 0 %}".replace("/0/", "/"),
+        "stkPollUrl": "{{ approval_stk_poll_url_base|escapejs }}",
         "pendingPollUrl": "{% url 'core:approval-pending-poll' %}",
         "notificationsReadUrl": "{% url 'core:notifications-read' %}",
         "transactionsUrl": "{% url 'paybill:transactions' %}",
