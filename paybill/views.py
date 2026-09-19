@@ -18,7 +18,9 @@ from integrations.models import DarajaOperation
 from paybill.models import ConnectedSystem, LedgerEntry, MoneyRequest, PaybillAccount
 from paybill.services import (
     approve_and_transfer,
+    flash_money_request_transfer_result,
     money_request_by_ledger_reference,
+    redirect_after_transfer,
     reject_money_request,
 )
 
@@ -149,32 +151,32 @@ class MoneyRequestReviewView(RoleRequiredMixin, View):
 
         if money_request.status != MoneyRequest.Status.PENDING:
             messages.error(request, "That request is no longer pending.")
-            return redirect(next_url)
+            return redirect_after_transfer(request, next_url)
 
         if intent == "reject":
             reject_money_request(request, money_request)
             mark_money_request_notifications_read(money_request)
             notify_money_request_result(money_request, actor=request.user)
             messages.success(request, "Money request rejected.")
-            return redirect(next_url)
+            return redirect_after_transfer(request, next_url)
 
         if intent != "approve":
             messages.error(request, "Choose approve or reject.")
-            return redirect(next_url)
+            return redirect_after_transfer(request, next_url)
 
         from core.approval import approval_ok
 
         if not approval_ok(request, money_request=money_request, next_url=next_url):
-            return redirect(next_url)
+            return redirect_after_transfer(request, next_url)
 
         try:
             money_request, operation = approve_and_transfer(request, money_request)
         except ValueError as exc:
             messages.error(request, str(exc))
-            return redirect(next_url)
+            return redirect_after_transfer(request, next_url)
         except DarajaError as exc:
             messages.error(request, str(exc))
-            return redirect(next_url)
+            return redirect_after_transfer(request, next_url)
 
         mark_money_request_notifications_read(money_request)
         if money_request.status in {
@@ -184,25 +186,8 @@ class MoneyRequestReviewView(RoleRequiredMixin, View):
         }:
             notify_money_request_result(money_request, actor=request.user)
 
-        if money_request.status == MoneyRequest.Status.PAID:
-            messages.success(
-                request,
-                operation.summary
-                or f"Transfer of KES {money_request.amount} completed.",
-            )
-        elif operation.status == DarajaOperation.Status.QUEUED:
-            messages.success(
-                request,
-                f"Approved. Transfer of KES {money_request.amount} queued with Safaricom.",
-            )
-        else:
-            messages.error(
-                request,
-                operation.summary
-                or operation.result_desc
-                or "Transfer failed. Request marked as failed.",
-            )
-        return redirect(next_url)
+        flash_money_request_transfer_result(request, money_request, operation)
+        return redirect_after_transfer(request, next_url)
 
 
 class MoneyRequestRepromptView(RoleRequiredMixin, View):

@@ -842,6 +842,10 @@ function initAppSettings() {
       if (!response.ok) throw new Error("save failed");
       const data = await response.json();
       input.checked = Boolean(data[setting]);
+      if (setting === "app_approval_required" || setting === "stk_pin_approval_required") {
+        window.location.reload();
+        return;
+      }
     } catch (_err) {
       input.checked = !enabled;
     } finally {
@@ -915,6 +919,14 @@ function approvalChannels(config) {
 function approvalRequired(config) {
   const channels = approvalChannels(config);
   return channels.app || channels.stk;
+}
+
+function appChannelReady(config, channels) {
+  return Boolean(channels?.app && config?.hasApprovalPassword !== false);
+}
+
+function stkChannelReady(config, channels) {
+  return Boolean(channels?.stk && config?.hasPhone !== false);
 }
 
 function showDialog(el) {
@@ -1047,6 +1059,8 @@ function initPaymentApproval(config) {
   const appInput = document.querySelector("[data-pin-approval-input]");
   const appErrorEl = document.querySelector("[data-pin-approval-error]");
   const appSetupEl = document.querySelector("[data-pin-approval-setup]");
+  const appPhoneSetupEl = document.querySelector("[data-pin-approval-phone-setup]");
+  const appUseStkBtn = document.querySelector("[data-pin-approval-use-stk]");
   const appSubmitBtn = document.querySelector("[data-pin-approval-submit]");
   const appCancelBtn = document.querySelector("[data-pin-approval-cancel]");
 
@@ -1085,6 +1099,8 @@ function initPaymentApproval(config) {
     if (appSubmitBtn) appSubmitBtn.disabled = false;
     if (appErrorEl) appErrorEl.hidden = true;
     if (appSetupEl) appSetupEl.hidden = true;
+    if (appPhoneSetupEl) appPhoneSetupEl.hidden = true;
+    if (appUseStkBtn) appUseStkBtn.hidden = true;
     hideDialog(appBackdrop);
   };
 
@@ -1115,7 +1131,7 @@ function initPaymentApproval(config) {
     resetFlow();
   };
 
-  const submitForm = (form, stkOperationId = "") => {
+  const submitForm = async (form, stkOperationId = "") => {
     if (approvalPin) {
       let hidden = form.querySelector('input[name="approval_pin"]');
       if (!hidden) {
@@ -1138,6 +1154,36 @@ function initPaymentApproval(config) {
     }
     const target = form;
     resetFlow();
+
+    if (window.fetch && target.action) {
+      const submitBtn = target.querySelector("button[type='submit'], button[data-approval-trigger]");
+      const originalLabel = submitBtn?.textContent;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Processing…";
+      }
+      try {
+        const response = await fetch(target.action, {
+          method: "POST",
+          body: new FormData(target),
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+          credentials: "same-origin",
+        });
+        const data = await response.json().catch(() => null);
+        if (response.ok && data?.redirect) {
+          window.location.assign(data.redirect);
+          return;
+        }
+      } catch (_err) {
+        /* fall back to a normal form post */
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          if (originalLabel) submitBtn.textContent = originalLabel;
+        }
+      }
+    }
+
     target.submit();
   };
 
@@ -1176,11 +1222,20 @@ function initPaymentApproval(config) {
     });
 
   const chooseApprovalChannel = ({ manual = false } = {}) => {
+    const appReady = appChannelReady(config, channels);
+    const stkReady = stkChannelReady(config, channels);
+
     if (manual || isUserInApp()) {
-      if (channels.app) return "app";
+      if (appReady) return "app";
+      if (stkReady) return "stk";
+      if (channels.app && !appReady && stkReady) return "stk";
+      if (channels.stk && !stkReady && appReady) return "app";
       if (channels.stk) return "stk";
+      if (channels.app) return "app";
       return "none";
     }
+    if (stkReady) return "stk";
+    if (appReady) return "app";
     if (channels.stk) return "stk";
     if (channels.app) return "app";
     return "none";
@@ -1248,9 +1303,19 @@ function initPaymentApproval(config) {
     setApprovalContext(form);
     appInput.value = "";
     if (appErrorEl) appErrorEl.hidden = true;
-    const needsSetup = config.hasApprovalPassword === false;
-    if (appSetupEl) appSetupEl.hidden = !needsSetup;
-    if (needsSetup) {
+    const needsPassword = config.hasApprovalPassword === false;
+    const needsPhone = config.hasPhone === false;
+    if (appSetupEl) appSetupEl.hidden = !needsPassword;
+    if (appPhoneSetupEl) {
+      appPhoneSetupEl.hidden = !(needsPhone && channels.stk && !needsPassword);
+    }
+    const showStkAlt = Boolean(
+      channels.stk &&
+        config.hasPhone !== false &&
+        (config.dualApproval || needsPassword),
+    );
+    if (appUseStkBtn) appUseStkBtn.hidden = !showStkAlt;
+    if (needsPassword) {
       appInput.disabled = true;
       if (appSubmitBtn) appSubmitBtn.disabled = true;
     } else {
@@ -1258,7 +1323,7 @@ function initPaymentApproval(config) {
       if (appSubmitBtn) appSubmitBtn.disabled = false;
     }
     showDialog(appBackdrop);
-    if (!needsSetup) {
+    if (!needsPassword) {
       window.requestAnimationFrame(() => appInput.focus());
     }
   };
@@ -1271,12 +1336,16 @@ function initPaymentApproval(config) {
     const channel = chooseApprovalChannel({ manual });
     if (channel === "app") {
       if (!manual && !isUserInApp()) {
-        if (channels.stk) {
+        if (stkChannelReady(config, channels)) {
           runStkApproval(form, { silent: true });
           return;
         }
         approvalActive = false;
         pendingForm = null;
+        return;
+      }
+      if (!appChannelReady(config, channels) && stkChannelReady(config, channels)) {
+        runStkApproval(form, { silent: false });
         return;
       }
       openAppDialog(form);
@@ -1301,6 +1370,10 @@ function initPaymentApproval(config) {
   const submitAppApproval = () => {
     if (!pendingForm || !appInput) return;
     if (config.hasApprovalPassword === false) {
+      if (stkChannelReady(config, channels)) {
+        runStkApproval(pendingForm, { silent: false });
+        return;
+      }
       if (appSetupEl) appSetupEl.hidden = false;
       return;
     }
@@ -1345,6 +1418,14 @@ function initPaymentApproval(config) {
   );
 
   appSubmitBtn?.addEventListener("click", submitAppApproval);
+  appUseStkBtn?.addEventListener("click", () => {
+    if (!pendingForm) return;
+    const form = pendingForm;
+    closeAppDialog();
+    approvalActive = true;
+    pendingForm = form;
+    runStkApproval(form, { silent: false });
+  });
   appCancelBtn?.addEventListener("click", cancelFlow);
   appBackdrop?.addEventListener("click", (event) => {
     if (event.target === appBackdrop) cancelFlow();

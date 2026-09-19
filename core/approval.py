@@ -186,8 +186,19 @@ def approval_ok(request, *, money_request: MoneyRequest, next_url: str) -> bool:
         stk_ok = _stk_verified_on_request(request, money_request)
         if pin_ok or stk_ok:
             return True
+        if not user.has_approval_password and not (user.phone or "").strip():
+            messages.error(
+                request,
+                "Set your approval password and phone number on Profile before approving payments.",
+            )
+            return False
         if (request.POST.get("approval_pin") or "").strip():
             messages.error(request, "Enter your 6-digit approval password to approve this payment.")
+        elif not (user.phone or "").strip():
+            messages.error(
+                request,
+                "Add your phone number on Profile, or enter your approval password in the app.",
+            )
         else:
             messages.error(
                 request,

@@ -24,6 +24,11 @@
       <a href="{% url 'accounts:profile' %}">Profile</a>
       before you can approve payments.
     </p>
+    <p class="field-error" data-pin-approval-phone-setup hidden>
+      Add your phone number on
+      <a href="{% url 'accounts:profile' %}">Profile</a>
+      to approve with an M-Pesa STK prompt.
+    </p>
     <p class="muted" data-pin-approval-detail hidden></p>
     <label class="label">
       Approval password
@@ -40,7 +45,10 @@
       >
     </label>
     <p class="field-error" data-pin-approval-error hidden>Enter your 6-digit approval password.</p>
-    <div class="toolbar">
+    <div class="toolbar approval-dialog-actions">
+      <button type="button" class="btn btn-ghost" data-pin-approval-use-stk hidden>
+        Use M-Pesa PIN on my phone
+      </button>
       <button type="button" class="btn btn-primary" data-pin-approval-submit>Approve &amp; send</button>
     </div>
   </div>

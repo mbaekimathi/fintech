@@ -6,7 +6,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from accounts.utils import write_audit
-from integrations.callbacks import wait_for_result
+from django.contrib import messages
+from django.http import JsonResponse
+from django.shortcuts import redirect
+
 from integrations.daraja import callback_urls
 from integrations.daraja_client import DarajaClient, DarajaError
 from integrations.models import DarajaConfig, DarajaOperation
@@ -206,6 +209,39 @@ def _ack_fields(body: dict) -> dict:
     }
 
 
+def redirect_after_transfer(request, url: str):
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return JsonResponse({"ok": True, "redirect": url})
+    return redirect(url)
+
+
+def flash_money_request_transfer_result(
+    request, money_request: MoneyRequest, operation: DarajaOperation
+) -> None:
+    """Set a flash message after approving a money request payout."""
+    amount_label = f"KES {money_request.amount:,.2f}"
+    if money_request.status == MoneyRequest.Status.PAID:
+        messages.success(
+            request,
+            operation.summary or f"Transfer of {amount_label} completed successfully.",
+        )
+    elif (
+        money_request.status == MoneyRequest.Status.APPROVED
+        or operation.status == DarajaOperation.Status.QUEUED
+    ):
+        messages.success(
+            request,
+            f"Payment approved. Transfer of {amount_label} is processing — check the ledger shortly.",
+        )
+    else:
+        messages.error(
+            request,
+            operation.summary
+            or operation.result_desc
+            or "Transfer failed. Request marked as failed.",
+        )
+
+
 def reject_money_request(request, money_request: MoneyRequest) -> MoneyRequest:
     if money_request.status != MoneyRequest.Status.PENDING:
         raise ValueError("Only pending requests can be rejected.")
@@ -288,37 +324,8 @@ def approve_and_transfer(request, money_request: MoneyRequest) -> tuple[MoneyReq
         )
         ensure_money_request_ledger_entry(money_request, operation)
 
-    operation = wait_for_result(operation)
-    money_request.refresh_from_db()
-    sync_money_request_from_operation(operation)
-    money_request.refresh_from_db()
-    if operation.status == DarajaOperation.Status.SUCCESS:
-        if money_request.status != MoneyRequest.Status.PAID:
-            money_request.status = MoneyRequest.Status.PAID
-            money_request.save(update_fields=["status", "updated_at"])
-        receipt = mpesa_receipt_from_operation(operation)
-        if receipt and money_request.mpesa_reference != receipt:
-            money_request.mpesa_reference = receipt
-            money_request.save(update_fields=["mpesa_reference", "updated_at"])
-        # Callback normally posts the ledger; retry here if the row is still open.
-        if receipt:
-            from integrations.callbacks import _post_ledger
-
-            _post_ledger(
-                operation,
-                amount=money_request.amount,
-                phone=operation.destination or money_request.destination,
-                receipt=receipt,
-                inbound=False,
-            )
-    elif operation.status in {
-        DarajaOperation.Status.FAILED,
-        DarajaOperation.Status.TIMEOUT,
-    }:
-        clear_pending_money_request_ledger(money_request)
-        if money_request.status != MoneyRequest.Status.FAILED:
-            money_request.status = MoneyRequest.Status.FAILED
-            money_request.save(update_fields=["status", "updated_at"])
+    # Return immediately after queuing — Safaricom callbacks finalize status.
+    # Blocking here caused gateway 502s when the proxy timed out before redirect.
 
     write_audit(
         request,

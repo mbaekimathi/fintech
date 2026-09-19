@@ -1790,6 +1790,13 @@ a:hover {
   margin-top: 0.75rem;
 }
 
+.approval-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 .readiness-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

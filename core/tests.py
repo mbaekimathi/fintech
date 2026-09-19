@@ -307,23 +307,19 @@ class NotificationFlowTests(TestCase):
         with patch("integrations.daraja_client.DarajaClient.access_token", return_value="token"):
             with patch("integrations.daraja_client._json_request") as mock_req:
                 mock_req.return_value = (200, ack)
-                with patch("paybill.services.wait_for_result") as wait:
-                    def mark_success(operation, timeout=8.0, interval=0.3):
-                        operation.status = DarajaOperation.Status.SUCCESS
-                        operation.summary = "Sent KES 750"
-                        operation.save(update_fields=["status", "summary", "updated_at"])
-                        return operation
-
-                    wait.side_effect = mark_success
-                    response = self.client.post(
-                        self._url(
-                            User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk
-                        ),
-                        {"intent": "approve", "next": "/"},
-                    )
-        self.assertEqual(response.status_code, 302)
+                response = self.client.post(
+                    self._url(
+                        User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk
+                    ),
+                    {"intent": "approve", "next": "/"},
+                )
+        self.assertRedirects(
+            response,
+            self._url(User.Role.IT_SUPPORT, "paybill:transactions"),
+            fetch_redirect_response=False,
+        )
         req.refresh_from_db()
-        self.assertEqual(req.status, MoneyRequest.Status.PAID)
+        self.assertEqual(req.status, MoneyRequest.Status.APPROVED)
         self.assertTrue(
             Notification.objects.filter(
                 recipient=self.employee,
@@ -800,21 +796,17 @@ class AppSettingsTests(TestCase):
         with patch("integrations.daraja_client.DarajaClient.access_token", return_value="token"):
             with patch("integrations.daraja_client._json_request") as mock_req:
                 mock_req.return_value = (200, ack)
-                with patch("paybill.services.wait_for_result") as wait:
-                    def mark_success(operation, timeout=8.0, interval=0.3):
-                        operation.status = DarajaOperation.Status.SUCCESS
-                        operation.summary = "Sent KES 500"
-                        operation.save(update_fields=["status", "summary", "updated_at"])
-                        return operation
-
-                    wait.side_effect = mark_success
-                    approved = self.client.post(
-                        self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
-                        {"intent": "approve", "approval_pin": "778899", "next": "/"},
-                    )
-        self.assertEqual(approved.status_code, 302)
+                approved = self.client.post(
+                    self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
+                    {"intent": "approve", "approval_pin": "778899", "next": "/"},
+                )
+        self.assertRedirects(
+            approved,
+            self._url(User.Role.IT_SUPPORT, "paybill:transactions"),
+            fetch_redirect_response=False,
+        )
         req.refresh_from_db()
-        self.assertEqual(req.status, MoneyRequest.Status.PAID)
+        self.assertEqual(req.status, MoneyRequest.Status.APPROVED)
 
     def test_approve_accepts_stk_without_app_pin_when_both_enabled(self):
         settings = AppSettings.load()
@@ -860,25 +852,21 @@ class AppSettingsTests(TestCase):
         with patch("integrations.daraja_client.DarajaClient.access_token", return_value="token"):
             with patch("integrations.daraja_client._json_request") as mock_req:
                 mock_req.return_value = (200, ack)
-                with patch("paybill.services.wait_for_result") as wait:
-                    def mark_success(operation, timeout=8.0, interval=0.3):
-                        operation.status = DarajaOperation.Status.SUCCESS
-                        operation.summary = "Sent KES 500"
-                        operation.save(update_fields=["status", "summary", "updated_at"])
-                        return operation
-
-                    wait.side_effect = mark_success
-                    approved = self.client.post(
-                        self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
-                        {
-                            "intent": "approve",
-                            "stk_approval_operation_id": str(stk_op.pk),
-                            "next": "/",
-                        },
-                    )
-        self.assertEqual(approved.status_code, 302)
+                approved = self.client.post(
+                    self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
+                    {
+                        "intent": "approve",
+                        "stk_approval_operation_id": str(stk_op.pk),
+                        "next": "/",
+                    },
+                )
+        self.assertRedirects(
+            approved,
+            self._url(User.Role.IT_SUPPORT, "paybill:transactions"),
+            fetch_redirect_response=False,
+        )
         req.refresh_from_db()
-        self.assertEqual(req.status, MoneyRequest.Status.PAID)
+        self.assertEqual(req.status, MoneyRequest.Status.APPROVED)
 
     def test_approve_requires_pin_when_hub_on_without_person_toggle(self):
         settings = AppSettings.load()
@@ -929,21 +917,17 @@ class AppSettingsTests(TestCase):
         with patch("integrations.daraja_client.DarajaClient.access_token", return_value="token"):
             with patch("integrations.daraja_client._json_request") as mock_req:
                 mock_req.return_value = (200, ack)
-                with patch("paybill.services.wait_for_result") as wait:
-                    def mark_success(operation, timeout=8.0, interval=0.3):
-                        operation.status = DarajaOperation.Status.SUCCESS
-                        operation.summary = "Sent KES 500"
-                        operation.save(update_fields=["status", "summary", "updated_at"])
-                        return operation
-
-                    wait.side_effect = mark_success
-                    response = self.client.post(
-                        self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
-                        {"intent": "approve", "approval_pin": "778899", "next": "/"},
-                    )
-        self.assertEqual(response.status_code, 302)
+                response = self.client.post(
+                    self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
+                    {"intent": "approve", "approval_pin": "778899", "next": "/"},
+                )
+        self.assertRedirects(
+            response,
+            self._url(User.Role.IT_SUPPORT, "paybill:transactions"),
+            fetch_redirect_response=False,
+        )
         req.refresh_from_db()
-        self.assertEqual(req.status, MoneyRequest.Status.PAID)
+        self.assertEqual(req.status, MoneyRequest.Status.APPROVED)
 
     def test_reviewer_workspace_includes_pin_dialog_and_approval_config(self):
         settings = AppSettings.load()
@@ -1000,4 +984,55 @@ class AppSettingsTests(TestCase):
         self.assertTrue(config["stkPollUrl"].endswith("/"))
         self.assertIn("/approval/stk/", config["stkPollUrl"])
         self.assertIn("hasApprovalPassword", config)
+        self.assertIn("hasPhone", config)
+        self.assertIn("dualApproval", config)
+        self.assertTrue(config["dualApproval"])
         self.assertIn("profileUrl", config)
+
+    def test_dual_approval_transactions_ajax_returns_json_redirect(self):
+        settings = AppSettings.load()
+        settings.app_approval_required = True
+        settings.stk_pin_approval_required = True
+        settings.save(update_fields=["app_approval_required", "stk_pin_approval_required"])
+        self._enable_both_approval_prompts(self.it_support)
+
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("300.00"),
+            reason="Supplies",
+            status=MoneyRequest.Status.PENDING,
+        )
+        self.client.force_login(self.it_support)
+        ack = {
+            "ResponseCode": "0",
+            "ResponseDescription": "Accept the service request successfully.",
+            "ConversationID": "AG_DUAL_1",
+            "OriginatorConversationID": "ORIG_DUAL_1",
+        }
+        with patch("integrations.daraja_client.DarajaClient.access_token", return_value="token"):
+            with patch("integrations.daraja_client._json_request") as mock_req:
+                mock_req.return_value = (200, ack)
+                with patch("integrations.callbacks.wait_for_result") as wait:
+                    def mark_success(operation, timeout=8.0, interval=0.3):
+                        operation.status = DarajaOperation.Status.SUCCESS
+                        operation.summary = "Sent KES 300"
+                        operation.save(update_fields=["status", "summary", "updated_at"])
+                        return operation
+
+                    wait.side_effect = mark_success
+                    response = self.client.post(
+                        self._url(User.Role.IT_SUPPORT, "paybill:money-request-review", pk=req.pk),
+                        {"intent": "approve", "approval_pin": "778899"},
+                        HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+                    )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("/transactions/", payload["redirect"])
+        req.refresh_from_db()
+        self.assertEqual(req.status, MoneyRequest.Status.APPROVED)
+        self.assertIsNotNone(req.daraja_operation_id)

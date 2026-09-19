@@ -392,49 +392,22 @@ class MoneyRequestReviewTests(TestCase):
         with patch("integrations.daraja_client.DarajaClient.access_token", return_value="token"):
             with patch("integrations.daraja_client._json_request") as mock_req:
                 mock_req.return_value = (200, ack)
-                with patch("paybill.services.wait_for_result") as wait:
-                    def mark_success(operation, timeout=8.0, interval=0.3):
-                        operation.status = DarajaOperation.Status.SUCCESS
-                        operation.summary = "Sent KES 750 · NHL61H8XYZ"
-                        operation.mpesa_reference = "NHL61H8XYZ"
-                        operation.result_payload = {
-                            "Result": {
-                                "ResultParameters": {
-                                    "ResultParameter": [
-                                        {"Key": "TransactionReceipt", "Value": "NHL61H8XYZ"},
-                                    ]
-                                }
-                            }
-                        }
-                        operation.save(
-                            update_fields=[
-                                "status",
-                                "summary",
-                                "mpesa_reference",
-                                "result_payload",
-                                "updated_at",
-                            ]
-                        )
-                        return operation
-
-                    wait.side_effect = mark_success
-                    response = self.client.post(
-                        self._url(
-                            User.Role.IT_SUPPORT, "paybill:money-request-review", pk=req.pk
-                        ),
-                        {"intent": "approve"},
-                    )
+                response = self.client.post(
+                    self._url(
+                        User.Role.IT_SUPPORT, "paybill:money-request-review", pk=req.pk
+                    ),
+                    {"intent": "approve"},
+                )
         self.assertRedirects(
             response,
             self._url(User.Role.IT_SUPPORT, "paybill:transactions"),
             fetch_redirect_response=False,
         )
         req.refresh_from_db()
-        self.assertEqual(req.status, MoneyRequest.Status.PAID)
-        self.assertEqual(req.mpesa_reference, "NHL61H8XYZ")
+        self.assertEqual(req.status, MoneyRequest.Status.APPROVED)
         self.assertIsNotNone(req.daraja_operation_id)
         self.assertEqual(req.daraja_operation.kind, DarajaOperation.Kind.B2C)
-        self.assertEqual(req.daraja_operation.mpesa_reference, "NHL61H8XYZ")
+        self.assertEqual(req.daraja_operation.status, DarajaOperation.Status.QUEUED)
         self.assertTrue(mock_req.called)
 
 
