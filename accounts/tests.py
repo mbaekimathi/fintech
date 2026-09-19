@@ -207,3 +207,106 @@ class KenyaSalaryRegisterTests(TestCase):
         self.assertEqual(salary.mpesa_number, "254712345678")
         self.assertEqual(salary.bank_name, "")
         self.assertEqual(salary.bank_account_number, "")
+
+
+class ProfileApprovalPasswordTests(TestCase):
+    def setUp(self):
+        self.reviewer = UserModel.objects.create_user(
+            staff_code="600001",
+            password="112233",
+            email="reviewer@example.com",
+            first_name="Review",
+            last_name="User",
+            role=User.Role.IT_SUPPORT,
+            is_approved=True,
+        )
+        self.employee = UserModel.objects.create_user(
+            staff_code="600002",
+            password="445566",
+            email="employee@example.com",
+            first_name="Emp",
+            last_name="User",
+            role=User.Role.EMPLOYEE,
+            is_approved=True,
+        )
+
+    def _url(self, name):
+        token = set_current_role_slug("it-support")
+        try:
+            return reverse(name)
+        finally:
+            reset_current_role_slug(token)
+
+    def test_reviewer_sees_approval_password_section(self):
+        self.client.force_login(self.reviewer)
+        response = self.client.get(self._url("accounts:profile"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Approval password")
+        self.assertContains(response, "Not set")
+        self.assertContains(response, ">Edit</button>", count=3)
+        self.assertContains(response, "••••••")
+
+    def test_employee_without_review_permission_does_not_see_section(self):
+        token = set_current_role_slug("employee")
+        try:
+            profile_url = reverse("accounts:profile")
+        finally:
+            reset_current_role_slug(token)
+        self.client.force_login(self.employee)
+        response = self.client.get(profile_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Approval password")
+
+    def test_set_approval_password_must_differ_from_login_password(self):
+        self.client.force_login(self.reviewer)
+        response = self.client.post(
+            self._url("accounts:profile"),
+            {
+                "action": "approval_password",
+                "new_approval_password1": "112233",
+                "new_approval_password2": "112233",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "must be different from your login password")
+        self.reviewer.refresh_from_db()
+        self.assertFalse(self.reviewer.has_approval_password)
+
+    def test_set_and_change_approval_password(self):
+        self.client.force_login(self.reviewer)
+        created = self.client.post(
+            self._url("accounts:profile"),
+            {
+                "action": "approval_password",
+                "new_approval_password1": "778899",
+                "new_approval_password2": "778899",
+            },
+        )
+        self.assertRedirects(created, self._url("accounts:profile"))
+        self.reviewer.refresh_from_db()
+        self.assertTrue(self.reviewer.check_approval_password("778899"))
+        self.assertFalse(self.reviewer.check_password("778899"))
+
+        missing_old = self.client.post(
+            self._url("accounts:profile"),
+            {
+                "action": "approval_password",
+                "new_approval_password1": "990011",
+                "new_approval_password2": "990011",
+            },
+        )
+        self.assertEqual(missing_old.status_code, 200)
+        self.assertContains(missing_old, "Enter your old approval password")
+
+        changed = self.client.post(
+            self._url("accounts:profile"),
+            {
+                "action": "approval_password",
+                "old_approval_password": "778899",
+                "new_approval_password1": "990011",
+                "new_approval_password2": "990011",
+            },
+        )
+        self.assertRedirects(changed, self._url("accounts:profile"))
+        self.reviewer.refresh_from_db()
+        self.assertTrue(self.reviewer.check_approval_password("990011"))

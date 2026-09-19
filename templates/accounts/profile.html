@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Profile{% endblock %}
+{% block eyebrow %}Account{% endblock %}
+{% block heading %}Profile{% endblock %}
+{% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Your account</h2>
+      <p>Review your identity details and contact information. Choose Edit on a section when you need to make changes.</p>
+    </div>
+  </section>
+
+  <section class="card-grid">
+    <article class="panel tile">
+      <p class="eyebrow">Identity</p>
+      <h2>{{ profile_user.get_full_name|default:profile_user.email }}</h2>
+      <dl class="kv">
+        <dt>Login code</dt>
+        <dd>{{ profile_user.staff_code }}</dd>
+        <dt>Role</dt>
+        <dd>
+          {% if profile_user.is_role_switched %}
+            {{ profile_user.role_label }}
+            <span class="muted"> (viewing · signed in as {{ profile_user.get_role_display }})</span>
+          {% else %}
+            {{ profile_user.get_role_display }}
+          {% endif %}
+        </dd>
+        {% if profile_user.department %}
+          <dt>Department</dt>
+          <dd>{{ profile_user.department }}</dd>
+        {% endif %}
+      </dl>
+    </article>
+  </section>
+
+  <section class="panel" x-data="{ editing: {{ edit_profile|yesno:'true,false' }} }">
+    <div class="panel-head">
+      <div>
+        <h2>Contact details</h2>
+        <p class="muted" x-show="!editing">Name, email, and phone on your account.</p>
+        <p class="muted" x-show="editing" x-cloak>Update the name, email, and phone number on your account.</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-small" x-show="!editing" @click="editing = true">Edit</button>
+    </div>
+
+    <div x-show="!editing">
+      <dl class="kv">
+        <dt>First name</dt>
+        <dd>{{ profile_user.first_name|default:"—" }}</dd>
+        <dt>Last name</dt>
+        <dd>{{ profile_user.last_name|default:"—" }}</dd>
+        <dt>Email</dt>
+        <dd>{{ profile_user.email|default:"—" }}</dd>
+        <dt>Phone</dt>
+        <dd>{{ profile_user.phone|default:"—" }}</dd>
+      </dl>
+    </div>
+
+    <form method="post" class="stack-panels" novalidate x-show="editing" x-cloak>
+      {% csrf_token %}
+      <input type="hidden" name="action" value="profile">
+      {% if profile_form.non_field_errors %}
+        <div class="flash flash-error">{{ profile_form.non_field_errors|join:" " }}</div>
+      {% endif %}
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=profile_form.first_name %}
+        {% include "partials/labeled_field.html" with field=profile_form.last_name %}
+        {% include "partials/labeled_field.html" with field=profile_form.email %}
+        {% include "partials/labeled_field.html" with field=profile_form.phone %}
+      </div>
+      <div class="toolbar">
+        <button type="button" class="btn btn-ghost" @click="editing = false">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save profile</button>
+      </div>
+    </form>
+  </section>
+
+  {% if can_review_requests %}
+    <section class="panel" x-data="{ editing: {{ edit_approval_password|yesno:'true,false' }} }">
+      <div class="panel-head">
+        <div>
+          <h2>Approval password</h2>
+          <p class="muted" x-show="!editing">
+            Separate 6-digit password for approving payment transfers when app approval is on.
+          </p>
+          <p class="muted" x-show="editing" x-cloak>
+            {% if has_approval_password %}
+              Enter your old approval password, then choose a new one. It must not match your login password.
+            {% else %}
+              Set a separate 6-digit password for approving payment transfers. It must not match your login password.
+            {% endif %}
+          </p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-small" x-show="!editing" @click="editing = true">Edit</button>
+      </div>
+
+      <div x-show="!editing">
+        <dl class="kv">
+          <dt>Status</dt>
+          <dd>{% if has_approval_password %}Configured{% else %}Not set{% endif %}</dd>
+          <dt>Password</dt>
+          <dd class="mono">{% if has_approval_password %}••••••{% else %}—{% endif %}</dd>
+        </dl>
+      </div>
+
+      <form method="post" class="stack-panels" novalidate x-show="editing" x-cloak>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="approval_password">
+        {% if approval_password_form.non_field_errors %}
+          <div class="flash flash-error">{{ approval_password_form.non_field_errors|join:" " }}</div>
+        {% endif %}
+        <div class="form-grid">
+          {% if approval_password_form.old_approval_password %}
+            {% include "partials/labeled_field.html" with field=approval_password_form.old_approval_password secret=True %}
+          {% endif %}
+          {% include "partials/labeled_field.html" with field=approval_password_form.new_approval_password1 secret=True %}
+          {% include "partials/labeled_field.html" with field=approval_password_form.new_approval_password2 secret=True %}
+        </div>
+        <div class="toolbar">
+          <button type="button" class="btn btn-ghost" @click="editing = false">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            {% if has_approval_password %}Update approval password{% else %}Set approval password{% endif %}
+          </button>
+        </div>
+      </form>
+    </section>
+  {% endif %}
+
+  <section class="panel" x-data="{ editing: {{ edit_password|yesno:'true,false' }} }">
+    <div class="panel-head">
+      <div>
+        <h2>Login password</h2>
+        <p class="muted" x-show="!editing">Your 6-digit sign-in password for this workspace.</p>
+        <p class="muted" x-show="editing" x-cloak>Change your 6-digit password. You will stay signed in on this device.</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-small" x-show="!editing" @click="editing = true">Edit</button>
+    </div>
+
+    <div x-show="!editing">
+      <dl class="kv">
+        <dt>Password</dt>
+        <dd class="mono">••••••</dd>
+      </dl>
+    </div>
+
+    <form method="post" class="stack-panels" novalidate x-show="editing" x-cloak>
+      {% csrf_token %}
+      <input type="hidden" name="action" value="password">
+      {% if password_form.non_field_errors %}
+        <div class="flash flash-error">{{ password_form.non_field_errors|join:" " }}</div>
+      {% endif %}
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=password_form.current_password secret=True %}
+        {% include "partials/labeled_field.html" with field=password_form.new_password1 secret=True %}
+        {% include "partials/labeled_field.html" with field=password_form.new_password2 secret=True %}
+      </div>
+      <div class="toolbar">
+        <button type="button" class="btn btn-ghost" @click="editing = false">Cancel</button>
+        <button type="submit" class="btn btn-primary">Update password</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

@@ -14,7 +14,12 @@ from pathlib import Path
 from accounts.mixins import ApprovedRequiredMixin, RoleRequiredMixin
 from accounts.models import User
 from accounts.utils import write_audit
-from core.approval import approval_pin_ok
+from core.approval import (
+    approval_ok,
+    initiate_stk_approval,
+    poll_stk_approval,
+    user_requires_stk_on_approval,
+)
 from core.models import AppSettings, PushSubscription
 from core.notifications import (
     mark_money_request_notifications_read,
@@ -454,7 +459,7 @@ class NotificationReviewView(RoleRequiredMixin, View):
             messages.error(request, "Choose approve or reject.")
             return redirect(next_url)
 
-        if not approval_pin_ok(request, next_url=next_url):
+        if not approval_ok(request, money_request=money_request, next_url=next_url):
             return redirect(next_url)
 
         try:
@@ -596,7 +601,8 @@ class AppSettingsView(RoleRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         settings = AppSettings.load()
         context["app_settings"] = settings
-        context["pin_approval_required"] = settings.pin_approval_required
+        context["app_approval_required"] = settings.app_approval_required
+        context["stk_pin_approval_required"] = settings.stk_pin_approval_required
         return context
 
     def post(self, request, *args, **kwargs):
@@ -606,23 +612,107 @@ class AppSettingsView(RoleRequiredMixin, TemplateView):
             return JsonResponse({"ok": False, "detail": "Not allowed."}, status=403)
 
         settings = AppSettings.load()
-        enabled = request.POST.get("pin_approval_required") in {"1", "true", "on"}
-        settings.pin_approval_required = enabled
-        settings.save(update_fields=["pin_approval_required", "updated_at"])
+        setting = (request.POST.get("setting") or "").strip()
+        enabled = None
+        update_fields = ["updated_at"]
+        audit_detail = {}
+
+        if "app_approval_required" in request.POST:
+            enabled = request.POST.get("app_approval_required") in {"1", "true", "on"}
+            settings.app_approval_required = enabled
+            update_fields.append("app_approval_required")
+            audit_detail["app_approval_required"] = enabled
+            setting = "app_approval_required"
+        elif "stk_pin_approval_required" in request.POST:
+            enabled = request.POST.get("stk_pin_approval_required") in {"1", "true", "on"}
+            settings.stk_pin_approval_required = enabled
+            update_fields.append("stk_pin_approval_required")
+            audit_detail["stk_pin_approval_required"] = enabled
+            setting = "stk_pin_approval_required"
+        else:
+            return JsonResponse({"ok": False, "detail": "Unknown setting."}, status=400)
+
+        settings.save(update_fields=update_fields)
         write_audit(
             request,
-            "app_settings.pin_approval",
+            f"app_settings.{setting}",
             object_type="app_settings",
             object_id=settings.pk,
-            detail={"pin_approval_required": enabled},
+            detail=audit_detail,
         )
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return JsonResponse({"ok": True, "pin_approval_required": settings.pin_approval_required})
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "app_approval_required": settings.app_approval_required,
+                    "stk_pin_approval_required": settings.stk_pin_approval_required,
+                }
+            )
 
         label = "enabled" if enabled else "disabled"
-        messages.success(request, f"PIN approval prompting {label}.")
+        messages.success(request, f"{setting.replace('_', ' ')} {label}.")
         return redirect("core:app-settings")
+
+
+class StkApprovalInitiateView(RoleRequiredMixin, View):
+    required_activity = "review_requests"
+
+    def post(self, request, *args, **kwargs):
+        from paybill.models import MoneyRequest
+
+        if not user_requires_stk_on_approval(request.user):
+            return JsonResponse({"ok": False, "detail": "PIN approval is not required."}, status=400)
+
+        raw_id = (request.POST.get("money_request_id") or "").strip()
+        if not raw_id.isdigit():
+            return JsonResponse({"ok": False, "detail": "Missing money request."}, status=400)
+
+        money_request = get_object_or_404(MoneyRequest, pk=int(raw_id))
+        if money_request.status != MoneyRequest.Status.PENDING:
+            return JsonResponse({"ok": False, "detail": "That request is no longer pending."}, status=409)
+
+        try:
+            operation = initiate_stk_approval(request, money_request)
+        except DarajaError as exc:
+            return JsonResponse({"ok": False, "detail": str(exc)}, status=400)
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "operation_id": operation.pk,
+                "summary": operation.summary or operation.result_desc or "STK prompt sent.",
+            }
+        )
+
+
+class StkApprovalPollView(RoleRequiredMixin, View):
+    required_activity = "review_requests"
+
+    def get(self, request, pk, *args, **kwargs):
+        from integrations.models import DarajaOperation
+
+        operation = get_object_or_404(
+            DarajaOperation,
+            pk=pk,
+            kind=DarajaOperation.Kind.STK,
+            created_by=request.user,
+        )
+        operation = poll_stk_approval(operation)
+        return JsonResponse(
+            {
+                "ok": True,
+                "status": operation.status,
+                "summary": operation.summary or operation.result_desc or "Waiting",
+                "complete": operation.status
+                in {
+                    DarajaOperation.Status.SUCCESS,
+                    DarajaOperation.Status.FAILED,
+                    DarajaOperation.Status.TIMEOUT,
+                },
+                "success": operation.status == DarajaOperation.Status.SUCCESS,
+            }
+        )
 
 
 class DarajaSetupView(RoleRequiredMixin, UpdateView):

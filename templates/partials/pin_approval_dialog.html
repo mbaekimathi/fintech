@@ -14,13 +14,13 @@
     <div class="panel-head">
       <div>
         <p class="eyebrow">Confirm approval</p>
-        <h2 id="pin-approval-title">Enter your 6-digit password</h2>
+        <h2 id="pin-approval-title">Enter your approval password</h2>
       </div>
       <button type="button" class="btn btn-ghost btn-small" data-pin-approval-cancel>Cancel</button>
     </div>
-    <p class="muted">Your login password is required to approve this payment transfer.</p>
+    <p class="muted">Your approval password is required to send this payment transfer.</p>
     <label class="label">
-      Password
+      Approval password
       <input
         type="password"
         class="pin-field"
@@ -29,11 +29,11 @@
         maxlength="6"
         pattern="\d{6}"
         placeholder="••••••"
-        aria-label="6-digit password"
+        aria-label="6-digit approval password"
         data-pin-approval-input
       >
     </label>
-    <p class="field-error" data-pin-approval-error hidden>Enter your 6-digit password.</p>
+    <p class="field-error" data-pin-approval-error hidden>Enter your 6-digit approval password.</p>
     <div class="toolbar">
       <button type="button" class="btn btn-primary" data-pin-approval-submit>Approve &amp; send</button>
     </div>

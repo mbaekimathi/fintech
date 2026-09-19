@@ -31,6 +31,7 @@
             {% endif %}
           </div>
         </div>
+        <a class="menu-action" href="{% url 'accounts:profile' %}">Profile</a>
         <a class="menu-action" href="{% url 'core:settings' %}">Settings</a>
         {% if user.can_switch_roles %}
           <div class="menu-label-row">Switch role</div>

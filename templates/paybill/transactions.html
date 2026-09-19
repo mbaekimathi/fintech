@@ -89,7 +89,7 @@
                   {% if can_review_requests %}
                     <td>
                       <div class="toolbar">
-                        <form method="post" action="{% url 'paybill:money-request-review' row.pk %}" class="inline-form" data-approval-form>
+                        <form method="post" action="{% url 'paybill:money-request-review' row.pk %}" class="inline-form" data-approval-form data-money-request-id="{{ row.pk }}">
                           {% csrf_token %}
                           <input type="hidden" name="intent" value="approve">
                           <button type="submit" class="btn btn-primary btn-small">Approve &amp; send</button>

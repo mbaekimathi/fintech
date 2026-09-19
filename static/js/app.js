@@ -597,6 +597,12 @@ function initHubBalance() {
     }
     if (submitBtn) submitBtn.disabled = !hasUtility || !data.transfer_ready;
     if (maxBtn) maxBtn.disabled = !hasUtility || !data.transfer_ready;
+    const blockers = Array.isArray(data.transfer_blockers) ? data.transfer_blockers : [];
+    if (blockers.length && !data.transfer_ready) {
+      setHint(blockers[0]);
+    } else if (data.transfer_ready) {
+      setHint("");
+    }
   };
 
   const setHint = (text) => {
@@ -835,7 +841,7 @@ function initAppSettings() {
       });
       if (!response.ok) throw new Error("save failed");
       const data = await response.json();
-      input.checked = Boolean(data.pin_approval_required);
+      input.checked = Boolean(data[setting]);
     } catch (_err) {
       input.checked = !enabled;
     } finally {
@@ -845,80 +851,233 @@ function initAppSettings() {
   });
 }
 
-function initPinApproval() {
-  const configEl = document.getElementById("pin-approval-config");
+function initPaymentApproval() {
+  const configEl = document.getElementById("approval-config");
   if (!configEl) return;
-  let required = false;
+
+  let config = {};
   try {
-    required = JSON.parse(configEl.textContent || "false") === true;
+    config = JSON.parse(configEl.textContent || "{}");
   } catch (_err) {
     return;
   }
-  if (!required) return;
+  if (!config.app && !config.stk) return;
 
-  const backdrop = document.querySelector("[data-pin-approval-backdrop]");
-  const input = document.querySelector("[data-pin-approval-input]");
-  const errorEl = document.querySelector("[data-pin-approval-error]");
-  const submitBtn = document.querySelector("[data-pin-approval-submit]");
-  const cancelBtn = document.querySelector("[data-pin-approval-cancel]");
-  if (!backdrop || !input || !submitBtn) return;
+  const csrf =
+    document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
+    document.querySelector('meta[name="csrf-token"]')?.content ||
+    "";
+
+  const appBackdrop = document.querySelector("[data-pin-approval-backdrop]");
+  const appInput = document.querySelector("[data-pin-approval-input]");
+  const appErrorEl = document.querySelector("[data-pin-approval-error]");
+  const appSubmitBtn = document.querySelector("[data-pin-approval-submit]");
+  const appCancelBtn = document.querySelector("[data-pin-approval-cancel]");
+
+  const stkBackdrop = document.querySelector("[data-stk-approval-backdrop]");
+  const stkMessageEl = document.querySelector("[data-stk-approval-message]");
+  const stkStatusEl = document.querySelector("[data-stk-approval-status]");
+  const stkErrorEl = document.querySelector("[data-stk-approval-error]");
+  const stkCancelBtns = document.querySelectorAll("[data-stk-approval-cancel]");
 
   let pendingForm = null;
+  let approvalPin = "";
+  let pollTimer = null;
 
-  const closeDialog = () => {
+  const closeAppDialog = () => {
+    if (appInput) appInput.value = "";
+    if (appErrorEl) appErrorEl.hidden = true;
+    if (appBackdrop) appBackdrop.hidden = true;
+  };
+
+  const closeStkDialog = () => {
+    if (pollTimer) {
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    if (stkErrorEl) {
+      stkErrorEl.hidden = true;
+      stkErrorEl.textContent = "";
+    }
+    if (stkStatusEl) stkStatusEl.textContent = "Waiting for M-Pesa…";
+    if (stkBackdrop) stkBackdrop.hidden = true;
+  };
+
+  const resetFlow = () => {
     pendingForm = null;
-    input.value = "";
-    if (errorEl) errorEl.hidden = true;
-    backdrop.hidden = true;
+    approvalPin = "";
+    closeAppDialog();
+    closeStkDialog();
   };
 
-  const openDialog = (form) => {
-    pendingForm = form;
-    input.value = "";
-    if (errorEl) errorEl.hidden = true;
-    backdrop.hidden = false;
-    window.requestAnimationFrame(() => input.focus());
+  const submitForm = (form, stkOperationId = "") => {
+    if (approvalPin) {
+      let hidden = form.querySelector('input[name="approval_pin"]');
+      if (!hidden) {
+        hidden = document.createElement("input");
+        hidden.type = "hidden";
+        hidden.name = "approval_pin";
+        form.appendChild(hidden);
+      }
+      hidden.value = approvalPin;
+    }
+    if (stkOperationId) {
+      let hidden = form.querySelector('input[name="stk_approval_operation_id"]');
+      if (!hidden) {
+        hidden = document.createElement("input");
+        hidden.type = "hidden";
+        hidden.name = "stk_approval_operation_id";
+        form.appendChild(hidden);
+      }
+      hidden.value = stkOperationId;
+    }
+    const target = form;
+    resetFlow();
+    target.submit();
   };
 
-  const submitApproval = () => {
-    if (!pendingForm) return;
-    const pin = input.value.replace(/\D/g, "").slice(0, 6);
-    if (pin.length !== 6) {
-      if (errorEl) errorEl.hidden = false;
-      input.focus();
+  const pollStkApproval = (form, operationId) =>
+    new Promise((resolve, reject) => {
+      if (!config.stkPollUrl) {
+        reject(new Error("Missing poll URL."));
+        return;
+      }
+      const pollUrl = `${config.stkPollUrl}${operationId}/`;
+      const finish = (ok, message) => {
+        if (pollTimer) {
+          window.clearInterval(pollTimer);
+          pollTimer = null;
+        }
+        if (ok) resolve(operationId);
+        else reject(new Error(message || "PIN approval failed."));
+      };
+
+      const tick = async () => {
+        try {
+          const response = await fetch(pollUrl, {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+          });
+          if (!response.ok) throw new Error("Could not check STK status.");
+          const data = await response.json();
+          if (stkStatusEl) stkStatusEl.textContent = data.summary || "Waiting for M-Pesa…";
+          if (data.complete) finish(Boolean(data.success), data.summary);
+        } catch (err) {
+          finish(false, err.message);
+        }
+      };
+
+      tick();
+      pollTimer = window.setInterval(tick, 2500);
+    });
+
+  const runStkApproval = async (form) => {
+    const moneyRequestId = form.getAttribute("data-money-request-id");
+    if (!moneyRequestId) {
+      window.alert("This approval form is missing the money request id.");
+      resetFlow();
       return;
     }
-    let hidden = pendingForm.querySelector('input[name="approval_pin"]');
-    if (!hidden) {
-      hidden = document.createElement("input");
-      hidden.type = "hidden";
-      hidden.name = "approval_pin";
-      pendingForm.appendChild(hidden);
+    if (!config.stkInitiateUrl) {
+      window.alert("STK approval is not configured.");
+      resetFlow();
+      return;
     }
-    hidden.value = pin;
+
+    if (stkBackdrop) stkBackdrop.hidden = false;
+    if (stkMessageEl) {
+      stkMessageEl.textContent =
+        "Sending an STK prompt to your phone. Enter your M-Pesa PIN when it arrives.";
+    }
+    if (stkStatusEl) stkStatusEl.textContent = "Sending STK prompt…";
+
+    try {
+      const body = new URLSearchParams({ money_request_id: moneyRequestId });
+      const response = await fetch(config.stkInitiateUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Requested-With": "XMLHttpRequest",
+          "X-CSRFToken": csrf,
+        },
+        body,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.detail || "Could not send STK prompt.");
+      if (stkMessageEl) {
+        stkMessageEl.textContent =
+          data.summary || "Check your phone and enter your M-Pesa PIN to approve this payment.";
+      }
+      if (stkStatusEl) stkStatusEl.textContent = "Waiting for M-Pesa PIN…";
+      const operationId = await pollStkApproval(form, data.operation_id);
+      submitForm(form, operationId);
+    } catch (err) {
+      if (stkErrorEl) {
+        stkErrorEl.textContent = err.message || "PIN approval failed.";
+        stkErrorEl.hidden = false;
+      }
+      if (stkStatusEl) stkStatusEl.textContent = "STK prompt not completed.";
+    }
+  };
+
+  const openAppDialog = (form) => {
+    pendingForm = form;
+    if (appInput) appInput.value = "";
+    if (appErrorEl) appErrorEl.hidden = true;
+    if (appBackdrop) appBackdrop.hidden = false;
+    window.requestAnimationFrame(() => appInput?.focus());
+  };
+
+  const continueApproval = (form) => {
+    if (config.stk) {
+      pendingForm = form;
+      runStkApproval(form);
+      return;
+    }
+    submitForm(form);
+  };
+
+  const submitAppApproval = () => {
+    if (!pendingForm || !appInput) return;
+    const pin = appInput.value.replace(/\D/g, "").slice(0, 6);
+    if (pin.length !== 6) {
+      if (appErrorEl) appErrorEl.hidden = false;
+      appInput.focus();
+      return;
+    }
+    approvalPin = pin;
     const form = pendingForm;
-    closeDialog();
-    form.submit();
+    closeAppDialog();
+    continueApproval(form);
   };
 
   document.addEventListener("submit", (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || !form.hasAttribute("data-approval-form")) return;
     event.preventDefault();
-    openDialog(form);
+    pendingForm = form;
+    approvalPin = "";
+    if (config.app) {
+      openAppDialog(form);
+      return;
+    }
+    continueApproval(form);
   });
 
-  submitBtn.addEventListener("click", submitApproval);
-  cancelBtn?.addEventListener("click", closeDialog);
-  backdrop.addEventListener("click", (event) => {
-    if (event.target === backdrop) closeDialog();
+  appSubmitBtn?.addEventListener("click", submitAppApproval);
+  appCancelBtn?.addEventListener("click", resetFlow);
+  appBackdrop?.addEventListener("click", (event) => {
+    if (event.target === appBackdrop) resetFlow();
   });
-  input.addEventListener("keydown", (event) => {
+  appInput?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      submitApproval();
+      submitAppApproval();
     }
-    if (event.key === "Escape") closeDialog();
+    if (event.key === "Escape") resetFlow();
+  });
+  stkCancelBtns.forEach((btn) => btn.addEventListener("click", resetFlow));
+  stkBackdrop?.addEventListener("click", (event) => {
+    if (event.target === stkBackdrop) resetFlow();
   });
 }
 
@@ -977,7 +1136,7 @@ if (document.readyState === "loading") {
     initWebPush();
     initEmployeePermissions();
     initAppSettings();
-    initPinApproval();
+    initPaymentApproval();
   });
 } else {
   initDarajaSetup();
@@ -987,7 +1146,7 @@ if (document.readyState === "loading") {
   initWebPush();
   initEmployeePermissions();
   initAppSettings();
-  initPinApproval();
+  initPaymentApproval();
 }
 
 function initWebPush() {

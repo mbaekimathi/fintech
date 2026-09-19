@@ -1,5 +1,5 @@
 from django.contrib import messages
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
 from django.http import HttpResponseRedirect
@@ -8,8 +8,16 @@ from django.urls import reverse, reverse_lazy
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, FormView, ListView, TemplateView, UpdateView
 
-from accounts.forms import EmployeeEditForm, EmployeeRegisterForm, EmployeeSalaryForm, LoginForm
-from accounts.mixins import RoleRequiredMixin
+from accounts.forms import (
+    EmployeeEditForm,
+    EmployeeRegisterForm,
+    EmployeeSalaryForm,
+    LoginForm,
+    ProfileApprovalPasswordForm,
+    ProfileForm,
+    ProfilePasswordForm,
+)
+from accounts.mixins import ApprovedRequiredMixin, RoleRequiredMixin
 from accounts.models import EmployeeSalary, User
 from accounts.role_switch import clear_view_as_role, set_view_as_role
 from accounts.role_urls import role_to_slug, set_current_role_slug, workspace_url
@@ -134,6 +142,86 @@ def pending_view(request):
         set_current_role_slug(role_to_slug(request.user.effective_role))
         return redirect("core:dashboard")
     return render(request, "accounts/pending.html")
+
+
+class ProfileView(ApprovedRequiredMixin, TemplateView):
+    template_name = "accounts/profile.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = User.objects.get(pk=self.request.user.pk)
+        profile_form = kwargs.get("profile_form") or ProfileForm(instance=user)
+        password_form = kwargs.get("password_form") or ProfilePasswordForm(user=user)
+        context["profile_user"] = user
+        context["profile_form"] = profile_form
+        context["password_form"] = password_form
+        context["can_review_requests"] = user.can_review_requests()
+        context["has_approval_password"] = user.has_approval_password
+        context["edit_profile"] = bool(profile_form.errors)
+        context["edit_password"] = bool(password_form.errors)
+        context["edit_approval_password"] = False
+        if user.can_review_requests():
+            approval_password_form = (
+                kwargs.get("approval_password_form") or ProfileApprovalPasswordForm(user=user)
+            )
+            context["approval_password_form"] = approval_password_form
+            context["edit_approval_password"] = bool(approval_password_form.errors)
+        return context
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        action = request.POST.get("action")
+
+        if action == "profile":
+            form = ProfileForm(request.POST, instance=user)
+            if form.is_valid():
+                form.save()
+                write_audit(
+                    request,
+                    "profile.update",
+                    object_type="user",
+                    object_id=user.pk,
+                )
+                messages.success(request, "Profile updated.")
+                return redirect("accounts:profile")
+            return self.render_to_response(self.get_context_data(profile_form=form))
+
+        if action == "password":
+            form = ProfilePasswordForm(user=user, data=request.POST)
+            if form.is_valid():
+                user.set_password(form.cleaned_data["new_password1"])
+                user.save(update_fields=["password"])
+                update_session_auth_hash(request, user)
+                write_audit(
+                    request,
+                    "profile.password_change",
+                    object_type="user",
+                    object_id=user.pk,
+                )
+                messages.success(request, "Password updated.")
+                return redirect("accounts:profile")
+            return self.render_to_response(self.get_context_data(password_form=form))
+
+        if action == "approval_password":
+            user = User.objects.get(pk=user.pk)
+            if not user.can_review_requests():
+                messages.error(request, "You do not have permission to set an approval password.")
+                return redirect("accounts:profile")
+            form = ProfileApprovalPasswordForm(user=user, data=request.POST)
+            if form.is_valid():
+                user.set_approval_password(form.cleaned_data["new_approval_password1"])
+                user.save(update_fields=["approval_password"])
+                write_audit(
+                    request,
+                    "profile.approval_password_change",
+                    object_type="user",
+                    object_id=user.pk,
+                )
+                messages.success(request, "Approval password updated.")
+                return redirect("accounts:profile")
+            return self.render_to_response(self.get_context_data(approval_password_form=form))
+
+        return redirect("accounts:profile")
 
 
 class UserDirectoryView(RoleRequiredMixin, ListView):
@@ -279,7 +367,8 @@ class HREmployeePermissionsView(RoleRequiredMixin, TemplateView):
         from core.models import AppSettings
 
         app_settings = AppSettings.load()
-        context["pin_approval_required"] = app_settings.pin_approval_required
+        context["app_approval_required"] = app_settings.app_approval_required
+        context["stk_pin_approval_required"] = app_settings.stk_pin_approval_required
         context["can_manage_app_settings"] = self.request.user.can_manage_app_settings()
         return context
 

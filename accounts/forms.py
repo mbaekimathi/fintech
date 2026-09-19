@@ -29,6 +29,18 @@ PIN_WIDGET = forms.PasswordInput(
     }
 )
 
+NEW_PIN_WIDGET = forms.PasswordInput(
+    attrs={
+        "class": "pin-field",
+        "inputmode": "numeric",
+        "autocomplete": "new-password",
+        "maxlength": "6",
+        "pattern": r"\d{6}",
+        "placeholder": "••••••",
+        "aria-label": "6-digit password",
+    }
+)
+
 FIELD = forms.TextInput(attrs={"class": "field"})
 EMAIL_FIELD = forms.EmailInput(attrs={"class": "field", "autocomplete": "email"})
 PHONE_FIELD = forms.TextInput(attrs={"class": "field", "autocomplete": "tel"})
@@ -158,6 +170,127 @@ class EmployeeRegisterForm(forms.ModelForm):
         if commit:
             user.save()
         return user
+
+
+class ProfileForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ("first_name", "last_name", "email", "phone")
+        widgets = {
+            "first_name": FIELD,
+            "last_name": FIELD,
+            "email": EMAIL_FIELD,
+            "phone": PHONE_FIELD,
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["first_name"].required = True
+        self.fields["last_name"].required = True
+        self.fields["email"].required = True
+
+    def clean_email(self):
+        email = User.objects.normalize_email(self.cleaned_data["email"])
+        qs = User.objects.filter(email=email)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise ValidationError("That email is already in use.")
+        return email
+
+
+class ProfilePasswordForm(forms.Form):
+    current_password = forms.CharField(label="Current password", min_length=6, max_length=6, widget=PIN_WIDGET)
+    new_password1 = forms.CharField(label="New password", widget=NEW_PIN_WIDGET)
+    new_password2 = forms.CharField(label="Confirm new password", widget=NEW_PIN_WIDGET)
+
+    def __init__(self, user, *args, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean_current_password(self):
+        password = self.cleaned_data.get("current_password")
+        if password and not self.user.check_password(password):
+            raise ValidationError("Your current password is incorrect.")
+        return password
+
+    def clean_new_password1(self):
+        password = self.cleaned_data.get("new_password1")
+        if password:
+            validate_password(password, self.user)
+        return password
+
+    def clean(self):
+        cleaned = super().clean()
+        new_password1 = cleaned.get("new_password1")
+        new_password2 = cleaned.get("new_password2")
+        if new_password1 and new_password2 and new_password1 != new_password2:
+            self.add_error("new_password2", "The two passwords do not match.")
+        return cleaned
+
+
+class ProfileApprovalPasswordForm(forms.Form):
+    old_approval_password = forms.CharField(
+        label="Old approval password",
+        required=True,
+        min_length=6,
+        max_length=6,
+        widget=PIN_WIDGET,
+    )
+    new_approval_password1 = forms.CharField(
+        label="New approval password",
+        min_length=6,
+        max_length=6,
+        widget=NEW_PIN_WIDGET,
+    )
+    new_approval_password2 = forms.CharField(
+        label="Confirm new approval password",
+        min_length=6,
+        max_length=6,
+        widget=NEW_PIN_WIDGET,
+    )
+
+    def __init__(self, user, *args, **kwargs):
+        self.user = user
+        self.changing = user.has_approval_password
+        super().__init__(*args, **kwargs)
+        if self.changing:
+            self.fields["old_approval_password"].required = True
+            self.fields["new_approval_password1"].label = "New approval password"
+            self.fields["new_approval_password2"].label = "Confirm new approval password"
+        else:
+            del self.fields["old_approval_password"]
+            self.fields["new_approval_password1"].label = "Approval password"
+            self.fields["new_approval_password2"].label = "Confirm approval password"
+
+    def clean_old_approval_password(self):
+        password = (self.cleaned_data.get("old_approval_password") or "").strip()
+        if not self.changing:
+            return password
+        if not password:
+            raise ValidationError("Enter your old approval password.")
+        if not self.user.check_approval_password(password):
+            raise ValidationError("Your old approval password is incorrect.")
+        return password
+
+    def _validate_approval_pin(self, password: str, field: str) -> str:
+        if not password.isdigit() or len(password) != 6:
+            raise ValidationError("Enter a 6-digit approval password.")
+        if self.user.check_password(password):
+            raise ValidationError("Approval password must be different from your login password.")
+        return password
+
+    def clean_new_approval_password1(self):
+        password = (self.cleaned_data.get("new_approval_password1") or "").strip()
+        return self._validate_approval_pin(password, "new_approval_password1")
+
+    def clean(self):
+        cleaned = super().clean()
+        new_password1 = cleaned.get("new_approval_password1")
+        new_password2 = (cleaned.get("new_approval_password2") or "").strip()
+        if new_password2 and new_password2 != new_password1:
+            self.add_error("new_approval_password2", "The two approval passwords do not match.")
+        return cleaned
 
 
 class EmployeeEditForm(forms.ModelForm):

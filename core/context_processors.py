@@ -57,8 +57,10 @@ def shell(request):
     unread_count = 0
     can_review_money_requests = False
     can_manage_app_settings = False
-    pin_approval_required = False
-    pin_approval_required_for_user = False
+    app_approval_required = False
+    stk_pin_approval_required = False
+    app_approval_required_for_user = False
+    stk_pin_approval_required_for_user = False
     if user and user.is_authenticated and not user.is_pending:
         current = getattr(getattr(request, "resolver_match", None), "view_name", "")
         sections = _section_items(user)
@@ -66,8 +68,11 @@ def shell(request):
         can_manage_app_settings = user.can_manage_app_settings() or (
             user.is_superuser and not user.is_role_switched
         )
-        pin_approval_required = AppSettings.load().pin_approval_required
-        pin_approval_required_for_user = user.requires_pin_on_approval()
+        settings = AppSettings.load()
+        app_approval_required = settings.app_approval_required
+        stk_pin_approval_required = settings.stk_pin_approval_required
+        app_approval_required_for_user = user.requires_app_on_approval()
+        stk_pin_approval_required_for_user = user.requires_stk_on_approval()
         # Dashboard is the hub: show every section the role can open.
         # Other pages keep only their own section link. System settings and
         # log out stay in the sidebar footer on every page. Daraja setup expands
@@ -109,8 +114,10 @@ def shell(request):
         "unread_notification_count": unread_count,
         "can_review_money_requests": can_review_money_requests,
         "can_manage_app_settings": can_manage_app_settings,
-        "pin_approval_required": pin_approval_required,
-        "pin_approval_required_for_user": pin_approval_required_for_user,
+        "app_approval_required": app_approval_required,
+        "stk_pin_approval_required": stk_pin_approval_required,
+        "app_approval_required_for_user": app_approval_required_for_user,
+        "stk_pin_approval_required_for_user": stk_pin_approval_required_for_user,
         "webpush_enabled": webpush_enabled(),
         "webpush_vapid_public_key": vapid_public_key() if webpush_enabled() else "",
         "asset_version": getattr(django_settings, "ASSET_VERSION", ""),

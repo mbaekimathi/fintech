@@ -649,3 +649,28 @@ class DarajaB2BPayloadTests(TestCase):
                 result_url="https://example.test/api/v1/daraja/result/",
                 timeout_url="https://example.test/api/v1/daraja/timeout/",
             )
+
+    def test_explain_initiator_not_allowed_for_utility(self):
+        from integrations.daraja_errors import explain_daraja_error
+
+        message = explain_daraja_error(
+            "The initiator is not allowed to initiate this request.",
+            context="utility",
+        )
+        self.assertIn("ORG B2B API Initiator", message)
+
+    def test_production_testapi_blocked_before_utility_transfer(self):
+        from integrations.daraja_client import DarajaClient, DarajaError
+
+        config = self._ready_config()
+        config.environment = DarajaConfig.Environment.PRODUCTION
+        config.org_shortcode = "123456"
+        config.initiator_name = "testapi"
+        client = DarajaClient(config)
+        with self.assertRaises(DarajaError) as ctx:
+            client.utility_to_working(
+                amount=1,
+                result_url=config.result_url,
+                timeout_url=config.timeout_url,
+            )
+        self.assertIn("testapi", str(ctx.exception).lower())

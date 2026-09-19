@@ -192,8 +192,14 @@ DARAJA_HELP = {
     "stk_account_reference": "Shown on the customer’s STK prompt and stored against the ledger posting.",
     "stk_transaction_desc": "Short description sent with the STK prompt (max 13 characters is safest).",
     "stk_callback_url": "HTTPS URL Safaricom calls after the customer enters PIN. Fills from https://fin.richcom.co.ke automatically.",
-    "initiator_name": "Initiator username from Daraja. Production uses your live initiator, not testapi.",
-    "security_credential": "Initiator password. Paste plaintext — NEXUS encrypts it when calling Safaricom.",
+    "initiator_name": (
+        "Initiator username from Daraja Test credentials (sandbox) or your M-Pesa Business API user (production). "
+        "Utility-to-working needs the ORG B2B API Initiator role on that user."
+    ),
+    "security_credential": (
+        "Initiator password. Paste plaintext — NEXUS encrypts it when calling Safaricom. "
+        "Re-paste after Safaricom resets the API user password."
+    ),
     "result_url": "HTTPS URL Safaricom posts balance and payout results to.",
     "timeout_url": "HTTPS URL Safaricom posts if the request times out.",
     "balance_identifier_type": "Use paybill/organization shortcode (4) for a paybill float. Use till (2) for a till.",

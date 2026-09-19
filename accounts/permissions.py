@@ -17,13 +17,18 @@ ACTIVITIES: tuple[dict[str, str], ...] = (
     },
     {
         "code": "pin_approval_prompt",
+        "label": "App on approve",
+        "hint": "When hub app approval is on, this person must enter their separate 6-digit approval password in the app before sending a payment.",
+    },
+    {
+        "code": "stk_pin_approval_prompt",
         "label": "PIN on approve",
-        "hint": "When hub PIN approval is on, this person must enter their 6-digit login password before sending a payment.",
+        "hint": "When hub PIN approval is on, this person must complete the M-Pesa STK PIN prompt on their phone before sending a payment.",
     },
     {
         "code": "manage_app_settings",
         "label": "App settings",
-        "hint": "Open App settings and configure hub-wide toggles such as PIN approval prompting.",
+        "hint": "Open App settings and configure hub-wide toggles such as app and PIN approval.",
     },
     {
         "code": "manage_people",

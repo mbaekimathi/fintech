@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from integrations.daraja import PRODUCTION_OAUTH_URL, SANDBOX_OAUTH_URL
+from integrations.daraja_errors import explain_daraja_error, utility_transfer_blockers
 from integrations.security_credential import CredentialError, encrypt_security_credential
 
 SANDBOX_BASE = "https://sandbox.safaricom.co.ke"
@@ -65,8 +66,8 @@ def _json_request(url: str, *, headers: dict, payload: dict | None = None, metho
         raise DarajaError(f"Could not reach Daraja: {exc}") from exc
 
 
-def _error_message(payload: dict) -> str:
-    return (
+def _error_message(payload: dict, *, context: str = "default") -> str:
+    raw = (
         payload.get("errorMessage")
         or payload.get("ResponseDescription")
         or payload.get("CustomerMessage")
@@ -74,6 +75,7 @@ def _error_message(payload: dict) -> str:
         or payload.get("requestId")
         or "Daraja rejected the request."
     )
+    return explain_daraja_error(str(raw), context=context)
 
 
 class DarajaClient:
@@ -130,7 +132,14 @@ class DarajaClient:
         self._token = token
         return token
 
-    def _post(self, path: str, payload: dict, *, ok_codes: set[str] | None = None) -> dict:
+    def _post(
+        self,
+        path: str,
+        payload: dict,
+        *,
+        ok_codes: set[str] | None = None,
+        error_context: str = "default",
+    ) -> dict:
         status, body = _json_request(
             self.base_url + path,
             headers={
@@ -141,11 +150,11 @@ class DarajaClient:
             payload=payload,
         )
         if status >= 400:
-            raise DarajaError(_error_message(body), body)
+            raise DarajaError(_error_message(body, context=error_context), body)
         allowed = ok_codes or {"0", "00"}
         code = str(body.get("ResponseCode", "0"))
         if code not in allowed:
-            raise DarajaError(_error_message(body), body)
+            raise DarajaError(_error_message(body, context=error_context), body)
         return body
 
     def hakikisha(self, *, identifier: str, identifier_type: str = "4") -> dict:
@@ -240,7 +249,11 @@ class DarajaClient:
             "QueueTimeOutURL": self._callback(self.config.timeout_url, timeout_url),
             "ResultURL": self._callback(self.config.result_url, result_url),
         }
-        return self._post("/mpesa/accountbalance/v1/query", payload), payload, party_a
+        return self._post(
+            "/mpesa/accountbalance/v1/query",
+            payload,
+            error_context="balance",
+        ), payload, party_a
 
     def b2c_send(self, *, phone: str, amount, result_url: str, timeout_url: str) -> dict:
         if not self.config.b2c_ready:
@@ -262,9 +275,17 @@ class DarajaClient:
             "Occassion": occasion,
         }
         try:
-            return self._post("/mpesa/b2c/v3/paymentrequest", payload), payload, msisdn
+            return self._post(
+                "/mpesa/b2c/v3/paymentrequest",
+                payload,
+                error_context="b2c",
+            ), payload, msisdn
         except DarajaError:
-            return self._post("/mpesa/b2c/v1/paymentrequest", payload), payload, msisdn
+            return self._post(
+                "/mpesa/b2c/v1/paymentrequest",
+                payload,
+                error_context="b2c",
+            ), payload, msisdn
 
     def b2b_send(
         self,
@@ -314,14 +335,17 @@ class DarajaClient:
             "QueueTimeOutURL": self._callback(self.config.timeout_url, timeout_url),
             "ResultURL": self._callback(self.config.result_url, result_url),
         }
-        return self._post("/mpesa/b2b/v1/paymentrequest", payload), payload, dest
+        return self._post(
+            "/mpesa/b2b/v1/paymentrequest",
+            payload,
+            error_context="b2b",
+        ), payload, dest
 
     def utility_to_working(self, *, amount, result_url: str, timeout_url: str) -> dict:
         """Move float from the paybill utility account to the working capital account."""
-        if not self.config.b2b_enabled:
-            raise DarajaError("Internal float transfer is not enabled. Turn on B2B on Daraja setup.")
-        if not self.config.balance_ready:
-            raise DarajaError("Balance and initiator must be configured before moving float.")
+        blockers = utility_transfer_blockers(self.config)
+        if blockers:
+            raise DarajaError(blockers[0])
         shortcode = self._payout_party_a(identifier="4")
         reference = (self.config.stk_account_reference or "NEXUS")[:12]
         payload = {
@@ -338,4 +362,8 @@ class DarajaClient:
             "QueueTimeOutURL": self._callback(self.config.timeout_url, timeout_url),
             "ResultURL": self._callback(self.config.result_url, result_url),
         }
-        return self._post("/mpesa/b2b/v1/paymentrequest", payload), payload, shortcode
+        return self._post(
+            "/mpesa/b2b/v1/paymentrequest",
+            payload,
+            error_context="utility",
+        ), payload, shortcode

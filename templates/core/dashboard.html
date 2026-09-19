@@ -328,7 +328,12 @@
             </p>
           {% else %}
             <p class="account-dashboard-note muted">
-              <a href="{% url 'core:daraja' %}#payouts">Enable B2B</a> to move utility float.
+              {% if hub_balance.transfer_blockers %}
+                {{ hub_balance.transfer_blockers.0 }}
+                <a href="{% url 'core:daraja' %}#balance">Fix on Daraja setup</a>
+              {% else %}
+                <a href="{% url 'core:daraja' %}#payouts">Enable B2B</a> to move utility float.
+              {% endif %}
             </p>
           {% endif %}
         </div>

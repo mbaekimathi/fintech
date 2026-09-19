@@ -48,7 +48,8 @@ class EmployeePermissionsTests(TestCase):
         self.assertContains(response, "Employee")
         self.assertContains(response, "300002")
         self.assertContains(response, "App settings")
-        self.assertContains(response, "PIN approval prompting")
+        self.assertContains(response, "App approval is")
+        self.assertContains(response, "App on approve")
         self.assertContains(response, "PIN on approve")
 
     def test_toggle_permission_updates_access(self):

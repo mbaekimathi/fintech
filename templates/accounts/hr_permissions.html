@@ -7,7 +7,7 @@
     <p class="muted">
       Employees are grouped by role. Toggle each activity on or off — changes apply immediately.
       Grant <strong>Review requests</strong> to staff who should approve payments.
-      Turn on <strong>PIN on approve</strong> for approvers who must enter their 6-digit password before sending (when hub PIN approval is on).
+      Turn on <strong>App on approve</strong> and/or <strong>PIN on approve</strong> for approvers who must pass extra checks before sending (when the matching hub toggle is on in App settings).
       Grant <strong>App settings</strong> to staff who configure hub-wide options.
     </p>
     <div class="toolbar">
@@ -18,14 +18,17 @@
     </div>
   </section>
 
-  <section class="integration-banner {% if pin_approval_required %}is-ok{% else %}is-bad{% endif %}" role="status">
+  <section class="integration-banner {% if app_approval_required or stk_pin_approval_required %}is-ok{% else %}is-bad{% endif %}" role="status">
     <p class="eyebrow">Payment approvals</p>
-    <h2>PIN approval prompting is {% if pin_approval_required %}on{% else %}off{% endif %}</h2>
+    <h2>
+      App approval is {% if app_approval_required %}on{% else %}off{% endif %}
+      · PIN approval is {% if stk_pin_approval_required %}on{% else %}off{% endif %}
+    </h2>
     <p class="muted">
-      {% if pin_approval_required %}
-        Hub PIN approval is on. Toggle <strong>PIN on approve</strong> below for each person who should enter their 6-digit login password before sending.
+      {% if app_approval_required or stk_pin_approval_required %}
+        Hub approval checks are on. Toggle <strong>App on approve</strong> and/or <strong>PIN on approve</strong> below for each person who should be prompted before sending.
       {% else %}
-        Hub PIN approval is off. Turn it on from App settings, then enable <strong>PIN on approve</strong> per person below.
+        Hub approval checks are off. Turn them on from App settings, then enable the matching toggles per person below.
       {% endif %}
     </p>
     {% if can_manage_app_settings %}

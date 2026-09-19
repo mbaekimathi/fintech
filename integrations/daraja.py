@@ -192,11 +192,15 @@ def serialize_hub_balance(config, operation=None) -> dict:
         watch = operation.is_fresh_queue()
         operation_id = operation.pk
         accounts = balance_accounts_from_operation(operation)
+    from integrations.daraja_errors import utility_transfer_blockers
+
     utility = accounts.get("utility") or {}
     working = accounts.get("working") or {}
+    transfer_blockers = utility_transfer_blockers(config)
     return {
         "ready": bool(config.balance_ready),
-        "transfer_ready": bool(config.b2b_enabled and config.balance_ready),
+        "transfer_ready": bool(config.b2b_enabled and config.balance_ready and not transfer_blockers),
+        "transfer_blockers": transfer_blockers,
         "paybill_name": paybill.account_name if paybill else "",
         "paybill_number": paybill.paybill_number if paybill else "",
         "shortcode": config.payout_shortcode or "",

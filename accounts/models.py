@@ -96,6 +96,11 @@ class User(AbstractUser):
         related_name="approvals_made",
     )
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)
+    approval_password = models.CharField(
+        max_length=128,
+        blank=True,
+        help_text="Hashed 6-digit password used only to approve payment transfers.",
+    )
 
     USERNAME_FIELD = "staff_code"
     REQUIRED_FIELDS = ["email", "first_name", "last_name"]
@@ -184,10 +189,37 @@ class User(AbstractUser):
     def can_pin_approval_prompt(self) -> bool:
         return self.has_activity("pin_approval_prompt")
 
-    def requires_pin_on_approval(self) -> bool:
+    def can_stk_pin_approval_prompt(self) -> bool:
+        return self.has_activity("stk_pin_approval_prompt")
+
+    def requires_app_on_approval(self) -> bool:
         from core.models import AppSettings
 
-        return AppSettings.load().pin_approval_required and self.can_pin_approval_prompt()
+        return AppSettings.load().app_approval_required and self.can_pin_approval_prompt()
+
+    def requires_stk_on_approval(self) -> bool:
+        from core.models import AppSettings
+
+        return AppSettings.load().stk_pin_approval_required and self.can_stk_pin_approval_prompt()
+
+    def requires_pin_on_approval(self) -> bool:
+        return self.requires_app_on_approval() or self.requires_stk_on_approval()
+
+    @property
+    def has_approval_password(self) -> bool:
+        return bool(self.approval_password)
+
+    def set_approval_password(self, raw_password: str) -> None:
+        from django.contrib.auth.hashers import make_password
+
+        self.approval_password = make_password(raw_password)
+
+    def check_approval_password(self, raw_password: str) -> bool:
+        from django.contrib.auth.hashers import check_password
+
+        if not self.approval_password:
+            return False
+        return check_password(raw_password, self.approval_password)
 
     def can_submit_requests(self) -> bool:
         return self.has_activity("submit_requests")
@@ -207,6 +239,7 @@ class EmployeePermissions(models.Model):
     submit_requests = MysqlBooleanEnumField(default=False)
     review_requests = MysqlBooleanEnumField(default=False)
     pin_approval_prompt = MysqlBooleanEnumField(default=False)
+    stk_pin_approval_prompt = MysqlBooleanEnumField(default=False)
     manage_people = MysqlBooleanEnumField(default=False)
     manage_hr = MysqlBooleanEnumField(default=False)
     manage_ledger = MysqlBooleanEnumField(default=False)
@@ -228,6 +261,7 @@ class EmployeePermissions(models.Model):
             "submit_requests": bool(self.submit_requests),
             "review_requests": bool(self.review_requests),
             "pin_approval_prompt": bool(self.pin_approval_prompt),
+            "stk_pin_approval_prompt": bool(self.stk_pin_approval_prompt),
             "manage_people": bool(self.manage_people),
             "manage_hr": bool(self.manage_hr),
             "manage_ledger": bool(self.manage_ledger),

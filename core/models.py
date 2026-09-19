@@ -59,9 +59,13 @@ class Notification(models.Model):
 class AppSettings(models.Model):
     """Hub-wide toggles (singleton row)."""
 
-    pin_approval_required = models.BooleanField(
+    app_approval_required = models.BooleanField(
         default=False,
-        help_text="When on, approvers must enter their 6-digit password before a payment is sent.",
+        help_text="When on, approvers must enter their separate 6-digit approval password in the app before a payment is sent.",
+    )
+    stk_pin_approval_required = models.BooleanField(
+        default=False,
+        help_text="When on, approvers must complete an M-Pesa STK PIN prompt on their phone before a payment is sent.",
     )
     updated_at = models.DateTimeField(auto_now=True)
 

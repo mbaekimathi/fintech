@@ -2,6 +2,8 @@ from django.urls import path
 
 from core.views import (
     AppSettingsView,
+    StkApprovalInitiateView,
+    StkApprovalPollView,
     DashboardView,
     DarajaAgentShopSetupView,
     DarajaB2BSetupView,
@@ -31,6 +33,8 @@ urlpatterns = [
     ),
     path("settings/", SettingsView.as_view(), name="settings"),
     path("settings/app/", AppSettingsView.as_view(), name="app-settings"),
+    path("approval/stk/", StkApprovalInitiateView.as_view(), name="approval-stk-initiate"),
+    path("approval/stk/<int:pk>/", StkApprovalPollView.as_view(), name="approval-stk-poll"),
     path("settings/daraja/", DarajaSetupView.as_view(), name="daraja"),
     path("settings/daraja/stk/", DarajaStkSetupView.as_view(), name="daraja-stk"),
     path("settings/daraja/balance/", DarajaBalanceSetupView.as_view(), name="daraja-balance"),

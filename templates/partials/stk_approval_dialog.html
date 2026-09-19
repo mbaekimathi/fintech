@@ -1,0 +1,29 @@
+<div
+  class="detail-backdrop pin-approval-backdrop stk-approval-backdrop"
+  data-stk-approval-backdrop
+  hidden
+>
+  <div
+    class="detail-dialog pin-approval-dialog stk-approval-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="stk-approval-title"
+    data-stk-approval-dialog
+  >
+    <div class="detail-dialog-head">
+      <div>
+        <p class="eyebrow">M-Pesa PIN</p>
+        <h2 id="stk-approval-title">Check your phone</h2>
+      </div>
+      <button type="button" class="btn btn-ghost btn-small" data-stk-approval-cancel>Cancel</button>
+    </div>
+    <p class="muted" data-stk-approval-message>
+      An STK prompt was sent to your phone. Enter your M-Pesa PIN to approve this payment.
+    </p>
+    <p class="field-hint" data-stk-approval-status aria-live="polite">Waiting for M-Pesa…</p>
+    <p class="field-error" data-stk-approval-error hidden></p>
+    <div class="toolbar">
+      <button type="button" class="btn btn-ghost" data-stk-approval-cancel>Cancel</button>
+    </div>
+  </div>
+</div>

@@ -157,9 +157,9 @@ class MoneyRequestReviewView(RoleRequiredMixin, View):
             messages.error(request, "Choose approve or reject.")
             return redirect(next_url)
 
-        from core.approval import approval_pin_ok
+        from core.approval import approval_ok
 
-        if not approval_pin_ok(request, next_url=next_url):
+        if not approval_ok(request, money_request=money_request, next_url=next_url):
             return redirect(next_url)
 
         try:

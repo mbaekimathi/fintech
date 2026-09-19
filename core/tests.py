@@ -613,29 +613,43 @@ class AppSettingsTests(TestCase):
         settings_page = self.client.get(self._url(User.Role.IT_SUPPORT, "core:settings"))
         self.assertContains(settings_page, "App settings")
         app_page = self.client.get(self._url(User.Role.IT_SUPPORT, "core:app-settings"))
-        self.assertContains(app_page, "PIN approval prompting")
+        self.assertContains(app_page, "App approval")
+        self.assertContains(app_page, "PIN approval (STK push)")
 
-    def test_toggle_pin_approval_via_ajax(self):
+    def test_toggle_app_approval_via_ajax(self):
         self.client.force_login(self.it_support)
         response = self.client.post(
             self._url(User.Role.IT_SUPPORT, "core:app-settings"),
-            {"pin_approval_required": "1"},
+            {"app_approval_required": "1"},
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()["pin_approval_required"])
-        self.assertTrue(AppSettings.load().pin_approval_required)
+        self.assertTrue(response.json()["app_approval_required"])
+        self.assertTrue(AppSettings.load().app_approval_required)
 
-    def _enable_pin_prompt(self, user):
+    def test_toggle_stk_pin_approval_via_ajax(self):
+        self.client.force_login(self.it_support)
+        response = self.client.post(
+            self._url(User.Role.IT_SUPPORT, "core:app-settings"),
+            {"stk_pin_approval_required": "1"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["stk_pin_approval_required"])
+        self.assertTrue(AppSettings.load().stk_pin_approval_required)
+
+    def _enable_pin_prompt(self, user, *, approval_password: str = "778899"):
         sync_permissions_from_role(user, reset=True)
         perms = EmployeePermissions.objects.get(user=user)
         perms.pin_approval_prompt = True
         perms.save(update_fields=["pin_approval_prompt", "updated_at"])
+        user.set_approval_password(approval_password)
+        user.save(update_fields=["approval_password"])
 
     def test_approve_requires_pin_when_enabled(self):
         settings = AppSettings.load()
-        settings.pin_approval_required = True
-        settings.save(update_fields=["pin_approval_required"])
+        settings.app_approval_required = True
+        settings.save(update_fields=["app_approval_required"])
         self._enable_pin_prompt(self.it_support)
 
         req = MoneyRequest.objects.create(
@@ -685,7 +699,7 @@ class AppSettingsTests(TestCase):
                     wait.side_effect = mark_success
                     approved = self.client.post(
                         self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
-                        {"intent": "approve", "approval_pin": "445566", "next": "/"},
+                        {"intent": "approve", "approval_pin": "778899", "next": "/"},
                     )
         self.assertEqual(approved.status_code, 302)
         req.refresh_from_db()
@@ -693,8 +707,8 @@ class AppSettingsTests(TestCase):
 
     def test_approve_skips_pin_when_person_toggle_off(self):
         settings = AppSettings.load()
-        settings.pin_approval_required = True
-        settings.save(update_fields=["pin_approval_required"])
+        settings.app_approval_required = True
+        settings.save(update_fields=["app_approval_required"])
 
         req = MoneyRequest.objects.create(
             requester=self.employee,
