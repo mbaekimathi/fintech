@@ -24,6 +24,17 @@ def review_recipients():
     return [user for user in qs if user.can_review_requests()]
 
 
+def reprompt_money_request(money_request: MoneyRequest) -> int:
+    """Re-notify reviewers for a pending request (fresh alerts + approval prompts)."""
+    if money_request.status != MoneyRequest.Status.PENDING:
+        return 0
+    Notification.objects.filter(
+        money_request=money_request,
+        kind=Notification.Kind.MONEY_REQUEST,
+    ).delete()
+    return notify_money_request_submitted(money_request)
+
+
 def notify_money_request_submitted(money_request: MoneyRequest) -> int:
     requester = money_request.requester
     name = requester.get_full_name() or requester.staff_code

@@ -8,6 +8,7 @@ from django.urls import reverse
 from accounts.models import EmployeePermissions, User
 from accounts.permissions import sync_permissions_from_role
 from accounts.role_urls import reset_current_role_slug, role_to_slug, set_current_role_slug
+from core.approval import approval_stk_account_ref
 from core.models import AppSettings, Notification, PushSubscription
 from integrations.models import DarajaConfig, DarajaOperation
 from paybill.models import MoneyRequest, PaybillAccount
@@ -88,6 +89,68 @@ class NotificationFlowTests(TestCase):
         self.assertContains(page, "Notifications")
         self.assertContains(page, "Approve &amp; send")
         self.assertContains(page, "0712345678")
+
+    def test_employee_can_reprompt_pending_request(self):
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("750.00"),
+            reason="Field visit fuel",
+            status=MoneyRequest.Status.PENDING,
+        )
+        old_note = Notification.objects.create(
+            recipient=self.it_support,
+            actor=self.employee,
+            kind=Notification.Kind.MONEY_REQUEST,
+            title="Emp Loyee requested KES 750.00",
+            body="Phone number · 0712345678",
+            money_request=req,
+            is_read=True,
+        )
+        self.client.force_login(self.employee)
+        response = self.client.post(
+            self._url(User.Role.EMPLOYEE, "core:dashboard"),
+            {"intent": "reprompt", "money_request_id": str(req.pk)},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Notification.objects.filter(pk=old_note.pk).exists())
+        new_note = Notification.objects.get(
+            recipient=self.it_support,
+            money_request=req,
+            kind=Notification.Kind.MONEY_REQUEST,
+        )
+        self.assertFalse(new_note.is_read)
+        self.assertIn("750.00", new_note.title)
+
+    def test_employee_cannot_reprompt_another_users_request(self):
+        other = UserModel.objects.create_user(
+            staff_code="400003",
+            password="test-pass-123",
+            email="other.reprompt@example.com",
+            first_name="Other",
+            last_name="Emp",
+            role=User.Role.EMPLOYEE,
+            is_approved=True,
+        )
+        req = MoneyRequest.objects.create(
+            requester=other,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("750.00"),
+            reason="Field visit fuel",
+            status=MoneyRequest.Status.PENDING,
+        )
+        self.client.force_login(self.employee)
+        response = self.client.post(
+            self._url(User.Role.EMPLOYEE, "core:dashboard"),
+            {"intent": "reprompt", "money_request_id": str(req.pk)},
+        )
+        self.assertEqual(response.status_code, 404)
 
     def test_reject_from_notification_updates_employee(self):
         req = MoneyRequest.objects.create(
@@ -627,6 +690,36 @@ class AppSettingsTests(TestCase):
         self.assertTrue(response.json()["app_approval_required"])
         self.assertTrue(AppSettings.load().app_approval_required)
 
+    def test_pending_approval_poll_returns_review_queue(self):
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("250.00"),
+            reason="Taxi",
+            status=MoneyRequest.Status.PENDING,
+        )
+        Notification.objects.create(
+            recipient=self.it_support,
+            actor=self.employee,
+            kind=Notification.Kind.MONEY_REQUEST,
+            title="Emp Apps requested KES 250.00",
+            body="Phone number · 0712345678",
+            money_request=req,
+        )
+        self.client.force_login(self.it_support)
+        response = self.client.get(
+            self._url(User.Role.IT_SUPPORT, "core:approval-pending-poll"),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(len(payload["pending"]), 1)
+        self.assertEqual(payload["pending"][0]["money_request_id"], req.pk)
+
     def test_toggle_stk_pin_approval_via_ajax(self):
         self.client.force_login(self.it_support)
         response = self.client.post(
@@ -645,6 +738,18 @@ class AppSettingsTests(TestCase):
         perms.save(update_fields=["pin_approval_prompt", "updated_at"])
         user.set_approval_password(approval_password)
         user.save(update_fields=["approval_password"])
+
+    def _enable_both_approval_prompts(self, user, *, approval_password: str = "778899"):
+        sync_permissions_from_role(user, reset=True)
+        perms = EmployeePermissions.objects.get(user=user)
+        perms.pin_approval_prompt = True
+        perms.stk_pin_approval_prompt = True
+        perms.save(
+            update_fields=["pin_approval_prompt", "stk_pin_approval_prompt", "updated_at"]
+        )
+        user.set_approval_password(approval_password)
+        user.phone = "0712345678"
+        user.save(update_fields=["approval_password", "phone"])
 
     def test_approve_requires_pin_when_enabled(self):
         settings = AppSettings.load()
@@ -700,6 +805,70 @@ class AppSettingsTests(TestCase):
                     approved = self.client.post(
                         self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
                         {"intent": "approve", "approval_pin": "778899", "next": "/"},
+                    )
+        self.assertEqual(approved.status_code, 302)
+        req.refresh_from_db()
+        self.assertEqual(req.status, MoneyRequest.Status.PAID)
+
+    def test_approve_accepts_stk_without_app_pin_when_both_enabled(self):
+        settings = AppSettings.load()
+        settings.app_approval_required = True
+        settings.stk_pin_approval_required = True
+        settings.save(update_fields=["app_approval_required", "stk_pin_approval_required"])
+        self._enable_both_approval_prompts(self.it_support)
+
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("500.00"),
+            reason="Fuel",
+            status=MoneyRequest.Status.PENDING,
+        )
+        note = Notification.objects.create(
+            recipient=self.it_support,
+            actor=self.employee,
+            kind=Notification.Kind.MONEY_REQUEST,
+            title="Emp Apps requested KES 500.00",
+            body="Phone number · 0712345678",
+            money_request=req,
+        )
+        stk_op = DarajaOperation.objects.create(
+            kind=DarajaOperation.Kind.STK,
+            status=DarajaOperation.Status.SUCCESS,
+            destination="254712345678",
+            amount=Decimal("1.00"),
+            account_ref=approval_stk_account_ref(req.pk),
+            summary="PIN verified",
+            created_by=self.it_support,
+        )
+        self.client.force_login(self.it_support)
+        ack = {
+            "ResponseCode": "0",
+            "ResponseDescription": "Accept the service request successfully.",
+            "ConversationID": "AG_PIN_3",
+            "OriginatorConversationID": "ORIG_PIN_3",
+        }
+        with patch("integrations.daraja_client.DarajaClient.access_token", return_value="token"):
+            with patch("integrations.daraja_client._json_request") as mock_req:
+                mock_req.return_value = (200, ack)
+                with patch("paybill.services.wait_for_result") as wait:
+                    def mark_success(operation, timeout=8.0, interval=0.3):
+                        operation.status = DarajaOperation.Status.SUCCESS
+                        operation.summary = "Sent KES 500"
+                        operation.save(update_fields=["status", "summary", "updated_at"])
+                        return operation
+
+                    wait.side_effect = mark_success
+                    approved = self.client.post(
+                        self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
+                        {
+                            "intent": "approve",
+                            "stk_approval_operation_id": str(stk_op.pk),
+                            "next": "/",
+                        },
                     )
         self.assertEqual(approved.status_code, 302)
         req.refresh_from_db()

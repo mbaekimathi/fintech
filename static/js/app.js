@@ -851,6 +851,49 @@ function initAppSettings() {
   });
 }
 
+const APPROVAL_DISMISS_KEY = "nexus-approval-dismissed";
+
+let paymentApprovalApi = {
+  isActive: () => false,
+  beginApprovalFlow: () => {},
+};
+
+function getApprovalDismissed() {
+  try {
+    return new Set(JSON.parse(sessionStorage.getItem(APPROVAL_DISMISS_KEY) || "[]"));
+  } catch (_err) {
+    return new Set();
+  }
+}
+
+function dismissApprovalNotification(notificationId) {
+  if (!notificationId) return;
+  const dismissed = getApprovalDismissed();
+  dismissed.add(String(notificationId));
+  sessionStorage.setItem(APPROVAL_DISMISS_KEY, JSON.stringify([...dismissed]));
+}
+
+function isUserInApp() {
+  return typeof document !== "undefined" && document.visibilityState === "visible";
+}
+
+function updateNotifyCount(count) {
+  const btn = document.querySelector(".notify-btn");
+  if (!btn) return;
+  let badge = btn.querySelector(".notify-count");
+  const total = Number(count) || 0;
+  if (!total) {
+    badge?.remove();
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "notify-count";
+    btn.appendChild(badge);
+  }
+  badge.textContent = String(total);
+}
+
 function initPaymentApproval() {
   const configEl = document.getElementById("approval-config");
   if (!configEl) return;
@@ -883,6 +926,23 @@ function initPaymentApproval() {
   let pendingForm = null;
   let approvalPin = "";
   let pollTimer = null;
+  let approvalActive = false;
+
+  const setApprovalContext = (form) => {
+    const title = form.getAttribute("data-approval-title") || "";
+    const body = form.getAttribute("data-approval-body") || "";
+    const detail = [title, body].filter(Boolean).join(" · ");
+    const appDetail = document.querySelector("[data-pin-approval-detail]");
+    if (appDetail) {
+      appDetail.textContent = detail;
+      appDetail.hidden = !detail;
+    }
+    const stkDetail = document.querySelector("[data-stk-approval-detail]");
+    if (stkDetail) {
+      stkDetail.textContent = detail;
+      stkDetail.hidden = !detail;
+    }
+  };
 
   const closeAppDialog = () => {
     if (appInput) appInput.value = "";
@@ -904,10 +964,17 @@ function initPaymentApproval() {
   };
 
   const resetFlow = () => {
+    approvalActive = false;
     pendingForm = null;
     approvalPin = "";
     closeAppDialog();
     closeStkDialog();
+  };
+
+  const cancelFlow = () => {
+    const notificationId = pendingForm?.getAttribute("data-notification-id");
+    if (notificationId) dismissApprovalNotification(notificationId);
+    resetFlow();
   };
 
   const submitForm = (form, stkOperationId = "") => {
@@ -970,7 +1037,18 @@ function initPaymentApproval() {
       pollTimer = window.setInterval(tick, 2500);
     });
 
-  const runStkApproval = async (form) => {
+  const chooseApprovalChannel = ({ manual = false } = {}) => {
+    if (manual || isUserInApp()) {
+      if (config.app) return "app";
+      if (config.stk) return "stk";
+      return "none";
+    }
+    if (config.stk) return "stk";
+    if (config.app) return "app";
+    return "none";
+  };
+
+  const runStkApproval = async (form, { silent = false } = {}) => {
     const moneyRequestId = form.getAttribute("data-money-request-id");
     if (!moneyRequestId) {
       window.alert("This approval form is missing the money request id.");
@@ -983,7 +1061,8 @@ function initPaymentApproval() {
       return;
     }
 
-    if (stkBackdrop) stkBackdrop.hidden = false;
+    setApprovalContext(form);
+    if (stkBackdrop) stkBackdrop.hidden = silent;
     if (stkMessageEl) {
       stkMessageEl.textContent =
         "Sending an STK prompt to your phone. Enter your M-Pesa PIN when it arrives.";
@@ -1016,23 +1095,52 @@ function initPaymentApproval() {
         stkErrorEl.hidden = false;
       }
       if (stkStatusEl) stkStatusEl.textContent = "STK prompt not completed.";
+      resetFlow();
     }
   };
 
   const openAppDialog = (form) => {
+    if (!appBackdrop || !appInput) {
+      window.alert("Approval password prompt is not available on this page.");
+      resetFlow();
+      return;
+    }
     pendingForm = form;
-    if (appInput) appInput.value = "";
+    setApprovalContext(form);
+    appInput.value = "";
     if (appErrorEl) appErrorEl.hidden = true;
-    if (appBackdrop) appBackdrop.hidden = false;
-    window.requestAnimationFrame(() => appInput?.focus());
+    appBackdrop.hidden = false;
+    window.requestAnimationFrame(() => appInput.focus());
+  };
+
+  const beginApprovalFlow = (form, { force = false, manual = false } = {}) => {
+    if (approvalActive && !force) return;
+    approvalActive = true;
+    pendingForm = form;
+    approvalPin = "";
+    const channel = chooseApprovalChannel({ manual });
+    if (channel === "app") {
+      if (!manual && !isUserInApp()) {
+        approvalActive = false;
+        pendingForm = null;
+        return;
+      }
+      openAppDialog(form);
+      return;
+    }
+    if (channel === "stk") {
+      runStkApproval(form, { silent: !manual && !isUserInApp() });
+      return;
+    }
+    submitForm(form);
+  };
+
+  paymentApprovalApi = {
+    isActive: () => approvalActive,
+    beginApprovalFlow,
   };
 
   const continueApproval = (form) => {
-    if (config.stk) {
-      pendingForm = form;
-      runStkApproval(form);
-      return;
-    }
     submitForm(form);
   };
 
@@ -1050,34 +1158,122 @@ function initPaymentApproval() {
     continueApproval(form);
   };
 
-  document.addEventListener("submit", (event) => {
-    const form = event.target;
+  const handleApproveForm = (form, event) => {
     if (!(form instanceof HTMLFormElement) || !form.hasAttribute("data-approval-form")) return;
-    event.preventDefault();
-    pendingForm = form;
-    approvalPin = "";
-    if (config.app) {
-      openAppDialog(form);
-      return;
-    }
-    continueApproval(form);
-  });
+    event?.preventDefault();
+    event?.stopPropagation();
+    beginApprovalFlow(form, { force: true, manual: true });
+  };
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      const btn = event.target.closest("[data-approval-trigger], form[data-approval-form] button[type='submit']");
+      if (!btn) return;
+      const form = btn.closest("form[data-approval-form]");
+      if (!form) return;
+      handleApproveForm(form, event);
+    },
+    true,
+  );
+
+  document.addEventListener(
+    "submit",
+    (event) => {
+      handleApproveForm(event.target, event);
+    },
+    true,
+  );
 
   appSubmitBtn?.addEventListener("click", submitAppApproval);
-  appCancelBtn?.addEventListener("click", resetFlow);
+  appCancelBtn?.addEventListener("click", cancelFlow);
   appBackdrop?.addEventListener("click", (event) => {
-    if (event.target === appBackdrop) resetFlow();
+    if (event.target === appBackdrop) cancelFlow();
   });
   appInput?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
       submitAppApproval();
     }
-    if (event.key === "Escape") resetFlow();
+    if (event.key === "Escape") cancelFlow();
   });
-  stkCancelBtns.forEach((btn) => btn.addEventListener("click", resetFlow));
+  stkCancelBtns.forEach((btn) => btn.addEventListener("click", cancelFlow));
   stkBackdrop?.addEventListener("click", (event) => {
-    if (event.target === stkBackdrop) resetFlow();
+    if (event.target === stkBackdrop) cancelFlow();
+  });
+}
+
+function initApprovalLiveCheck() {
+  const configEl = document.getElementById("approval-config");
+  if (!configEl) return;
+
+  let config = {};
+  try {
+    config = JSON.parse(configEl.textContent || "{}");
+  } catch (_err) {
+    return;
+  }
+  if (!config.pendingPollUrl) return;
+
+  const csrf =
+    document.querySelector('meta[name="csrf-token"]')?.content ||
+    document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
+    "";
+
+  const buildApprovalForm = (item) => {
+    const existing = document.querySelector(`[data-auto-approval-id="${item.notification_id}"]`);
+    if (existing instanceof HTMLFormElement) return existing;
+
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = item.review_url;
+    form.hidden = true;
+    form.setAttribute("data-approval-form", "");
+    form.setAttribute("data-money-request-id", String(item.money_request_id));
+    form.setAttribute("data-notification-id", String(item.notification_id));
+    form.setAttribute("data-approval-title", item.title || "");
+    form.setAttribute("data-approval-body", item.body || "");
+    form.setAttribute("data-auto-approval-id", String(item.notification_id));
+
+    const next = `${window.location.pathname}${window.location.search}`;
+    form.innerHTML = `
+      <input type="hidden" name="csrfmiddlewaretoken" value="${csrf}">
+      <input type="hidden" name="intent" value="approve">
+      <input type="hidden" name="next" value="${next}">
+    `;
+    document.body.appendChild(form);
+    return form;
+  };
+
+  const tick = async () => {
+    if (paymentApprovalApi.isActive()) return;
+    try {
+      const response = await fetch(config.pendingPollUrl, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!data.ok) return;
+      updateNotifyCount(data.unread_count || 0);
+      if (!config.autoPrompt) return;
+
+      const dismissed = getApprovalDismissed();
+      const pending = Array.isArray(data.pending) ? data.pending : [];
+      const item = pending.find((row) => !dismissed.has(String(row.notification_id)));
+      if (!item) return;
+
+      const form = buildApprovalForm(item);
+      paymentApprovalApi.beginApprovalFlow(form);
+    } catch (_err) {
+      // Ignore transient network errors during background polling.
+    }
+  };
+
+  tick();
+  window.setInterval(tick, Number(config.pollIntervalMs) || 5000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") tick();
   });
 }
 
@@ -1137,6 +1333,7 @@ if (document.readyState === "loading") {
     initEmployeePermissions();
     initAppSettings();
     initPaymentApproval();
+    initApprovalLiveCheck();
   });
 } else {
   initDarajaSetup();
@@ -1147,6 +1344,7 @@ if (document.readyState === "loading") {
   initEmployeePermissions();
   initAppSettings();
   initPaymentApproval();
+  initApprovalLiveCheck();
 }
 
 function initWebPush() {

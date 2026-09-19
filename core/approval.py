@@ -164,8 +164,37 @@ def stk_approval_ok(request, *, money_request: MoneyRequest, next_url: str) -> b
     return False
 
 
-def approval_ok(request, *, money_request: MoneyRequest, next_url: str) -> bool:
-    """Return True when all enabled approval checks pass."""
-    if not approval_pin_ok(request, next_url=next_url):
+def _stk_verified_on_request(request, money_request: MoneyRequest) -> bool:
+    raw_id = (request.POST.get("stk_approval_operation_id") or "").strip()
+    if not raw_id.isdigit():
         return False
+    return verify_stk_approval(request.user, int(raw_id), money_request)
+
+
+def approval_ok(request, *, money_request: MoneyRequest, next_url: str) -> bool:
+    """Return True when the active approval channel passes (app password or STK PIN)."""
+    user = request.user
+    app_required = user_requires_app_on_approval(user)
+    stk_required = user_requires_stk_on_approval(user)
+    if not app_required and not stk_required:
+        return True
+
+    if app_required and stk_required:
+        pin_ok = user.has_approval_password and verify_approval_pin(
+            user, request.POST.get("approval_pin", "")
+        )
+        stk_ok = _stk_verified_on_request(request, money_request)
+        if pin_ok or stk_ok:
+            return True
+        if (request.POST.get("approval_pin") or "").strip():
+            messages.error(request, "Enter your 6-digit approval password to approve this payment.")
+        else:
+            messages.error(
+                request,
+                "Enter your approval password in the app or complete the M-Pesa PIN prompt on your phone.",
+            )
+        return False
+
+    if app_required:
+        return approval_pin_ok(request, next_url=next_url)
     return stk_approval_ok(request, money_request=money_request, next_url=next_url)

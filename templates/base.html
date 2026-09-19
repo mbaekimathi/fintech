@@ -87,12 +87,19 @@
                         action="{% url 'core:notification-review' note.pk %}"
                         class="inline-form"
                         data-approval-form
+                        data-notification-id="{{ note.pk }}"
+                        data-approval-title="{{ note.title|escape }}"
+                        data-approval-body="{{ note.body|escape }}"
                         {% if note.money_request_id %}data-money-request-id="{{ note.money_request_id }}"{% endif %}
                       >
                         {% csrf_token %}
                         <input type="hidden" name="intent" value="approve">
                         <input type="hidden" name="next" value="{{ request.path }}">
-                        <button type="submit" class="btn btn-primary btn-small">Approve &amp; send</button>
+                        <button
+                          type="{% if app_approval_required_for_user or stk_pin_approval_required_for_user %}button{% else %}submit{% endif %}"
+                          class="btn btn-primary btn-small"
+                          {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}data-approval-trigger{% endif %}
+                        >Approve &amp; send</button>
                       </form>
                       <form method="post" action="{% url 'core:notification-review' note.pk %}" class="inline-form">
                         {% csrf_token %}
@@ -174,7 +181,10 @@
         "app": {% if app_approval_required_for_user %}true{% else %}false{% endif %},
         "stk": {% if stk_pin_approval_required_for_user %}true{% else %}false{% endif %},
         "stkInitiateUrl": "{% url 'core:approval-stk-initiate' %}",
-        "stkPollUrl": "{% url 'core:approval-stk-poll' 0 %}".replace("/0/", "/")
+        "stkPollUrl": "{% url 'core:approval-stk-poll' 0 %}".replace("/0/", "/"),
+        "pendingPollUrl": "{% url 'core:approval-pending-poll' %}",
+        "pollIntervalMs": 5000,
+        "autoPrompt": {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}true{% else %}false{% endif %}
       }
     </script>
   {% endif %}

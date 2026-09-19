@@ -12,5 +12,10 @@ urlpatterns = [
         views.MoneyRequestReviewView.as_view(),
         name="money-request-review",
     ),
+    path(
+        "transactions/requests/<int:pk>/reprompt/",
+        views.MoneyRequestRepromptView.as_view(),
+        name="money-request-reprompt",
+    ),
     path("systems/", views.ConnectedSystemListView.as_view(), name="systems"),
 ]

@@ -2,6 +2,7 @@ from django.urls import path
 
 from core.views import (
     AppSettingsView,
+    PendingApprovalPollView,
     StkApprovalInitiateView,
     StkApprovalPollView,
     DashboardView,
@@ -33,6 +34,7 @@ urlpatterns = [
     ),
     path("settings/", SettingsView.as_view(), name="settings"),
     path("settings/app/", AppSettingsView.as_view(), name="app-settings"),
+    path("approval/pending/", PendingApprovalPollView.as_view(), name="approval-pending-poll"),
     path("approval/stk/", StkApprovalInitiateView.as_view(), name="approval-stk-initiate"),
     path("approval/stk/<int:pk>/", StkApprovalPollView.as_view(), name="approval-stk-poll"),
     path("settings/daraja/", DarajaSetupView.as_view(), name="daraja"),

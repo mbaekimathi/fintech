@@ -20,13 +20,15 @@ from core.approval import (
     poll_stk_approval,
     user_requires_stk_on_approval,
 )
-from core.models import AppSettings, PushSubscription
+from core.models import AppSettings, Notification, PushSubscription
 from core.notifications import (
     mark_money_request_notifications_read,
     mark_notification_read,
     notifications_for_session_user,
     notify_money_request_result,
     notify_money_request_submitted,
+    reprompt_money_request,
+    unread_notification_count,
 )
 from integrations.callbacks import apply_stk_query, expire_stale_queues, wait_for_result
 from integrations.daraja import (
@@ -115,6 +117,8 @@ class DashboardView(ApprovedRequiredMixin, TemplateView):
             return self._post_hub_balance(request)
         if intent == "utility-transfer":
             return self._post_utility_transfer(request)
+        if intent == "reprompt":
+            return self._post_reprompt_money_request(request)
         if not request.user.can_submit_requests():
             messages.error(request, "You are not allowed to submit money requests.")
             return redirect("core:dashboard")
@@ -157,6 +161,46 @@ class DashboardView(ApprovedRequiredMixin, TemplateView):
 
         context = self.get_context_data(money_form=form)
         return self.render_to_response(context)
+
+    def _post_reprompt_money_request(self, request):
+        if not request.user.can_submit_requests():
+            messages.error(request, "You are not allowed to reprompt money requests.")
+            return redirect("core:dashboard")
+
+        raw_id = (request.POST.get("money_request_id") or "").strip()
+        if not raw_id.isdigit():
+            messages.error(request, "Choose a pending request to reprompt.")
+            return redirect("core:dashboard")
+
+        money_request = get_object_or_404(
+            MoneyRequest,
+            pk=int(raw_id),
+            requester=request.user,
+        )
+        if money_request.status != MoneyRequest.Status.PENDING:
+            messages.error(request, "That request is no longer pending.")
+            return redirect("core:dashboard")
+
+        count = reprompt_money_request(money_request)
+        write_audit(
+            request,
+            "money_request.reprompt",
+            object_type="money_request",
+            object_id=money_request.pk,
+            detail={
+                "amount": str(money_request.amount),
+                "destination": money_request.destination,
+                "reviewers_notified": count,
+            },
+        )
+        if count:
+            messages.success(
+                request,
+                f"Approvers notified again for KES {money_request.amount:,.2f}.",
+            )
+        else:
+            messages.warning(request, "No approvers were available to notify.")
+        return redirect("core:dashboard")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -653,6 +697,45 @@ class AppSettingsView(RoleRequiredMixin, TemplateView):
         label = "enabled" if enabled else "disabled"
         messages.success(request, f"{setting.replace('_', ' ')} {label}.")
         return redirect("core:app-settings")
+
+
+class PendingApprovalPollView(RoleRequiredMixin, View):
+    required_activity = "review_requests"
+
+    def get(self, request, *args, **kwargs):
+        from paybill.models import MoneyRequest
+
+        qs = (
+            notifications_for_session_user(request.user)
+            .filter(
+                kind=Notification.Kind.MONEY_REQUEST,
+                money_request__status=MoneyRequest.Status.PENDING,
+            )
+            .select_related("money_request", "money_request__requester")
+            .order_by("-created_at")[:15]
+        )
+        pending = []
+        for note in qs:
+            if not note.can_review:
+                continue
+            money_request = note.money_request
+            pending.append(
+                {
+                    "notification_id": note.pk,
+                    "money_request_id": money_request.pk,
+                    "title": note.title,
+                    "body": note.body,
+                    "amount": str(money_request.amount),
+                    "review_url": reverse("core:notification-review", kwargs={"pk": note.pk}),
+                }
+            )
+        return JsonResponse(
+            {
+                "ok": True,
+                "pending": pending,
+                "unread_count": unread_notification_count(request.user),
+            }
+        )
 
 
 class StkApprovalInitiateView(RoleRequiredMixin, View):

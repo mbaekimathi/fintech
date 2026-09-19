@@ -41,7 +41,7 @@
                 <th>Amount</th>
                 <th>Status</th>
                 <th></th>
-                {% if can_review_requests %}<th></th>{% endif %}
+                {% if can_review_requests %}<th></th>{% elif can_reprompt_pending %}<th></th>{% endif %}
               </tr>
             </thead>
             <tbody>
@@ -89,10 +89,22 @@
                   {% if can_review_requests %}
                     <td>
                       <div class="toolbar">
-                        <form method="post" action="{% url 'paybill:money-request-review' row.pk %}" class="inline-form" data-approval-form data-money-request-id="{{ row.pk }}">
+                        <form
+                          method="post"
+                          action="{% url 'paybill:money-request-review' row.pk %}"
+                          class="inline-form"
+                          data-approval-form
+                          data-money-request-id="{{ row.pk }}"
+                          data-approval-title="{{ row.requester.get_full_name|default:row.requester.staff_code }} requested KES {{ row.amount|floatformat:2 }}"
+                          data-approval-body="{{ row.get_destination_type_display }} · {{ row.destination }}{% if row.account_ref %} / {{ row.account_ref }}{% endif %}"
+                        >
                           {% csrf_token %}
                           <input type="hidden" name="intent" value="approve">
-                          <button type="submit" class="btn btn-primary btn-small">Approve &amp; send</button>
+                          <button
+                            type="{% if app_approval_required_for_user or stk_pin_approval_required_for_user %}button{% else %}submit{% endif %}"
+                            class="btn btn-primary btn-small"
+                            {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}data-approval-trigger{% endif %}
+                          >Approve &amp; send</button>
                         </form>
                         <form method="post" action="{% url 'paybill:money-request-review' row.pk %}" class="inline-form">
                           {% csrf_token %}
@@ -101,11 +113,26 @@
                         </form>
                       </div>
                     </td>
+                  {% elif can_reprompt_pending %}
+                    <td>
+                      <form
+                        method="post"
+                        action="{% url 'paybill:money-request-reprompt' row.pk %}"
+                        class="inline-form"
+                      >
+                        {% csrf_token %}
+                        <button
+                          type="submit"
+                          class="btn btn-ghost btn-small"
+                          title="Notify approvers again and re-send approval prompts"
+                        >Reprompt</button>
+                      </form>
+                    </td>
                   {% endif %}
                 </tr>
               {% empty %}
                 <tr>
-                  <td colspan="{% if can_review_requests %}9{% else %}8{% endif %}" class="empty">
+                  <td colspan="{% if can_review_requests %}9{% elif can_reprompt_pending %}9{% else %}8{% endif %}" class="empty">
                     No pending money requests.
                   </td>
                 </tr>

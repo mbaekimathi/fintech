@@ -7,9 +7,11 @@ from django.views.generic import ListView
 
 from accounts.mixins import RoleRequiredMixin
 from accounts.models import User
+from accounts.utils import write_audit
 from core.notifications import (
     mark_money_request_notifications_read,
     notify_money_request_result,
+    reprompt_money_request,
 )
 from integrations.daraja_client import DarajaError
 from integrations.models import DarajaOperation
@@ -114,6 +116,9 @@ class TransactionListView(RoleRequiredMixin, ListView):
         role = self.request.user.effective_role
         can_review = self.request.user.can_review_requests()
         context["can_review_requests"] = can_review
+        context["can_reprompt_pending"] = (
+            not can_review and self.request.user.can_submit_requests()
+        )
         if can_review:
             context["pending_requests"] = (
                 MoneyRequest.objects.filter(status=MoneyRequest.Status.PENDING)
@@ -198,6 +203,45 @@ class MoneyRequestReviewView(RoleRequiredMixin, View):
                 or "Transfer failed. Request marked as failed.",
             )
         return redirect(next_url)
+
+
+class MoneyRequestRepromptView(RoleRequiredMixin, View):
+    allowed_roles = (User.Role.EMPLOYEE,)
+
+    def post(self, request, pk, *args, **kwargs):
+        if not request.user.can_submit_requests():
+            messages.error(request, "You are not allowed to reprompt money requests.")
+            return redirect("paybill:transactions")
+
+        money_request = get_object_or_404(
+            MoneyRequest,
+            pk=pk,
+            requester=request.user,
+        )
+        if money_request.status != MoneyRequest.Status.PENDING:
+            messages.error(request, "That request is no longer pending.")
+            return redirect("paybill:transactions")
+
+        count = reprompt_money_request(money_request)
+        write_audit(
+            request,
+            "money_request.reprompt",
+            object_type="money_request",
+            object_id=money_request.pk,
+            detail={
+                "amount": str(money_request.amount),
+                "destination": money_request.destination,
+                "reviewers_notified": count,
+            },
+        )
+        if count:
+            messages.success(
+                request,
+                f"Approvers notified again for KES {money_request.amount:,.2f}.",
+            )
+        else:
+            messages.warning(request, "No approvers were available to notify.")
+        return redirect("paybill:transactions")
 
 
 class ConnectedSystemListView(RoleRequiredMixin, ListView):

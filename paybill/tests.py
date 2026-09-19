@@ -207,6 +207,62 @@ class PendingTransactionsTests(TestCase):
         self.assertContains(response, "Approve &amp; send")
         self.assertContains(response, "Reject")
 
+    def test_employee_sees_reprompt_on_pending_transactions(self):
+        MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("750.00"),
+            reason="Field visit fuel",
+            status=MoneyRequest.Status.PENDING,
+        )
+        self.client.force_login(self.employee)
+        response = self.client.get(self._url(User.Role.EMPLOYEE))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Pending transactions")
+        self.assertContains(response, "Reprompt")
+        self.assertNotContains(response, "Approve &amp; send")
+
+    def test_employee_can_reprompt_from_transactions(self):
+        from core.models import Notification
+
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("750.00"),
+            reason="Field visit fuel",
+            status=MoneyRequest.Status.PENDING,
+        )
+        old_note = Notification.objects.create(
+            recipient=self.it_support,
+            actor=self.employee,
+            kind=Notification.Kind.MONEY_REQUEST,
+            title="Emp Loyee requested KES 750.00",
+            body="Phone number · 0712345678",
+            money_request=req,
+            is_read=True,
+        )
+        self.client.force_login(self.employee)
+        token = set_current_role_slug(role_to_slug(User.Role.EMPLOYEE))
+        try:
+            reprompt_url = reverse("paybill:money-request-reprompt", kwargs={"pk": req.pk})
+        finally:
+            reset_current_role_slug(token)
+        response = self.client.post(reprompt_url)
+        self.assertRedirects(response, self._url(User.Role.EMPLOYEE), fetch_redirect_response=False)
+        self.assertFalse(Notification.objects.filter(pk=old_note.pk).exists())
+        new_note = Notification.objects.get(
+            recipient=self.it_support,
+            money_request=req,
+            kind=Notification.Kind.MONEY_REQUEST,
+        )
+        self.assertFalse(new_note.is_read)
+
     def test_entries_show_initiator_and_clickable_category(self):
         from paybill.models import LedgerEntry
 
