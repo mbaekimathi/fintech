@@ -5,6 +5,7 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.timesince import timesince
 from django.views import View
 from django.views.generic import TemplateView, UpdateView
 
@@ -29,6 +30,7 @@ from core.notifications import (
     notify_money_request_submitted,
     reprompt_money_request,
     unread_notification_count,
+    user_notifications,
 )
 from integrations.callbacks import apply_stk_query, expire_stale_queues, wait_for_result
 from integrations.daraja import (
@@ -726,6 +728,22 @@ class PendingApprovalPollView(RoleRequiredMixin, View):
                     "title": note.title,
                     "body": note.body,
                     "amount": str(money_request.amount),
+                    "is_unread": not note.is_read,
+                    "review_url": reverse("core:notification-review", kwargs={"pk": note.pk}),
+                }
+            )
+        notifications = []
+        for note in user_notifications(request.user):
+            notifications.append(
+                {
+                    "id": note.pk,
+                    "title": note.title,
+                    "body": note.body,
+                    "is_read": note.is_read,
+                    "can_review": note.can_review,
+                    "money_request_id": note.money_request_id,
+                    "created_ago": f"{timesince(note.created_at)} ago",
+                    "open_url": reverse("core:notification-open", kwargs={"pk": note.pk}),
                     "review_url": reverse("core:notification-review", kwargs={"pk": note.pk}),
                 }
             )
@@ -733,6 +751,7 @@ class PendingApprovalPollView(RoleRequiredMixin, View):
             {
                 "ok": True,
                 "pending": pending,
+                "notifications": notifications,
                 "unread_count": unread_notification_count(request.user),
             }
         )

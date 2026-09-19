@@ -719,6 +719,8 @@ class AppSettingsTests(TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(len(payload["pending"]), 1)
         self.assertEqual(payload["pending"][0]["money_request_id"], req.pk)
+        self.assertIn("notifications", payload)
+        self.assertEqual(len(payload["notifications"]), 1)
 
     def test_toggle_stk_pin_approval_via_ajax(self):
         self.client.force_login(self.it_support)

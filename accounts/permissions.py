@@ -84,12 +84,16 @@ _ROLE_DEFAULTS: dict[str, dict[str, bool]] = {
     User.Role.ACCOUNTS: {
         **_EMPTY,
         "review_requests": True,
+        "pin_approval_prompt": True,
+        "stk_pin_approval_prompt": True,
         "manage_ledger": True,
         "view_hub_balance": True,
     },
     User.Role.IT_SUPPORT: {
         **_EMPTY,
         "review_requests": True,
+        "pin_approval_prompt": True,
+        "stk_pin_approval_prompt": True,
         "manage_hr": True,
         "manage_ledger": True,
         "manage_daraja": True,
@@ -100,6 +104,8 @@ _ROLE_DEFAULTS: dict[str, dict[str, bool]] = {
     User.Role.MANAGER: {
         **_EMPTY,
         "review_requests": True,
+        "pin_approval_prompt": True,
+        "stk_pin_approval_prompt": True,
         "manage_people": True,
         "manage_hr": True,
         "manage_ledger": True,

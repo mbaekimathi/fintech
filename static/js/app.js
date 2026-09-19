@@ -894,17 +894,122 @@ function updateNotifyCount(count) {
   badge.textContent = String(total);
 }
 
+function formatRelativeTime(isoOrLabel) {
+  if (!isoOrLabel) return "";
+  if (typeof isoOrLabel === "string" && !isoOrLabel.includes("T")) return isoOrLabel;
+  const then = new Date(isoOrLabel).getTime();
+  if (Number.isNaN(then)) return "";
+  const mins = Math.max(1, Math.floor((Date.now() - then) / 60000));
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function renderNotificationList(config, notifications, csrf) {
+  const list = document.querySelector("[data-notify-list]");
+  if (!list) return;
+
+  const items = Array.isArray(notifications) ? notifications : [];
+  list.replaceChildren();
+
+  if (!items.length) {
+    const empty = document.createElement("p");
+    empty.className = "notify-empty";
+    empty.textContent = "No notifications yet.";
+    list.appendChild(empty);
+    return;
+  }
+
+  const next = `${window.location.pathname}${window.location.search}`;
+  const needsApproval = Boolean(config.app || config.stk);
+
+  items.forEach((note) => {
+    const article = document.createElement("article");
+    article.className = `notify-item${note.is_read ? "" : " is-unread"}`;
+
+    const copy = document.createElement("div");
+    copy.className = "notify-copy";
+    const title = document.createElement("strong");
+    title.textContent = note.title || "Notification";
+    copy.appendChild(title);
+    if (note.body) {
+      const body = document.createElement("p");
+      body.textContent = note.body;
+      copy.appendChild(body);
+    }
+    const when = document.createElement("small");
+    when.textContent = note.created_ago || formatRelativeTime(note.created_at);
+    copy.appendChild(when);
+
+    const actions = document.createElement("div");
+    actions.className = "notify-actions";
+
+    const openForm = document.createElement("form");
+    openForm.method = "post";
+    openForm.action = note.open_url;
+    openForm.className = "inline-form";
+    openForm.innerHTML = `
+      <input type="hidden" name="csrfmiddlewaretoken" value="${csrf}">
+      <button type="submit" class="btn btn-ghost btn-small">Open</button>
+    `;
+    actions.appendChild(openForm);
+
+    if (note.can_review) {
+      const approveForm = document.createElement("form");
+      approveForm.method = "post";
+      approveForm.action = note.review_url;
+      approveForm.className = "inline-form";
+      approveForm.setAttribute("data-approval-form", "");
+      approveForm.setAttribute("data-notification-id", String(note.id));
+      if (note.money_request_id) {
+        approveForm.setAttribute("data-money-request-id", String(note.money_request_id));
+      }
+      approveForm.setAttribute("data-approval-title", note.title || "");
+      approveForm.setAttribute("data-approval-body", note.body || "");
+      approveForm.innerHTML = `
+        <input type="hidden" name="csrfmiddlewaretoken" value="${csrf}">
+        <input type="hidden" name="intent" value="approve">
+        <input type="hidden" name="next" value="${next}">
+      `;
+      const approveBtn = document.createElement("button");
+      approveBtn.type = needsApproval ? "button" : "submit";
+      approveBtn.className = "btn btn-primary btn-small";
+      approveBtn.textContent = "Approve & send";
+      if (needsApproval) approveBtn.setAttribute("data-approval-trigger", "");
+      approveForm.appendChild(approveBtn);
+      actions.appendChild(approveForm);
+
+      const rejectForm = document.createElement("form");
+      rejectForm.method = "post";
+      rejectForm.action = note.review_url;
+      rejectForm.className = "inline-form";
+      rejectForm.innerHTML = `
+        <input type="hidden" name="csrfmiddlewaretoken" value="${csrf}">
+        <input type="hidden" name="intent" value="reject">
+        <input type="hidden" name="next" value="${next}">
+        <button type="submit" class="btn btn-ghost btn-small">Reject</button>
+      `;
+      actions.appendChild(rejectForm);
+    }
+
+    article.append(copy, actions);
+    list.appendChild(article);
+  });
+}
+
 function initPaymentApproval() {
   const configEl = document.getElementById("approval-config");
-  if (!configEl) return;
+  if (!configEl) return null;
 
   let config = {};
   try {
     config = JSON.parse(configEl.textContent || "{}");
   } catch (_err) {
-    return;
+    return null;
   }
-  if (!config.app && !config.stk) return;
+  if (!config.app && !config.stk) return null;
 
   const csrf =
     document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
@@ -1121,6 +1226,10 @@ function initPaymentApproval() {
     const channel = chooseApprovalChannel({ manual });
     if (channel === "app") {
       if (!manual && !isUserInApp()) {
+        if (config.stk) {
+          runStkApproval(form, { silent: true });
+          return;
+        }
         approvalActive = false;
         pendingForm = null;
         return;
@@ -1160,6 +1269,7 @@ function initPaymentApproval() {
 
   const handleApproveForm = (form, event) => {
     if (!(form instanceof HTMLFormElement) || !form.hasAttribute("data-approval-form")) return;
+    if (!config.app && !config.stk) return;
     event?.preventDefault();
     event?.stopPropagation();
     beginApprovalFlow(form, { force: true, manual: true });
@@ -1201,9 +1311,11 @@ function initPaymentApproval() {
   stkBackdrop?.addEventListener("click", (event) => {
     if (event.target === stkBackdrop) cancelFlow();
   });
+
+  return { config, csrf, beginApprovalFlow, isActive: () => approvalActive };
 }
 
-function initApprovalLiveCheck() {
+function initApprovalLiveCheck(approvalRuntime = null) {
   const configEl = document.getElementById("approval-config");
   if (!configEl) return;
 
@@ -1219,6 +1331,10 @@ function initApprovalLiveCheck() {
     document.querySelector('meta[name="csrf-token"]')?.content ||
     document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
     "";
+
+  const beginApprovalFlow =
+    approvalRuntime?.beginApprovalFlow || paymentApprovalApi.beginApprovalFlow;
+  const isApprovalActive = approvalRuntime?.isActive || paymentApprovalApi.isActive;
 
   const buildApprovalForm = (item) => {
     const existing = document.querySelector(`[data-auto-approval-id="${item.notification_id}"]`);
@@ -1245,8 +1361,19 @@ function initApprovalLiveCheck() {
     return form;
   };
 
+  let pollTimer = null;
+  const pollDelay = () =>
+    isUserInApp()
+      ? Number(config.pollIntervalMs) || 3000
+      : Number(config.pollIntervalHiddenMs) || 12000;
+
+  const schedulePoll = () => {
+    if (pollTimer) window.clearInterval(pollTimer);
+    pollTimer = window.setInterval(tick, pollDelay());
+  };
+
   const tick = async () => {
-    if (paymentApprovalApi.isActive()) return;
+    if (isApprovalActive()) return;
     try {
       const response = await fetch(config.pendingPollUrl, {
         headers: { "X-Requested-With": "XMLHttpRequest" },
@@ -1255,26 +1382,38 @@ function initApprovalLiveCheck() {
       if (!response.ok) return;
       const data = await response.json();
       if (!data.ok) return;
+
       updateNotifyCount(data.unread_count || 0);
+      renderNotificationList(config, data.notifications, csrf);
+
       if (!config.autoPrompt) return;
 
       const dismissed = getApprovalDismissed();
       const pending = Array.isArray(data.pending) ? data.pending : [];
-      const item = pending.find((row) => !dismissed.has(String(row.notification_id)));
+      const item =
+        pending.find(
+          (row) => row.is_unread !== false && !dismissed.has(String(row.notification_id)),
+        ) || pending.find((row) => !dismissed.has(String(row.notification_id)));
       if (!item) return;
 
       const form = buildApprovalForm(item);
-      paymentApprovalApi.beginApprovalFlow(form);
+      beginApprovalFlow(form);
     } catch (_err) {
       // Ignore transient network errors during background polling.
     }
   };
 
   tick();
-  window.setInterval(tick, Number(config.pollIntervalMs) || 5000);
+  schedulePoll();
   document.addEventListener("visibilitychange", () => {
+    schedulePoll();
     if (document.visibilityState === "visible") tick();
   });
+}
+
+function initReviewApproval() {
+  const runtime = initPaymentApproval();
+  initApprovalLiveCheck(runtime);
 }
 
 function initEmployeePermissions() {
@@ -1332,8 +1471,7 @@ if (document.readyState === "loading") {
     initWebPush();
     initEmployeePermissions();
     initAppSettings();
-    initPaymentApproval();
-    initApprovalLiveCheck();
+    initReviewApproval();
   });
 } else {
   initDarajaSetup();
@@ -1343,8 +1481,7 @@ if (document.readyState === "loading") {
   initWebPush();
   initEmployeePermissions();
   initAppSettings();
-  initPaymentApproval();
-  initApprovalLiveCheck();
+  initReviewApproval();
 }
 
 function initWebPush() {
