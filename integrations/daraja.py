@@ -155,6 +155,105 @@ def callback_urls(request=None) -> dict:
     }
 
 
+def hub_balance_operation(config, *, queued_only: bool = False):
+    """Latest account-balance query for the configured organization shortcode."""
+    from integrations.models import DarajaOperation
+
+    shortcode = str(config.payout_shortcode or "")
+    qs = DarajaOperation.objects.filter(kind=DarajaOperation.Kind.BALANCE)
+    if shortcode:
+        qs = qs.filter(destination=shortcode)
+    if queued_only:
+        qs = qs.filter(status=DarajaOperation.Status.QUEUED)
+    return qs.order_by("-created_at").first()
+
+
+def serialize_hub_balance(config, operation=None) -> dict:
+    from django.utils import timezone
+
+    from integrations.callbacks import balance_accounts_from_operation
+    from integrations.models import DarajaOperation
+
+    if operation is None:
+        operation = hub_balance_operation(config)
+    paybill = config.paybill_account
+    summary = ""
+    status = ""
+    status_label = ""
+    when = ""
+    watch = False
+    operation_id = None
+    accounts = {}
+    if operation is not None:
+        summary = (operation.summary or operation.result_desc or "").strip()
+        status = operation.status
+        status_label = operation.get_status_display()
+        when = timezone.localtime(operation.created_at).strftime("%d %b %Y %H:%M")
+        watch = operation.is_fresh_queue()
+        operation_id = operation.pk
+        accounts = balance_accounts_from_operation(operation)
+    utility = accounts.get("utility") or {}
+    working = accounts.get("working") or {}
+    return {
+        "ready": bool(config.balance_ready),
+        "transfer_ready": bool(config.b2b_enabled and config.balance_ready),
+        "paybill_name": paybill.account_name if paybill else "",
+        "paybill_number": paybill.paybill_number if paybill else "",
+        "shortcode": config.payout_shortcode or "",
+        "status": status,
+        "status_label": status_label,
+        "summary": summary,
+        "when": when,
+        "watch": watch,
+        "operation_id": operation_id,
+        "queued": status == DarajaOperation.Status.QUEUED,
+        "accounts": accounts,
+        "utility_amount": utility.get("amount"),
+        "utility_currency": utility.get("currency") or "KES",
+        "working_amount": working.get("amount"),
+        "working_currency": working.get("currency") or "KES",
+    }
+
+
+def request_hub_balance(*, config, created_by, result_url: str, timeout_url: str, identifier=None):
+    """Queue a live account-balance query against Safaricom."""
+    from integrations.daraja_client import DarajaClient, DarajaError
+    from integrations.models import DarajaOperation
+
+    if not config.balance_ready:
+        raise DarajaError("Live balance is not configured yet.")
+    if not result_url or not timeout_url:
+        raise DarajaError("Set HTTPS result and timeout URLs on Daraja setup first.")
+
+    client = DarajaClient(config)
+    body, payload, party_a = client.account_balance(
+        result_url=result_url,
+        timeout_url=timeout_url,
+        identifier=str(identifier or config.balance_identifier_type or "4"),
+    )
+    return DarajaOperation.objects.create(
+        kind=DarajaOperation.Kind.BALANCE,
+        destination=party_a,
+        request_payload=_redact_daraja_payload(payload),
+        summary=body.get("ResponseDescription") or "Balance requested. Waiting for Daraja result.",
+        merchant_request_id=body.get("MerchantRequestID") or "",
+        checkout_request_id=body.get("CheckoutRequestID") or "",
+        conversation_id=body.get("ConversationID") or "",
+        originator_conversation_id=body.get("OriginatorConversationID") or "",
+        result_desc=(body.get("ResponseDescription") or body.get("CustomerMessage") or "")[:255],
+        response_payload=body,
+        created_by=created_by,
+    )
+
+
+def _redact_daraja_payload(payload: dict) -> dict:
+    data = dict(payload or {})
+    for key in ("SecurityCredential", "Password"):
+        if key in data:
+            data[key] = "[redacted]"
+    return data
+
+
 def form_callback_urls(request=None) -> dict:
     """Always fill the setup form with the hosted HTTPS callbacks."""
     base = hosted_base_url(request)
@@ -720,3 +819,26 @@ def capability_status(config, request=None) -> dict:
         "callbacks": callbacks,
         "fully_ready": ready_count == total,
     }
+
+
+def panel_blockers(integration: dict, cap_id: str) -> list[str]:
+    """Per-test blockers with shared app/callback issues shown once at page top."""
+    cap = integration["by_id"][cap_id]
+    blockers = list(cap["blockers"])
+    by_id = integration["by_id"]
+    if not by_id["oauth"]["ready"]:
+        drop = set(by_id["oauth"]["blockers"])
+        blockers = [item for item in blockers if item not in drop]
+    if cap_id in ("balance", "b2c", "b2b") and not by_id["callbacks"]["ready"]:
+        drop = set(by_id["callbacks"]["blockers"])
+        blockers = [item for item in blockers if item not in drop]
+    if not cap["ready"] and not blockers:
+        if not by_id["oauth"]["ready"]:
+            blockers = ["Fix Daraja app login first (see above)."]
+        elif cap_id in ("balance", "b2c", "b2b") and not by_id["callbacks"]["ready"]:
+            blockers = ["Fix the public callback URL first (see above)."]
+        elif cap.get("detail"):
+            blockers = [cap["detail"]]
+        else:
+            blockers = ["Finish this section on Daraja setup."]
+    return blockers

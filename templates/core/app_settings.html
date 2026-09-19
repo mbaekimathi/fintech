@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}App settings{% endblock %}
+{% block eyebrow %}Settings{% endblock %}
+{% block heading %}App settings{% endblock %}
+{% block content %}
+  <section class="page-intro">
+    <div class="page-intro-copy">
+      <h2>Hub behaviour</h2>
+      <p>Controls that apply across the workspace for every signed-in user.</p>
+    </div>
+  </section>
+
+  <section class="panel" data-app-settings>
+    <div class="panel-head">
+      <div>
+        <h2>Payment approvals</h2>
+        <p class="muted">Extra checks before money leaves the hub paybill.</p>
+      </div>
+    </div>
+
+    <div class="settings-toggle-row">
+      <div class="settings-toggle-copy">
+        <strong>PIN approval prompting</strong>
+        <p class="muted">
+          When enabled, approvers with <strong>PIN on approve</strong> in Employee permissions must enter their 6-digit login password on this device before a transfer is sent.
+        </p>
+      </div>
+      <label class="perm-switch" title="Require 6-digit password before approving payments">
+        <input
+          type="checkbox"
+          class="perm-switch-input app-settings-toggle"
+          data-toggle-url="{% url 'core:app-settings' %}"
+          data-setting="pin_approval_required"
+          {% if pin_approval_required %}checked{% endif %}
+          aria-label="PIN approval prompting"
+        >
+        <span class="perm-switch-ui" aria-hidden="true"></span>
+      </label>
+    </div>
+  </section>
+
+  {% if user.can_manage_daraja %}
+    <section class="panel settings-links">
+      <div class="panel-head">
+        <div>
+          <h2>Integrations</h2>
+          <p class="muted">M-Pesa and connected platform configuration.</p>
+        </div>
+      </div>
+      <div class="card-grid">
+        <a class="link-tile" href="{% url 'core:daraja' %}">
+          <strong>Daraja setup</strong>
+          <span>App credentials, STK, balance, and payouts</span>
+        </a>
+        <a class="link-tile" href="{% url 'core:daraja-test' %}">
+          <strong>Test credentials</strong>
+          <span>Readiness checks and live probes</span>
+        </a>
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

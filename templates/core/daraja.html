@@ -1,72 +1,179 @@
 {% extends "base.html" %}
-{% block title %}Daraja app{% endblock %}
+{% block title %}Daraja setup{% endblock %}
 {% block eyebrow %}Integrations{% endblock %}
-{% block heading %}Daraja app{% endblock %}
+{% block heading %}Daraja setup{% endblock %}
 {% block content %}
-  <section class="page-intro">
-    <div class="page-intro-copy">
-      <h2>Shared Daraja application</h2>
-      <p>Environment, channel, and consumer credentials that every STK, balance, and payout flow shares.</p>
+  {{ sandbox_defaults|json_script:"daraja-sandbox-defaults" }}
+
+  <section class="daraja-overview">
+    <div class="daraja-overview-copy">
+      <p class="integration-pill {% if integration.integrated %}is-on{% endif %}">
+        {% if integration.integrated %}Connected{% else %}Not connected{% endif %}
+      </p>
+      <p class="muted daraja-overview-detail">{{ integration.detail }}</p>
+    </div>
+    <div class="status-row daraja-status daraja-status-compact">
+      <span class="chip {% if config.stk_ready %}is-on{% endif %}">STK</span>
+      <span class="chip {% if config.balance_ready %}is-on{% endif %}">Balance</span>
+      <span class="chip {% if config.b2c_ready %}is-on{% endif %}">B2C</span>
+      <span class="chip {% if config.b2b_ready %}is-on{% endif %}">B2B</span>
+      <span class="chip {% if config.agent_shop_ready %}is-on{% endif %}">Agent</span>
     </div>
   </section>
 
-  {{ sandbox_defaults|json_script:"daraja-sandbox-defaults" }}
-  {% include "partials/daraja_status.html" %}
-
-  <form method="post" class="stack-panels daraja-setup" novalidate autocomplete="off" data-daraja-setup>
+  <form
+    method="post"
+    class="daraja-unified"
+    novalidate
+    autocomplete="off"
+    data-daraja-setup
+    {% if scroll_anchor %}data-scroll-anchor="{{ scroll_anchor }}"{% endif %}
+  >
     {% csrf_token %}
     {% if form.non_field_errors %}
       <div class="flash flash-error">{{ form.non_field_errors|join:" " }}</div>
     {% endif %}
 
-    <section class="panel">
-      <div class="panel-head">
-        <div>
-          <h2>App credentials</h2>
-          <p class="muted">Choose Production, pick Paybill or Till, type the number, then paste key and secret. Open each logic page from the sidebar to finish STK, balance, payouts, and agent shop.</p>
-          <p class="muted" data-production-guide hidden>
-            Shortcodes and identifiers fill from the number you type.
-          </p>
-        </div>
+    <section class="daraja-section panel" id="app">
+      <div class="daraja-section-head">
+        <h2>App credentials</h2>
+        <p class="muted">Environment, channel, and consumer key for every Daraja flow.</p>
       </div>
       <div class="form-grid">
         {% include "partials/labeled_field.html" with field=form.environment %}
         {% include "partials/labeled_field.html" with field=form.channel %}
         {% include "partials/labeled_field.html" with field=form.hub_paybill span="2" %}
-        {% include "partials/labeled_field.html" with field=form.org_shortcode %}
         {% include "partials/labeled_field.html" with field=form.consumer_key %}
-        {% include "partials/labeled_field.html" with field=form.consumer_secret secret=True saved=secrets.consumer_secret span="2" %}
+        {% include "partials/labeled_field.html" with field=form.consumer_secret secret=True saved=secrets.consumer_secret %}
       </div>
-
-      <div class="channel-section" data-channel-paybill>
-        <div class="panel-head">
-          <div>
-            <h3>Paybill shortcode</h3>
-            <p class="muted">Auto-filled from the paybill number. Change only if Lipa Na M-Pesa uses a different shortcode.</p>
+      <details class="daraja-advanced">
+        <summary>Shortcodes</summary>
+        <div class="form-grid">
+          <div class="channel-section span-2" data-channel-paybill>
+            {% include "partials/labeled_field.html" with field=form.shortcode %}
+            {% include "partials/labeled_field.html" with field=form.org_shortcode %}
+          </div>
+          <div class="channel-section span-2" data-channel-till hidden>
+            {% include "partials/labeled_field.html" with field=form.till_number span="2" %}
           </div>
         </div>
+      </details>
+    </section>
+
+    <section class="daraja-section panel" id="stk">
+      <div class="daraja-section-head">
+        <h2>STK collect</h2>
+        <p class="muted">Prompt customers to pay into this paybill or till.</p>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.passkey secret=True saved=secrets.passkey span="2" %}
+        {% include "partials/labeled_field.html" with field=form.stk_account_reference %}
+        {% include "partials/labeled_field.html" with field=form.stk_transaction_desc %}
+      </div>
+      <details class="daraja-advanced">
+        <summary>Advanced STK</summary>
         <div class="form-grid">
-          {% include "partials/labeled_field.html" with field=form.shortcode span="2" %}
+          {% include "partials/labeled_field.html" with field=form.stk_transaction_type span="2" %}
+          {% include "partials/labeled_field.html" with field=form.stk_callback_url span="2" %}
+        </div>
+      </details>
+    </section>
+
+    <section class="daraja-section panel" id="balance">
+      <div class="daraja-section-head">
+        <h2>Balance &amp; initiator</h2>
+        <p class="muted">Shared initiator for live balance, payouts, and internal float moves.</p>
+      </div>
+      <div class="form-grid">
+        {% include "partials/labeled_field.html" with field=form.initiator_name %}
+        {% include "partials/labeled_field.html" with field=form.security_credential secret=True saved=secrets.security_credential span="2" %}
+        {% include "partials/labeled_field.html" with field=form.balance_identifier_type %}
+        {% include "partials/labeled_field.html" with field=form.balance_remarks %}
+      </div>
+      <details class="daraja-advanced">
+        <summary>Callback URLs</summary>
+        <div class="form-grid">
+          {% include "partials/labeled_field.html" with field=form.result_url span="2" %}
+          {% include "partials/labeled_field.html" with field=form.timeout_url span="2" %}
+        </div>
+      </details>
+    </section>
+
+    <section class="daraja-section panel" id="payouts">
+      <div class="daraja-section-head">
+        <h2>Payouts</h2>
+        <p class="muted">Send to phones, paybills, tills, and move utility float to working capital.</p>
+      </div>
+      <div class="daraja-subsection">
+        <h3>Phone (B2C)</h3>
+        <div class="form-grid">
+          {% include "partials/labeled_field.html" with field=form.b2c_enabled span="2" %}
+          {% include "partials/labeled_field.html" with field=form.b2c_command_id %}
+          {% include "partials/labeled_field.html" with field=form.b2c_occasion %}
+          {% include "partials/labeled_field.html" with field=form.b2c_remarks span="2" %}
         </div>
       </div>
-
-      <div class="channel-section" data-channel-till hidden>
-        <div class="panel-head">
-          <div>
-            <h3>Till number details</h3>
-            <p class="muted">Auto-filled from the till number above for Buy Goods STK and till payouts.</p>
-          </div>
-        </div>
+      <div class="daraja-subsection">
+        <h3>Paybill &amp; till (B2B)</h3>
         <div class="form-grid">
-          {% include "partials/labeled_field.html" with field=form.till_number span="2" %}
+          {% include "partials/labeled_field.html" with field=form.b2b_enabled span="2" %}
         </div>
+        <details class="daraja-advanced">
+          <summary>Advanced B2B</summary>
+          <div class="form-grid">
+            {% include "partials/labeled_field.html" with field=form.b2b_sender_identifier_type %}
+            {% include "partials/labeled_field.html" with field=form.b2b_remarks %}
+            {% include "partials/labeled_field.html" with field=form.b2b_paybill_command %}
+            {% include "partials/labeled_field.html" with field=form.b2b_till_command %}
+          </div>
+        </details>
       </div>
     </section>
 
-    <div class="toolbar">
-      <button type="submit" class="btn btn-primary" name="intent" value="save">Save Daraja app</button>
-      <button type="submit" class="btn btn-ghost" name="intent" value="test">Save and test connection</button>
-      <a class="btn btn-ghost" href="{% url 'core:daraja-stk' %}">STK push</a>
+    <details class="daraja-section panel daraja-section-collapsible" id="agent">
+      <summary class="daraja-section-summary">
+        <span>
+          <strong>Agent shop</strong>
+          <span class="muted">Optional — business or official Safaricom agent</span>
+        </span>
+      </summary>
+      <div class="daraja-section-body">
+        <div class="form-grid">
+          {% include "partials/labeled_field.html" with field=form.agent_shop_enabled span="2" %}
+          {% include "partials/labeled_field.html" with field=form.agent_channel span="2" %}
+          {% include "partials/labeled_field.html" with field=form.agent_cash_in_enabled %}
+          {% include "partials/labeled_field.html" with field=form.agent_cash_out_enabled %}
+          {% include "partials/labeled_field.html" with field=form.agent_min_amount %}
+          {% include "partials/labeled_field.html" with field=form.agent_max_amount %}
+          {% include "partials/labeled_field.html" with field=form.agent_daily_limit %}
+          {% include "partials/labeled_field.html" with field=form.agent_float_warn_kes %}
+        </div>
+        <details class="daraja-advanced">
+          <summary>Official Safaricom agent API</summary>
+          <div class="form-grid">
+            {% include "partials/labeled_field.html" with field=form.agent_api_enabled span="2" %}
+            {% include "partials/labeled_field.html" with field=form.agent_till_number %}
+            {% include "partials/labeled_field.html" with field=form.agent_head_office %}
+            {% include "partials/labeled_field.html" with field=form.agent_use_shared_app span="2" %}
+            {% include "partials/labeled_field.html" with field=form.agent_consumer_key %}
+            {% include "partials/labeled_field.html" with field=form.agent_consumer_secret secret=True saved=secrets.agent_consumer_secret %}
+            {% include "partials/labeled_field.html" with field=form.agent_initiator_name %}
+            {% include "partials/labeled_field.html" with field=form.agent_security_credential secret=True saved=secrets.agent_security_credential span="2" %}
+            {% include "partials/labeled_field.html" with field=form.agent_deposit_path %}
+            {% include "partials/labeled_field.html" with field=form.agent_withdraw_path %}
+            {% include "partials/labeled_field.html" with field=form.agent_deposit_callback_url span="2" %}
+            {% include "partials/labeled_field.html" with field=form.agent_withdraw_callback_url span="2" %}
+            {% include "partials/labeled_field.html" with field=form.agent_result_url %}
+            {% include "partials/labeled_field.html" with field=form.agent_timeout_url %}
+            {% include "partials/labeled_field.html" with field=form.agent_api_notes span="2" %}
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <div class="toolbar daraja-toolbar">
+      <button type="submit" class="btn btn-primary" name="intent" value="save">Save setup</button>
+      <button type="submit" class="btn btn-ghost" name="intent" value="test">Test connection</button>
       <a class="btn btn-ghost" href="{% url 'core:daraja-test' %}">Test credentials</a>
     </div>
   </form>

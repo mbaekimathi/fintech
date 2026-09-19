@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
-{% block eyebrow %}Overview{% endblock %}
-{% block heading %}Dashboard{% endblock %}
+{% block title %}{% if is_account_dashboard %}Account{% else %}Dashboard{% endif %}{% endblock %}
+{% block eyebrow %}{% if is_account_dashboard %}Account{% else %}Overview{% endif %}{% endblock %}
+{% block heading %}{% if is_account_dashboard %}{{ hub_paybill.account_name|default:"Account" }}{% else %}Dashboard{% endif %}{% endblock %}
 {% block content %}
   {% if is_employee_dashboard %}
     <section class="page-intro">
@@ -216,68 +216,146 @@
       </div>
     </section>
   {% else %}
-    <section class="page-intro">
-      <div class="page-intro-copy">
-        <h2>Ledger posture</h2>
-        <p>Today’s volume, connected systems, and approval backlog at a glance.</p>
-      </div>
-    </section>
+    {% if show_hub_balance %}
+      <section
+        class="account-dashboard"
+        data-hub-balance
+        data-utility-transfer
+        data-poll-url="{% url 'core:dashboard' %}?poll=hub-balance"
+        data-request-url="{% url 'core:dashboard' %}"
+        data-auto-refresh="{% if hub_balance.ready %}1{% else %}0{% endif %}"
+        data-watch="{% if hub_balance.watch %}1{% endif %}"
+        data-max-utility="{% if hub_balance.utility_amount is not None %}{{ hub_balance.utility_amount }}{% endif %}"
+        data-transfer-ready="{% if hub_balance.transfer_ready %}1{% else %}0{% endif %}"
+      >
+        <header class="account-dashboard-head">
+          <div class="account-dashboard-id">
+            <span class="account-dashboard-badge">Paybill</span>
+            <p class="account-dashboard-number mono">
+              {% if hub_paybill %}{{ hub_paybill.paybill_number }}{% else %}—{% endif %}
+            </p>
+            <p class="account-dashboard-meta" data-balance-when>
+              {% if hub_balance.when %}Updated {{ hub_balance.when }}{% else %}Tap refresh for live balances{% endif %}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-ghost btn-small account-refresh-btn"
+            data-balance-refresh
+            {% if not hub_balance.ready %}disabled{% endif %}
+          >Refresh</button>
+        </header>
 
-    <section class="stat-grid">
-      <article class="stat-card">
-        <p class="stat-label">Today</p>
-        <p class="stat-value">KES {{ today_volume|floatformat:2 }}</p>
-        <p class="stat-hint">Posted volume</p>
-      </article>
-      <article class="stat-card">
-        <p class="stat-label">Systems</p>
-        <p class="stat-value">{{ system_count }}</p>
-        <p class="stat-hint">Connected</p>
-      </article>
-      <article class="stat-card">
-        <p class="stat-label">Paybills</p>
-        <p class="stat-value">{{ paybill_count }}</p>
-        <p class="stat-hint">Accounts</p>
-      </article>
-      <article class="stat-card">
-        <p class="stat-label">Pending</p>
-        <p class="stat-value">{{ pending_people }}</p>
-        <p class="stat-hint">Approvals</p>
-      </article>
-    </section>
+        <div class="balance-card-grid">
+          <article class="balance-card balance-card--utility">
+            <div class="balance-card-icon" aria-hidden="true">U</div>
+            <div class="balance-card-body">
+              <p class="balance-card-label">Utility</p>
+              <p class="balance-card-amount">
+                <span class="balance-card-currency" data-utility-currency>
+                  {% if hub_balance.utility_amount is not None %}{{ hub_balance.utility_currency }}{% else %}KES{% endif %}
+                </span>
+                <span class="balance-card-value" data-utility-balance>
+                  {% if hub_balance.utility_amount is not None %}{{ hub_balance.utility_amount|floatformat:2 }}{% else %}—{% endif %}
+                </span>
+              </p>
+              <p class="balance-card-caption">STK collections</p>
+            </div>
+          </article>
 
-    <section class="panel">
-      <div class="panel-head">
-        <div>
-          <h2>Latest postings</h2>
-          <p class="muted">Most recent ledger activity across paybill accounts.</p>
+          <article class="balance-card balance-card--working">
+            <div class="balance-card-icon" aria-hidden="true">W</div>
+            <div class="balance-card-body">
+              <p class="balance-card-label">Working</p>
+              <p class="balance-card-amount">
+                <span class="balance-card-currency" data-working-currency>
+                  {% if hub_balance.working_amount is not None %}{{ hub_balance.working_currency }}{% else %}KES{% endif %}
+                </span>
+                <span class="balance-card-value" data-working-balance>
+                  {% if hub_balance.working_amount is not None %}{{ hub_balance.working_amount|floatformat:2 }}{% else %}—{% endif %}
+                </span>
+              </p>
+              <p class="balance-card-caption">Available for payout</p>
+            </div>
+          </article>
         </div>
-        <a class="btn btn-ghost" href="{% url 'paybill:transactions' %}">View all</a>
-      </div>
-      <div class="table-wrap">
-      <table class="data">
-        <thead>
-          <tr>
-            <th>Reference</th>
-            <th>Account</th>
-            <th>Amount</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in recent_entries %}
-            <tr>
-              <td>{{ row.reference }}</td>
-              <td>{{ row.paybill_account.account_name }}</td>
-              <td>{{ row.currency }} {{ row.amount }}</td>
-              <td><span class="badge badge-{{ row.status|lower }}">{{ row.get_status_display }}</span></td>
-            </tr>
-          {% empty %}
-            <tr><td colspan="4" class="empty">No postings yet.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      </div>
-    </section>
+
+        <p class="account-dashboard-hint" data-balance-hint hidden></p>
+        <p class="visually-hidden" data-balance-summary aria-live="polite">
+          {% if hub_balance.summary %}{{ hub_balance.summary }}{% endif %}
+        </p>
+
+        <div class="account-action-card">
+          {% if hub_balance.transfer_ready %}
+            <p class="account-action-title">Move float</p>
+            <form method="post" class="account-transfer-row" data-utility-transfer-form>
+              {% csrf_token %}
+              <input type="hidden" name="intent" value="utility-transfer">
+              <label class="account-transfer-field">
+                <span class="visually-hidden">Amount</span>
+                <input
+                  type="number"
+                  name="{{ utility_transfer_form.amount.name }}"
+                  id="{{ utility_transfer_form.amount.id_for_label }}"
+                  class="field"
+                  min="1"
+                  step="1"
+                  inputmode="numeric"
+                  placeholder="Amount (KES)"
+                  data-utility-amount
+                  {% if hub_balance.utility_amount %}max="{{ hub_balance.utility_amount }}"{% endif %}
+                >
+              </label>
+              <button
+                type="submit"
+                class="btn btn-primary"
+                data-utility-submit
+                {% if not hub_balance.utility_amount %}disabled{% endif %}
+              >Move to working</button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-small"
+                data-utility-max
+                {% if not hub_balance.utility_amount %}disabled{% endif %}
+              >Move all</button>
+              {% if utility_transfer_form.amount.errors %}
+                <p class="field-error account-transfer-error">{{ utility_transfer_form.amount.errors|join:", " }}</p>
+              {% endif %}
+            </form>
+          {% elif not hub_balance.ready %}
+            <p class="account-dashboard-note muted">
+              <a href="{% url 'core:daraja' %}#balance">Set up live balance</a> to view float.
+            </p>
+          {% else %}
+            <p class="account-dashboard-note muted">
+              <a href="{% url 'core:daraja' %}#payouts">Enable B2B</a> to move utility float.
+            </p>
+          {% endif %}
+        </div>
+      </section>
+    {% else %}
+      <section class="stat-grid">
+        <article class="stat-card">
+          <p class="stat-label">Today</p>
+          <p class="stat-value">KES {{ today_volume|floatformat:2 }}</p>
+          <p class="stat-hint">Posted volume</p>
+        </article>
+        <article class="stat-card">
+          <p class="stat-label">Systems</p>
+          <p class="stat-value">{{ system_count }}</p>
+          <p class="stat-hint">Connected</p>
+        </article>
+        <article class="stat-card">
+          <p class="stat-label">Paybills</p>
+          <p class="stat-value">{{ paybill_count }}</p>
+          <p class="stat-hint">Accounts</p>
+        </article>
+        <article class="stat-card">
+          <p class="stat-label">Pending</p>
+          <p class="stat-value">{{ pending_people }}</p>
+          <p class="stat-hint">Approvals</p>
+        </article>
+      </section>
+    {% endif %}
   {% endif %}
 {% endblock %}

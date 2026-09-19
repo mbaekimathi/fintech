@@ -6,7 +6,7 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views.decorators.http import require_POST
-from django.views.generic import CreateView, FormView, ListView, UpdateView
+from django.views.generic import CreateView, FormView, ListView, TemplateView, UpdateView
 
 from accounts.forms import EmployeeEditForm, EmployeeRegisterForm, EmployeeSalaryForm, LoginForm
 from accounts.mixins import RoleRequiredMixin
@@ -139,7 +139,7 @@ def pending_view(request):
 class UserDirectoryView(RoleRequiredMixin, ListView):
     template_name = "accounts/users.html"
     context_object_name = "people"
-    allowed_roles = (User.Role.ADMIN, User.Role.MANAGER)
+    required_activity = "manage_people"
     paginate_by = 25
 
     def get_queryset(self):
@@ -169,7 +169,7 @@ class UserDirectoryView(RoleRequiredMixin, ListView):
 class HRView(RoleRequiredMixin, ListView):
     template_name = "accounts/hr.html"
     context_object_name = "employees"
-    allowed_roles = HR_ROLES
+    required_activity = "manage_hr"
     paginate_by = 25
 
     def get_queryset(self):
@@ -183,7 +183,7 @@ class HRView(RoleRequiredMixin, ListView):
 class HRPendingApprovalsView(RoleRequiredMixin, ListView):
     template_name = "accounts/hr_pending.html"
     context_object_name = "people"
-    allowed_roles = HR_ROLES
+    required_activity = "manage_hr"
     paginate_by = 25
 
     def get_queryset(self):
@@ -203,7 +203,7 @@ class HRPendingApprovalsView(RoleRequiredMixin, ListView):
 class HREmployeeManagementView(RoleRequiredMixin, ListView):
     template_name = "accounts/hr_employees.html"
     context_object_name = "employees"
-    allowed_roles = HR_ROLES
+    required_activity = "manage_hr"
     paginate_by = 25
 
     def get_queryset(self):
@@ -214,7 +214,7 @@ class HREmployeeEditView(RoleRequiredMixin, UpdateView):
     template_name = "accounts/hr_employee_edit.html"
     form_class = EmployeeEditForm
     context_object_name = "employee"
-    allowed_roles = HR_ROLES
+    required_activity = "manage_hr"
     success_url = reverse_lazy("accounts:hr-employees")
 
     def get_queryset(self):
@@ -233,22 +233,54 @@ class HREmployeeEditView(RoleRequiredMixin, UpdateView):
         return response
 
 
-class HREmployeePermissionsView(RoleRequiredMixin, ListView):
+class HREmployeePermissionsView(RoleRequiredMixin, TemplateView):
     template_name = "accounts/hr_permissions.html"
-    context_object_name = "employees"
-    allowed_roles = HR_ROLES
-    paginate_by = 25
+    required_activity = "manage_hr"
 
     def get_queryset(self):
         return (
             User.objects.exclude(role=User.Role.CLIENT)
             .exclude(role=User.Role.PENDING_APPROVAL)
+            .select_related("permissions")
             .order_by("staff_code")
         )
 
     def get_context_data(self, **kwargs):
+        from collections import defaultdict
+
+        from accounts.permissions import ACTIVITIES, PERMISSION_ROLE_ORDER, permission_map_for_users
+
         context = super().get_context_data(**kwargs)
-        context["assignable_roles"] = ASSIGNABLE_ROLES
+        employees = list(self.get_queryset())
+        flags_by_user = permission_map_for_users(employees)
+        grouped: dict[str, list] = defaultdict(list)
+        for person in employees:
+            flags = flags_by_user.get(person.pk, {})
+            person.permission_rows = [
+                {
+                    "code": activity["code"],
+                    "label": activity["label"],
+                    "enabled": flags.get(activity["code"], False),
+                    "hint": activity["hint"],
+                }
+                for activity in ACTIVITIES
+            ]
+            grouped[person.role].append(person)
+        context["role_groups"] = [
+            {
+                "role": role,
+                "label": User.Role(role).label,
+                "employees": grouped[role],
+            }
+            for role in PERMISSION_ROLE_ORDER
+            if grouped.get(role)
+        ]
+        context["activities"] = ACTIVITIES
+        from core.models import AppSettings
+
+        app_settings = AppSettings.load()
+        context["pin_approval_required"] = app_settings.pin_approval_required
+        context["can_manage_app_settings"] = self.request.user.can_manage_app_settings()
         return context
 
 
@@ -263,7 +295,7 @@ def _active_staff_qs():
 class HRSalariesView(RoleRequiredMixin, ListView):
     template_name = "accounts/hr_salaries.html"
     context_object_name = "employees"
-    allowed_roles = HR_ROLES
+    required_activity = "manage_hr"
     paginate_by = 25
 
     def get_queryset(self):
@@ -273,7 +305,7 @@ class HRSalariesView(RoleRequiredMixin, ListView):
 class HRSalaryRegisterView(RoleRequiredMixin, CreateView):
     template_name = "accounts/hr_salary_form.html"
     form_class = EmployeeSalaryForm
-    allowed_roles = HR_ROLES
+    required_activity = "manage_hr"
     success_url = reverse_lazy("accounts:hr-salaries")
 
     def dispatch(self, request, *args, **kwargs):
@@ -313,7 +345,7 @@ class HRSalaryUpdateView(RoleRequiredMixin, UpdateView):
     template_name = "accounts/hr_salary_form.html"
     form_class = EmployeeSalaryForm
     context_object_name = "salary"
-    allowed_roles = HR_ROLES
+    required_activity = "manage_hr"
     success_url = reverse_lazy("accounts:hr-salaries")
 
     def dispatch(self, request, *args, **kwargs):
@@ -387,6 +419,10 @@ def _set_user_approval(request, pk, *, approved: bool):
         else:
             update_fields = list({*update_fields, "role"})
     person.save(update_fields=update_fields)
+    if approved:
+        from accounts.permissions import sync_permissions_from_role
+
+        sync_permissions_from_role(person, reset=True)
     write_audit(
         request,
         "user.approve" if approved else "user.unapprove",
@@ -421,6 +457,48 @@ def set_role(request, pk):
         person.is_staff = True
         update_fields.append("is_staff")
     person.save(update_fields=update_fields)
+    from accounts.permissions import sync_permissions_from_role
+
+    sync_permissions_from_role(person, reset=True)
     write_audit(request, "user.role_change", object_type="user", object_id=person.pk, detail={"role": role})
     messages.success(request, f"{person.staff_code} is now {person.get_role_display()}.")
     return redirect(next_url)
+
+
+@login_required
+@require_POST
+def toggle_permission(request, pk):
+    from accounts.permissions import ACTIVITY_CODES, sync_permissions_from_role
+
+    if not request.user.can_manage_hr():
+        messages.error(request, "You do not have permission to change employee access.")
+        return redirect("core:dashboard")
+    person = get_object_or_404(
+        User.objects.exclude(role__in=[User.Role.CLIENT, User.Role.PENDING_APPROVAL]),
+        pk=pk,
+    )
+    activity = (request.POST.get("activity") or "").strip()
+    if activity not in ACTIVITY_CODES:
+        messages.error(request, "Unknown activity.")
+        return redirect("accounts:hr-permissions")
+    enabled = str(request.POST.get("enabled", "")).strip().lower() in {"1", "true", "on", "yes"}
+    sync_permissions_from_role(person)
+    perms = person.permissions
+    setattr(perms, activity, enabled)
+    perms.save(update_fields=[activity, "updated_at"])
+    write_audit(
+        request,
+        "hr.permission.toggle",
+        object_type="user",
+        object_id=person.pk,
+        detail={"activity": activity, "enabled": enabled},
+    )
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        from django.http import JsonResponse
+
+        return JsonResponse({"ok": True, "enabled": enabled})
+    messages.success(
+        request,
+        f"{person.staff_code}: {activity.replace('_', ' ')} {'enabled' if enabled else 'disabled'}.",
+    )
+    return redirect("accounts:hr-permissions")

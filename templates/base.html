@@ -85,7 +85,7 @@
                       <button type="submit" class="btn btn-ghost btn-small">Open</button>
                     </form>
                     {% if can_review_money_requests and note.can_review %}
-                      <form method="post" action="{% url 'core:notification-review' note.pk %}" class="inline-form">
+                      <form method="post" action="{% url 'core:notification-review' note.pk %}" class="inline-form" data-approval-form>
                         {% csrf_token %}
                         <input type="hidden" name="intent" value="approve">
                         <input type="hidden" name="next" value="{{ request.path }}">
@@ -158,6 +158,10 @@
     {% include "partials/footer.html" %}
   </div>
   <div class="nav-backdrop" @click="navOpen = false" x-cloak x-show="navOpen"></div>
+  {% if pin_approval_required_for_user and can_review_money_requests %}
+    {% include "partials/pin_approval_dialog.html" %}
+  {% endif %}
+  {{ pin_approval_required_for_user|json_script:"pin-approval-config" }}
   {% if user.is_authenticated and webpush_enabled %}
     {{ webpush_vapid_public_key|json_script:"webpush-vapid-key" }}
     <script type="application/json" id="webpush-config">

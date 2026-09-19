@@ -16,11 +16,12 @@ REVIEW_ROLES = (
 
 
 def review_recipients():
-    return User.objects.filter(
-        is_active=True,
-        is_approved=True,
-        role__in=REVIEW_ROLES,
-    ).exclude(role=User.Role.PENDING_APPROVAL)
+    qs = (
+        User.objects.filter(is_active=True, is_approved=True)
+        .exclude(role__in=[User.Role.PENDING_APPROVAL, User.Role.CLIENT])
+        .select_related("permissions")
+    )
+    return [user for user in qs if user.can_review_requests()]
 
 
 def notify_money_request_submitted(money_request: MoneyRequest) -> int:

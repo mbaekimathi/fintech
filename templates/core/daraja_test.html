@@ -3,158 +3,52 @@
 {% block eyebrow %}Daraja{% endblock %}
 {% block heading %}Test credentials{% endblock %}
 {% block content %}
-  <section class="page-intro">
-    <div class="page-intro-copy">
-      <h2>Capability readiness</h2>
-      <p class="lede-inline">
-        What is wired and ready to run, and what is still missing.
-        STK uses {{ config.shortcode|default:"174379" }}. Balance and send use Party A {{ config.payout_shortcode|default:"600996" }} and initiator {{ config.initiator_name|default:"testapi" }}.
-      </p>
-    </div>
+  <section class="daraja-test-intro">
+    <p class="muted">
+      Run live checks against Safaricom. {{ runnable_tests }} of 3 test areas are ready.
+    </p>
+    <a class="btn btn-ghost btn-small" href="{% url 'core:daraja' %}">Edit setup</a>
   </section>
 
-  <section class="integration-banner {% if integration.fully_ready %}is-ok{% else %}is-bad{% endif %}" role="status">
-    <p class="eyebrow">{% if integration.fully_ready %}Ready{% else %}Partial{% endif %}</p>
-    <h2>{{ integration.title }}</h2>
-    <p class="muted">{{ integration.detail }}</p>
-    <p class="muted">{{ integration.ready_count }} of {{ integration.total }} capabilities can run from this hub.</p>
-  </section>
+  {% if not capabilities.oauth.ready %}
+    <section class="daraja-test-alert panel is-blocked" role="alert">
+      <p class="eyebrow">App login</p>
+      <p><strong>Daraja did not accept these credentials.</strong> Fix app key and secret before any test will work.</p>
+      {% if capabilities.oauth.blockers %}
+        <ul class="daraja-test-fix">
+          {% for blocker in capabilities.oauth.blockers %}
+            <li>{{ blocker }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <a class="btn btn-ghost btn-small" href="{% url 'core:daraja' %}#app">Fix app credentials</a>
+    </section>
+  {% elif not capabilities.callbacks.ready %}
+    <section class="daraja-test-alert panel is-blocked" role="alert">
+      <p class="eyebrow">Callbacks</p>
+      <p><strong>Balance and payouts need a public result URL.</strong> STK can still be tried; balance and send will wait forever without this.</p>
+      {% if capabilities.callbacks.blockers %}
+        <ul class="daraja-test-fix">
+          {% for blocker in capabilities.callbacks.blockers %}
+            <li>{{ blocker }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <p class="muted daraja-test-url">{% if live_result_url %}Result URL: {{ live_result_url }}{% endif %}</p>
+    </section>
+  {% endif %}
 
-  <div x-data="{ detail: null }" @keydown.escape.window="detail = null">
-    <div class="readiness-grid">
-      <section class="panel readiness-panel is-ok">
-        <div class="panel-head">
-          <div>
-            <h2>Ready to work</h2>
-            <p class="muted">Integrated and can be used from this page.</p>
-          </div>
-          <span class="chip is-on">{{ integration.ready|length }}</span>
-        </div>
-        {% for item in integration.ready %}
-          <article class="readiness-item">
-            <div class="readiness-simple">
-              <h3>{{ item.name }}</h3>
-              <button
-                type="button"
-                class="btn btn-ghost btn-small"
-                @click="detail = {
-                  name: '{{ item.name|escapejs }}',
-                  work: '{{ item.work|escapejs }}',
-                  detail: '{{ item.detail|escapejs }}',
-                  lastNote: '{{ item.last_note|escapejs }}',
-                  blockers: [{% for blocker in item.blockers %}'{{ blocker|escapejs }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
-                  ready: true
-                }"
-              >View</button>
-            </div>
-          </article>
-        {% empty %}
-          <p class="muted">Nothing is ready yet. Fix the items on the right, save setup, then refresh.</p>
-        {% endfor %}
-      </section>
-
-      <section class="panel readiness-panel is-bad">
-        <div class="panel-head">
-          <div>
-            <h2>Not well integrated</h2>
-            <p class="muted">Missing credentials, callbacks, or a last test that never came back.</p>
-          </div>
-          <span class="chip">{{ integration.not_ready|length }}</span>
-        </div>
-        {% for item in integration.not_ready %}
-          <article class="readiness-item">
-            <div class="readiness-simple">
-              <h3>{{ item.name }}</h3>
-              <button
-                type="button"
-                class="btn btn-ghost btn-small"
-                @click="detail = {
-                  name: '{{ item.name|escapejs }}',
-                  work: '{{ item.work|escapejs }}',
-                  detail: '{{ item.detail|escapejs }}',
-                  lastNote: '{{ item.last_note|escapejs }}',
-                  blockers: [{% for blocker in item.blockers %}'{{ blocker|escapejs }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
-                  ready: false
-                }"
-              >View</button>
-            </div>
-          </article>
-        {% empty %}
-          <p class="muted">All capabilities are integrated. You can run the tests below.</p>
-        {% endfor %}
-        {% if integration.not_ready %}
-          <div class="toolbar">
-            <a class="btn btn-ghost" href="{% url 'core:daraja' %}">Fix on Daraja setup</a>
-          </div>
-        {% endif %}
-      </section>
-    </div>
-
-    <div
-      class="detail-backdrop"
-      x-show="detail"
-      x-cloak
-      x-transition.opacity.duration.150ms
-      @click.self="detail = null"
-      role="presentation"
-    >
-      <div
-        class="detail-dialog"
-        role="dialog"
-        aria-modal="true"
-        :aria-labelledby="detail ? 'readiness-detail-title' : null"
-        @click.stop
-      >
-        <template x-if="detail">
-          <div>
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow" x-text="detail.ready ? 'Ready' : 'Not ready'"></p>
-                <h2 id="readiness-detail-title" x-text="detail.name"></h2>
-              </div>
-              <button type="button" class="btn btn-ghost btn-small" @click="detail = null">Close</button>
-            </div>
-            <p x-show="detail.work" x-text="detail.work"></p>
-            <p class="muted" x-show="detail.detail" x-text="detail.detail"></p>
-            <ul class="readiness-fix" x-show="detail.blockers && detail.blockers.length">
-              <template x-for="(blocker, index) in detail.blockers" :key="index">
-                <li x-text="blocker"></li>
-              </template>
-            </ul>
-            <p class="muted" x-show="detail.lastNote" x-text="detail.lastNote"></p>
-          </div>
-        </template>
-      </div>
-    </div>
-  </div>
-
-  <div class="status-row daraja-status">
-    <span class="chip {% if capabilities.oauth.ready %}is-on{% endif %}">{% if capabilities.oauth.ready %}App connected{% else %}App not connected{% endif %}</span>
-    <span class="chip {% if capabilities.stk.ready %}is-on{% endif %}">{% if capabilities.stk.ready %}STK ready{% else %}STK not ready{% endif %}</span>
-    <span class="chip {% if capabilities.balance.ready %}is-on{% endif %}">{% if capabilities.balance.ready %}Balance ready{% else %}Balance not ready{% endif %}</span>
-    <span class="chip {% if capabilities.b2c.ready %}is-on{% endif %}">{% if capabilities.b2c.ready %}Phone payout ready{% else %}Phone payout not ready{% endif %}</span>
-    <span class="chip {% if capabilities.b2b.ready %}is-on{% endif %}">{% if capabilities.b2b.ready %}Paybill/till payout ready{% else %}Paybill/till payout not ready{% endif %}</span>
-    <span class="chip {% if capabilities.callbacks.ready %}is-on{% endif %}">{% if capabilities.callbacks.ready %}Callbacks reaching this hub{% else %}Callbacks not reaching this hub{% endif %}</span>
-    <a class="chip" href="{% url 'core:daraja' %}">Edit setup</a>
-    {% if live_result_url %}
-      <span class="chip">Result URL {{ live_result_url }}</span>
-    {% endif %}
-  </div>
-
-  <section class="stack-panels">
-    <form method="post" class="panel {% if capabilities.stk.ready %}is-ready{% else %}is-blocked{% endif %}" novalidate>
+  <div class="stack-panels daraja-test-panels">
+    <form method="post" class="panel daraja-test-panel {% if capabilities.stk.ready %}is-ready{% else %}is-blocked{% endif %}" novalidate>
       {% csrf_token %}
       <input type="hidden" name="intent" value="stk">
       <div class="panel-head">
         <div>
-          <h2>Prompt a number to pay</h2>
-          <p class="muted">STK push. Cash lands on Lipa Na M-Pesa shortcode {{ config.shortcode|default:"—" }}.</p>
+          <h2>STK push</h2>
+          <p class="muted">Prompt a phone to pay shortcode {{ config.shortcode|default:"—" }}.</p>
         </div>
-        <span class="chip {% if capabilities.stk.ready %}is-on{% endif %}">{% if capabilities.stk.ready %}Ready{% else %}Not ready{% endif %}</span>
       </div>
-      {% if not capabilities.stk.ready and capabilities.stk.blockers %}
-        <p class="field-error">{{ capabilities.stk.blockers|join:" " }}</p>
-      {% endif %}
+      {% include "partials/daraja_test_status.html" with ready=capabilities.stk.ready blockers=stk_blockers detail=capabilities.stk.detail last_note=capabilities.stk.last_note setup_anchor="stk" %}
       {% if stk_form.non_field_errors %}
         <p class="field-error">{{ stk_form.non_field_errors|join:" " }}</p>
       {% endif %}
@@ -168,30 +62,27 @@
       </div>
     </form>
 
-    <form method="post" class="panel {% if capabilities.balance.ready %}is-ready{% else %}is-blocked{% endif %}" novalidate>
+    <form method="post" class="panel daraja-test-panel {% if capabilities.balance.ready %}is-ready{% else %}is-blocked{% endif %}" novalidate>
       {% csrf_token %}
       <input type="hidden" name="intent" value="balance">
       <div class="panel-head">
         <div>
-          <h2>View account balance</h2>
-          <p class="muted">Asks Safaricom for the live float on {{ config.payout_shortcode|default:"the organization shortcode" }}. Not the hub ledger total.</p>
+          <h2>Account balance</h2>
+          <p class="muted">Live float on {{ config.payout_shortcode|default:"organization shortcode" }}.</p>
         </div>
-        <span class="chip {% if capabilities.balance.ready %}is-on{% endif %}">{% if capabilities.balance.ready %}Ready{% else %}Not ready{% endif %}</span>
       </div>
-      {% if not capabilities.balance.ready and capabilities.balance.blockers %}
-        <p class="field-error">{{ capabilities.balance.blockers|join:" " }}</p>
-      {% endif %}
+      {% include "partials/daraja_test_status.html" with ready=capabilities.balance.ready blockers=balance_blockers detail=capabilities.balance.detail last_note=capabilities.balance.last_note setup_anchor="balance" %}
       <div class="form-grid">
         {% include "partials/labeled_field.html" with field=balance_form.identifier %}
       </div>
       <div class="toolbar">
-        <button type="submit" class="btn btn-primary" {% if not capabilities.balance.ready %}disabled{% endif %}>Request live balance</button>
+        <button type="submit" class="btn btn-primary" {% if not capabilities.balance.ready %}disabled{% endif %}>Request balance</button>
       </div>
     </form>
 
     <form
       method="post"
-      class="panel send-money {% if capabilities.b2c.ready or capabilities.b2b.ready %}is-ready{% else %}is-blocked{% endif %}"
+      class="panel daraja-test-panel send-money {% if capabilities.b2c.ready or capabilities.b2b.ready %}is-ready{% else %}is-blocked{% endif %}"
       novalidate
       x-data="sendMoneyPanel({
         type: '{{ send_form.destination_type.value|default:send_form.destination_type.field.initial|default:'PHONE'|escapejs }}',
@@ -211,22 +102,13 @@
       <div class="panel-head">
         <div>
           <h2>Send money</h2>
-          <p class="muted">
-            Pays from {{ config.payout_shortcode|default:"—" }}.
-            Pick where the money should go — phone, paybill, or till.
-          </p>
+          <p class="muted">Pay out from {{ config.payout_shortcode|default:"—" }} to a phone, paybill, or till.</p>
         </div>
-        <span class="chip" :class="readyForType ? 'is-on' : ''" x-text="readyLabel"></span>
       </div>
-      <p class="field-error" x-show="!phoneReady && !b2bReady" x-cloak>
-        {{ capabilities.b2c.blockers|join:" " }}
-      </p>
-      <p class="field-error" x-show="type === 'PHONE' && !phoneReady && b2bReady" x-cloak>
-        {{ capabilities.b2c.blockers|join:" " }}
-      </p>
-      <p class="field-error" x-show="(type === 'PAYBILL' || type === 'TILL') && !b2bReady && phoneReady" x-cloak>
-        {{ capabilities.b2b.blockers|join:" " }}
-      </p>
+      <div class="daraja-test-send-status">
+        {% include "partials/daraja_test_status.html" with ready=capabilities.b2c.ready blockers=b2c_blockers detail="Phone payout (B2C)" last_note=capabilities.b2c.last_note setup_anchor="payouts" %}
+        {% include "partials/daraja_test_status.html" with ready=capabilities.b2b.ready blockers=b2b_blockers detail="Paybill / till (B2B)" last_note=capabilities.b2b.last_note setup_anchor="payouts" %}
+      </div>
       {% if send_form.non_field_errors %}
         <p class="field-error">{{ send_form.non_field_errors|join:" " }}</p>
       {% endif %}
@@ -304,15 +186,13 @@
         >Send</button>
       </div>
     </form>
-  </section>
+  </div>
 
-  <section class="panel">
+  <section class="panel daraja-test-results">
     <div class="panel-head">
       <div>
-        <h2>Recent tests</h2>
-        <p class="muted" data-poll-hint>
-          New tests update automatically. A Timed out row means Safaricom never POSTed the result to this hub.
-        </p>
+        <h2>Recent results</h2>
+        <p class="muted" data-poll-hint>Updates automatically while a test is waiting on Safaricom.</p>
       </div>
     </div>
     <div class="table-wrap">
@@ -320,8 +200,8 @@
         <thead>
           <tr>
             <th>When</th>
-            <th>Action</th>
-            <th>Destination</th>
+            <th>Test</th>
+            <th>To</th>
             <th>Amount</th>
             <th>Status</th>
             <th>Result</th>
@@ -349,7 +229,7 @@
               </td>
             </tr>
           {% empty %}
-            <tr data-empty="1"><td colspan="7" class="empty">No tests yet. Prompt a number, request balance, or send money.</td></tr>
+            <tr data-empty="1"><td colspan="7" class="empty">No tests yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>

@@ -315,3 +315,27 @@ class DarajaClient:
             "ResultURL": self._callback(self.config.result_url, result_url),
         }
         return self._post("/mpesa/b2b/v1/paymentrequest", payload), payload, dest
+
+    def utility_to_working(self, *, amount, result_url: str, timeout_url: str) -> dict:
+        """Move float from the paybill utility account to the working capital account."""
+        if not self.config.b2b_enabled:
+            raise DarajaError("Internal float transfer is not enabled. Turn on B2B on Daraja setup.")
+        if not self.config.balance_ready:
+            raise DarajaError("Balance and initiator must be configured before moving float.")
+        shortcode = self._payout_party_a(identifier="4")
+        reference = (self.config.stk_account_reference or "NEXUS")[:12]
+        payload = {
+            "Initiator": self.config.initiator_name,
+            "SecurityCredential": self._security_credential(),
+            "CommandID": "BusinessTransferFromUtilityToMMF",
+            "SenderIdentifierType": "4",
+            "RecieverIdentifierType": "4",
+            "Amount": whole_kes(amount),
+            "PartyA": shortcode,
+            "PartyB": shortcode,
+            "AccountReference": reference,
+            "Remarks": "Utility to working"[:100],
+            "QueueTimeOutURL": self._callback(self.config.timeout_url, timeout_url),
+            "ResultURL": self._callback(self.config.result_url, result_url),
+        }
+        return self._post("/mpesa/b2b/v1/paymentrequest", payload), payload, shortcode

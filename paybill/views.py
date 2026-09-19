@@ -70,12 +70,7 @@ def _annotate_ledger_entry(entry: LedgerEntry, lookup: dict[str, MoneyRequest]) 
 class PaybillAccountListView(RoleRequiredMixin, ListView):
     template_name = "paybill/accounts.html"
     context_object_name = "accounts"
-    allowed_roles = (
-        User.Role.ADMIN,
-        User.Role.MANAGER,
-        User.Role.ACCOUNTS,
-        User.Role.IT_SUPPORT,
-    )
+    required_activity = "manage_ledger"
 
     def get_queryset(self):
         return PaybillAccount.objects.select_related("connected_system")
@@ -117,7 +112,7 @@ class TransactionListView(RoleRequiredMixin, ListView):
         for entry in context["entries"]:
             _annotate_ledger_entry(entry, lookup)
         role = self.request.user.effective_role
-        can_review = role in PENDING_REVIEW_ROLES
+        can_review = self.request.user.can_review_requests()
         context["can_review_requests"] = can_review
         if can_review:
             context["pending_requests"] = (
@@ -140,7 +135,7 @@ class TransactionListView(RoleRequiredMixin, ListView):
 
 
 class MoneyRequestReviewView(RoleRequiredMixin, View):
-    allowed_roles = PENDING_REVIEW_ROLES
+    required_activity = "review_requests"
 
     def post(self, request, pk, *args, **kwargs):
         money_request = get_object_or_404(MoneyRequest, pk=pk)
@@ -160,6 +155,11 @@ class MoneyRequestReviewView(RoleRequiredMixin, View):
 
         if intent != "approve":
             messages.error(request, "Choose approve or reject.")
+            return redirect(next_url)
+
+        from core.approval import approval_pin_ok
+
+        if not approval_pin_ok(request, next_url=next_url):
             return redirect(next_url)
 
         try:
@@ -203,12 +203,7 @@ class MoneyRequestReviewView(RoleRequiredMixin, View):
 class ConnectedSystemListView(RoleRequiredMixin, ListView):
     template_name = "paybill/systems.html"
     context_object_name = "systems"
-    allowed_roles = (
-        User.Role.ADMIN,
-        User.Role.MANAGER,
-        User.Role.IT_SUPPORT,
-        User.Role.ACCOUNTS,
-    )
+    required_activity = "manage_ledger"
 
     def get_queryset(self):
         return ConnectedSystem.objects.all()

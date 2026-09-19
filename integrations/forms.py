@@ -409,7 +409,14 @@ class DarajaSetupForm(_DarajaFormBase):
         self._keep_secrets(instance)
         channel = self.cleaned_data.get("channel") or self.CHANNEL_PAYBILL
         number = (self.cleaned_data.get("hub_paybill") or instance.shortcode or instance.till_number or "").strip()
-        if instance.environment == DarajaConfig.Environment.SANDBOX:
+        posted = set(self.data.keys())
+        if instance.environment == DarajaConfig.Environment.SANDBOX and posted & {
+            "environment",
+            "channel",
+            "hub_paybill",
+            "shortcode",
+            "org_shortcode",
+        }:
             apply_sandbox_to_instance(instance, self.request, force=True)
             if channel == self.CHANNEL_TILL:
                 instance.stk_transaction_type = DarajaConfig.StkTransactionType.BUY_GOODS
@@ -684,6 +691,189 @@ class DarajaAgentShopForm(_DarajaFormBase):
         return instance
 
 
+DARAJA_UNIFIED_FIELDS = (
+    "environment",
+    "shortcode",
+    "org_shortcode",
+    "till_number",
+    "consumer_key",
+    "consumer_secret",
+    "stk_transaction_type",
+    "passkey",
+    "stk_account_reference",
+    "stk_transaction_desc",
+    "stk_callback_url",
+    "initiator_name",
+    "security_credential",
+    "balance_identifier_type",
+    "balance_remarks",
+    "result_url",
+    "timeout_url",
+    "b2c_enabled",
+    "b2c_command_id",
+    "b2c_occasion",
+    "b2c_remarks",
+    "b2b_enabled",
+    "b2b_sender_identifier_type",
+    "b2b_paybill_command",
+    "b2b_till_command",
+    "b2b_remarks",
+    "agent_shop_enabled",
+    "agent_channel",
+    "agent_till_number",
+    "agent_head_office",
+    "agent_store_number",
+    "agent_operator_id",
+    "agent_api_enabled",
+    "agent_use_shared_app",
+    "agent_consumer_key",
+    "agent_consumer_secret",
+    "agent_initiator_name",
+    "agent_security_credential",
+    "agent_api_base_url",
+    "agent_deposit_path",
+    "agent_withdraw_path",
+    "agent_deposit_command",
+    "agent_withdraw_command",
+    "agent_deposit_callback_url",
+    "agent_withdraw_callback_url",
+    "agent_result_url",
+    "agent_timeout_url",
+    "agent_track_commission",
+    "agent_api_notes",
+    "agent_cash_in_enabled",
+    "agent_cash_out_enabled",
+    "agent_min_amount",
+    "agent_max_amount",
+    "agent_daily_limit",
+    "agent_cash_in_fee",
+    "agent_cash_out_fee",
+    "agent_cash_in_account_ref",
+    "agent_float_warn_kes",
+    "agent_receipt_prefix",
+)
+
+
+class DarajaUnifiedForm(DarajaSetupForm):
+    """Single-page Daraja setup — app, STK, balance, payouts, and agent shop."""
+
+    class Meta(DarajaSetupForm.Meta):
+        fields = DARAJA_UNIFIED_FIELDS
+
+    def __init__(self, *args, request=None, **kwargs):
+        super().__init__(*args, request=request, **kwargs)
+        if not self.is_bound:
+            if not self.fields["b2b_sender_identifier_type"].initial and not getattr(
+                self.instance, "b2b_sender_identifier_type", None
+            ):
+                self.fields["b2b_sender_identifier_type"].initial = DarajaConfig.IdentifierType.SHORTCODE
+            if not getattr(self.instance, "b2b_paybill_command", None):
+                self.fields["b2b_paybill_command"].initial = DarajaConfig.B2BCommand.PAYBILL
+            if not getattr(self.instance, "b2b_till_command", None):
+                self.fields["b2b_till_command"].initial = DarajaConfig.B2BCommand.BUY_GOODS
+            if not (getattr(self.instance, "b2b_remarks", None) or "").strip():
+                self.fields["b2b_remarks"].initial = SANDBOX_B2B_REMARKS
+
+    def clean_agent_cash_in_account_ref(self):
+        return (self.cleaned_data.get("agent_cash_in_account_ref") or "").strip()[:12]
+
+    def clean_agent_receipt_prefix(self):
+        return (self.cleaned_data.get("agent_receipt_prefix") or "").strip()[:16] or "AG"
+
+    def clean_agent_till_number(self):
+        return re.sub(r"\D", "", self.cleaned_data.get("agent_till_number") or "")
+
+    def clean_agent_head_office(self):
+        return re.sub(r"\D", "", self.cleaned_data.get("agent_head_office") or "")
+
+    def clean_agent_deposit_path(self):
+        path = (self.cleaned_data.get("agent_deposit_path") or "").strip()
+        if path and not path.startswith("/"):
+            path = "/" + path
+        return path
+
+    def clean_agent_withdraw_path(self):
+        path = (self.cleaned_data.get("agent_withdraw_path") or "").strip()
+        if path and not path.startswith("/"):
+            path = "/" + path
+        return path
+
+    def clean(self):
+        cleaned = super().clean()
+        shop_on = bool(cleaned.get("agent_shop_enabled"))
+        cash_in = bool(cleaned.get("agent_cash_in_enabled"))
+        cash_out = bool(cleaned.get("agent_cash_out_enabled"))
+        channel = cleaned.get("agent_channel") or DarajaConfig.AgentChannel.BUSINESS
+        defaults = {
+            "agent_min_amount": "10",
+            "agent_max_amount": "70000",
+            "agent_daily_limit": "0",
+            "agent_cash_in_fee": "0",
+            "agent_cash_out_fee": "0",
+            "agent_float_warn_kes": "1000",
+        }
+        for name, fallback in defaults.items():
+            if cleaned.get(name) is None:
+                cleaned[name] = type(self.instance)._meta.get_field(name).to_python(fallback)
+        min_amt = cleaned.get("agent_min_amount")
+        max_amt = cleaned.get("agent_max_amount")
+        if shop_on and not cash_in and not cash_out:
+            self.add_error(
+                "agent_cash_in_enabled",
+                "Turn on deposit, withdraw, or both when agent shop is enabled.",
+            )
+        if min_amt is not None and max_amt is not None and min_amt > max_amt:
+            self.add_error("agent_max_amount", "Maximum must be greater than or equal to the minimum.")
+        if not cleaned.get("agent_receipt_prefix"):
+            cleaned["agent_receipt_prefix"] = "AG"
+        if shop_on and channel == DarajaConfig.AgentChannel.SAFARICOM:
+            if cleaned.get("agent_api_enabled") and not cleaned.get("agent_till_number"):
+                self.add_error("agent_till_number", "Enter the agent till number from Safaricom.")
+            if cleaned.get("agent_api_enabled") and not cleaned.get("agent_use_shared_app"):
+                if not (cleaned.get("agent_consumer_key") or getattr(self.instance, "agent_consumer_key", "")):
+                    self.add_error(
+                        "agent_consumer_key",
+                        "Paste the agent app consumer key, or reuse the shared Daraja app.",
+                    )
+        return cleaned
+
+    def save(self, commit=True):
+        posted = set(self.data.keys())
+        for name in self.Meta.fields:
+            field = self.fields.get(name)
+            is_checkbox = isinstance(getattr(field, "widget", None), forms.CheckboxInput)
+            if name not in posted and not is_checkbox and name not in ("channel", "hub_paybill"):
+                self.cleaned_data[name] = getattr(self.instance, name)
+        if self.data.get("intent") == "enable":
+            self.cleaned_data["b2b_enabled"] = True
+        instance = super().save(commit=False)
+        if instance.b2b_enabled:
+            if not instance.b2b_paybill_command:
+                instance.b2b_paybill_command = DarajaConfig.B2BCommand.PAYBILL
+            if not instance.b2b_till_command:
+                instance.b2b_till_command = DarajaConfig.B2BCommand.BUY_GOODS
+            if not instance.b2b_sender_identifier_type:
+                instance.b2b_sender_identifier_type = DarajaConfig.IdentifierType.SHORTCODE
+        self._apply_callback_urls(
+            instance,
+            "agent_deposit_callback_url",
+            "agent_withdraw_callback_url",
+            "agent_result_url",
+            "agent_timeout_url",
+        )
+        channel = self.cleaned_data.get("agent_channel") or DarajaConfig.AgentChannel.BUSINESS
+        if (
+            channel == DarajaConfig.AgentChannel.BUSINESS
+            and self.cleaned_data.get("agent_shop_enabled")
+            and self.cleaned_data.get("agent_cash_out_enabled")
+        ):
+            instance.b2c_enabled = True
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
+
+
 FIELD = {"class": "field"}
 SELECT = {"class": "select"}
 
@@ -706,6 +896,16 @@ class StkPromptForm(forms.Form):
         max_length=12,
         required=False,
         widget=forms.TextInput(attrs={**FIELD, "placeholder": "Invoice or account no."}),
+    )
+
+
+class UtilityTransferForm(forms.Form):
+    amount = forms.DecimalField(
+        label="Amount (KES)",
+        min_value=1,
+        decimal_places=2,
+        max_digits=12,
+        widget=forms.NumberInput(attrs={**FIELD, "min": "1", "step": "1", "id": "id_utility_amount"}),
     )
 
 

@@ -56,6 +56,32 @@ class Notification(models.Model):
         return "core:dashboard"
 
 
+class AppSettings(models.Model):
+    """Hub-wide toggles (singleton row)."""
+
+    pin_approval_required = models.BooleanField(
+        default=False,
+        help_text="When on, approvers must enter their 6-digit password before a payment is sent.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "App settings"
+        verbose_name_plural = "App settings"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        pass
+
+    @classmethod
+    def load(cls) -> "AppSettings":
+        obj, _created = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class PushSubscription(models.Model):
     """Browser Web Push subscription for phone/desktop tray alerts."""
 

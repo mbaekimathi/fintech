@@ -27,6 +27,53 @@ def format_account_balances(raw: str) -> str:
     return " · ".join(parts) if parts else (raw or "").strip()
 
 
+def parse_account_balances(raw: str) -> dict:
+    """Parse Safaricom AccountBalance payload into named float buckets."""
+    accounts = {}
+    for chunk in (raw or "").split("&"):
+        bits = [bit.strip() for bit in chunk.split("|") if bit.strip()]
+        if len(bits) < 3:
+            continue
+        label = bits[0].replace(" Account", "").strip()
+        key = label.lower()
+        try:
+            amount = Decimal(str(bits[2]).replace(",", ""))
+        except (InvalidOperation, ValueError):
+            amount = None
+        accounts[key] = {"label": label, "currency": bits[1], "amount": amount}
+    return accounts
+
+
+def parse_balance_summary(summary: str) -> dict:
+    """Parse formatted balance text such as ``Working KES 100.00 · Utility KES 12.50``."""
+    accounts = {}
+    for part in (summary or "").split("·"):
+        tokens = part.strip().split()
+        if len(tokens) < 3:
+            continue
+        label = tokens[0]
+        key = label.lower()
+        try:
+            amount = Decimal(tokens[-1].replace(",", ""))
+        except (InvalidOperation, ValueError):
+            amount = None
+        accounts[key] = {
+            "label": label,
+            "currency": tokens[1] if len(tokens) > 2 else "KES",
+            "amount": amount,
+        }
+    return accounts
+
+
+def balance_accounts_from_operation(operation) -> dict:
+    if operation is None:
+        return {}
+    summary = (operation.summary or operation.result_desc or "").strip()
+    if "|" in summary or "&" in summary:
+        return parse_account_balances(summary)
+    return parse_balance_summary(summary)
+
+
 def wait_for_result(operation: DarajaOperation, timeout: float = 8.0, interval: float = 0.3) -> DarajaOperation:
     deadline = monotonic() + timeout
     while monotonic() < deadline:

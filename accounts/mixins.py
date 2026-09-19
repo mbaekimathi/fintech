@@ -11,9 +11,12 @@ class ApprovedRequiredMixin(LoginRequiredMixin):
 
 class RoleRequiredMixin(ApprovedRequiredMixin, UserPassesTestMixin):
     allowed_roles: tuple[str, ...] = ()
+    required_activity: str = ""
 
     def test_func(self):
         user = self.request.user
         if user.is_superuser and not user.is_role_switched:
             return True
+        if self.required_activity:
+            return user.has_activity(self.required_activity)
         return user.effective_role in self.allowed_roles

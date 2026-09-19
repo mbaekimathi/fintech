@@ -326,6 +326,15 @@ document.addEventListener("click", (event) => {
 function initDarajaSetup() {
   const form = document.querySelector("[data-daraja-setup]");
   if (!form) return;
+  const scrollAnchor = form.getAttribute("data-scroll-anchor");
+  if (scrollAnchor) {
+    const target = document.getElementById(scrollAnchor);
+    if (target) {
+      window.requestAnimationFrame(() => {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  }
   const envField = form.querySelector("#id_environment") || form.querySelector('[name="environment"]');
   const channelField = form.querySelector("#id_channel") || form.querySelector('[name="channel"]');
   const numberField = form.querySelector("#id_hub_paybill") || form.querySelector('[name="hub_paybill"]');
@@ -536,16 +545,449 @@ function initDarajaSetup() {
   }
 }
 
+function initHubBalance() {
+  const panel = document.querySelector("[data-hub-balance]");
+  if (!panel) return;
+
+  const pollUrl = panel.getAttribute("data-poll-url");
+  const requestUrl = panel.getAttribute("data-request-url");
+  const autoRefresh = panel.getAttribute("data-auto-refresh") === "1";
+  const summaryEl = panel.querySelector("[data-balance-summary]");
+  const whenEl = panel.querySelector("[data-balance-when]");
+  const hintEl = panel.querySelector("[data-balance-hint]");
+  const refreshBtn = panel.querySelector("[data-balance-refresh]");
+  const utilityEl = panel.querySelector("[data-utility-balance]");
+  const workingEl = panel.querySelector("[data-working-balance]");
+  const utilityCurrencyEl = panel.querySelector("[data-utility-currency]");
+  const workingCurrencyEl = panel.querySelector("[data-working-currency]");
+  const transferPanel = document.querySelector("[data-utility-transfer]");
+  const csrf =
+    document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") ||
+    document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
+    document.cookie.match(/csrftoken=([^;]+)/)?.[1] ||
+    "";
+
+  const formatAmount = (amount) => {
+    if (amount == null || amount === "") return "—";
+    const value = Number(amount);
+    if (!Number.isFinite(value)) return "—";
+    return value.toLocaleString("en-KE", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const applyBalanceCard = (valueEl, currencyEl, currency, amount) => {
+    if (valueEl) valueEl.textContent = formatAmount(amount);
+    if (currencyEl) currencyEl.textContent = currency || "KES";
+  };
+
+  const syncTransferPanel = (data) => {
+    if (!transferPanel) return;
+    const utilityAmount = data.utility_amount;
+    transferPanel.dataset.maxUtility = utilityAmount != null ? String(utilityAmount) : "";
+    transferPanel.dataset.transferReady = data.transfer_ready ? "1" : "0";
+    const amountField = transferPanel.querySelector("[data-utility-amount]");
+    const submitBtn = transferPanel.querySelector("[data-utility-submit]");
+    const maxBtn = transferPanel.querySelector("[data-utility-max]");
+    const hasUtility = utilityAmount != null && Number(utilityAmount) > 0;
+    if (amountField) {
+      if (utilityAmount != null) amountField.max = String(utilityAmount);
+      else amountField.removeAttribute("max");
+    }
+    if (submitBtn) submitBtn.disabled = !hasUtility || !data.transfer_ready;
+    if (maxBtn) maxBtn.disabled = !hasUtility || !data.transfer_ready;
+  };
+
+  const setHint = (text) => {
+    if (!hintEl) return;
+    if (text) {
+      hintEl.textContent = text;
+      hintEl.hidden = false;
+    } else {
+      hintEl.textContent = "";
+      hintEl.hidden = true;
+    }
+  };
+
+  const applyPayload = (data) => {
+    applyBalanceCard(utilityEl, utilityCurrencyEl, data.utility_currency, data.utility_amount);
+    applyBalanceCard(workingEl, workingCurrencyEl, data.working_currency, data.working_amount);
+    if (summaryEl) {
+      summaryEl.textContent =
+        data.summary ||
+        (data.ready ? "Waiting for Safaricom…" : "Configure live balance to query Safaricom float.");
+    }
+    if (whenEl) {
+      whenEl.textContent = data.when ? `Updated ${data.when}` : "Tap refresh for live balances";
+    }
+    if (refreshBtn) refreshBtn.disabled = !data.ready;
+    panel.dataset.watch = data.watch ? "1" : "";
+    syncTransferPanel(data);
+  };
+
+  const poll = async () => {
+    if (!pollUrl) return;
+    try {
+      const response = await fetch(pollUrl, {
+        headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      applyPayload(data);
+      if (data.watch) {
+        window.setTimeout(poll, 1500);
+      } else if (data.queued) {
+        setHint("Updating balances…");
+      } else {
+        setHint("");
+      }
+    } catch (_err) {
+      /* keep last values */
+    }
+  };
+
+  const requestBalance = async () => {
+    if (!requestUrl || !refreshBtn) return;
+    refreshBtn.disabled = true;
+    setHint("Refreshing…");
+    try {
+      const body = new URLSearchParams({ intent: "hub-balance" });
+      const response = await fetch(requestUrl, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRFToken": csrf,
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setHint(data.detail || "Could not request balance.");
+        refreshBtn.disabled = false;
+        return;
+      }
+      applyPayload(data);
+      panel.dataset.watch = "1";
+      window.setTimeout(poll, 800);
+    } catch (_err) {
+      setHint("Could not reach the server.");
+      refreshBtn.disabled = false;
+    }
+  };
+
+  if (refreshBtn) refreshBtn.addEventListener("click", requestBalance);
+  if (autoRefresh && panel.dataset.watch === "1") {
+    window.setTimeout(poll, 800);
+  } else if (autoRefresh) {
+    window.setTimeout(requestBalance, 400);
+  }
+}
+
+function initUtilityTransfer() {
+  const panel = document.querySelector("[data-utility-transfer]");
+  const form = panel?.querySelector("[data-utility-transfer-form]");
+  if (!panel || !form) return;
+
+  const amountField = form.querySelector("[data-utility-amount]");
+  const maxBtn = form.querySelector("[data-utility-max]");
+  const submitBtn = form.querySelector("[data-utility-submit]");
+  const csrf =
+    document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") ||
+    form.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
+    "";
+
+  const maxUtility = () => {
+    const raw = panel.dataset.maxUtility;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  };
+
+  if (maxBtn && amountField) {
+    maxBtn.addEventListener("click", () => {
+      const max = maxUtility();
+      if (max == null) return;
+      amountField.value = String(Math.floor(max));
+      amountField.focus();
+    });
+  }
+
+  form.addEventListener("submit", async (event) => {
+    if (!window.fetch || panel.dataset.transferReady !== "1") return;
+    event.preventDefault();
+    const max = maxUtility();
+    const amount = Number(amountField?.value || 0);
+    if (!amount || amount < 1) return;
+    if (max != null && amount > max) {
+      window.alert(`Amount exceeds utility balance of KES ${max.toLocaleString("en-KE")}.`);
+      return;
+    }
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Transferring…";
+    }
+    if (maxBtn) maxBtn.disabled = true;
+    try {
+      const body = new URLSearchParams(new FormData(form));
+      const response = await fetch(form.action || window.location.pathname, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRFToken": csrf,
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body,
+      });
+      const data = await response.json().catch(() => ({}));
+      const hubPanel = document.querySelector("[data-hub-balance]");
+      if (hubPanel && typeof initHubBalance === "function") {
+        const pollUrl = hubPanel.getAttribute("data-poll-url");
+        if (pollUrl) {
+          const balanceResponse = await fetch(pollUrl, {
+            headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+          });
+          if (balanceResponse.ok) {
+            const balanceData = await balanceResponse.json();
+            const utilityValue = hubPanel.querySelector("[data-utility-balance]");
+            const workingValue = hubPanel.querySelector("[data-working-balance]");
+            const utilityCurrency = hubPanel.querySelector("[data-utility-currency]");
+            const workingCurrency = hubPanel.querySelector("[data-working-currency]");
+            if (utilityValue) {
+              utilityValue.textContent =
+                balanceData.utility_amount != null
+                  ? Number(balanceData.utility_amount).toLocaleString("en-KE", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })
+                  : "—";
+            }
+            if (workingValue) {
+              workingValue.textContent =
+                balanceData.working_amount != null
+                  ? Number(balanceData.working_amount).toLocaleString("en-KE", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })
+                  : "—";
+            }
+            if (utilityCurrency) utilityCurrency.textContent = balanceData.utility_currency || "KES";
+            if (workingCurrency) workingCurrency.textContent = balanceData.working_currency || "KES";
+            panel.dataset.maxUtility =
+              balanceData.utility_amount != null ? String(balanceData.utility_amount) : "";
+          }
+        }
+        const refreshBtn = hubPanel.querySelector("[data-balance-refresh]");
+        refreshBtn?.click();
+      }
+      if (response.ok) {
+        if (amountField) amountField.value = "";
+        window.location.reload();
+        return;
+      }
+      window.alert(data.detail || "Transfer failed.");
+    } catch (_err) {
+      window.alert("Could not reach the server.");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = maxUtility() == null;
+        submitBtn.textContent = "Move to working";
+      }
+      if (maxBtn) maxBtn.disabled = maxUtility() == null;
+    }
+  });
+}
+
+function initAppSettings() {
+  const root = document.querySelector("[data-app-settings]");
+  if (!root) return;
+  const csrf =
+    document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
+    document.querySelector('meta[name="csrf-token"]')?.content ||
+    "";
+
+  root.addEventListener("change", async (event) => {
+    const input = event.target.closest(".app-settings-toggle");
+    if (!input || input.disabled) return;
+    const label = input.closest(".perm-switch");
+    const url = input.getAttribute("data-toggle-url");
+    const setting = input.getAttribute("data-setting");
+    if (!url || !setting) return;
+
+    const enabled = input.checked;
+    label?.classList.add("is-saving");
+    input.disabled = true;
+
+    try {
+      const body = new URLSearchParams({
+        [setting]: enabled ? "1" : "0",
+      });
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Requested-With": "XMLHttpRequest",
+          "X-CSRFToken": csrf,
+        },
+        body,
+      });
+      if (!response.ok) throw new Error("save failed");
+      const data = await response.json();
+      input.checked = Boolean(data.pin_approval_required);
+    } catch (_err) {
+      input.checked = !enabled;
+    } finally {
+      input.disabled = false;
+      label?.classList.remove("is-saving");
+    }
+  });
+}
+
+function initPinApproval() {
+  const configEl = document.getElementById("pin-approval-config");
+  if (!configEl) return;
+  let required = false;
+  try {
+    required = JSON.parse(configEl.textContent || "false") === true;
+  } catch (_err) {
+    return;
+  }
+  if (!required) return;
+
+  const backdrop = document.querySelector("[data-pin-approval-backdrop]");
+  const input = document.querySelector("[data-pin-approval-input]");
+  const errorEl = document.querySelector("[data-pin-approval-error]");
+  const submitBtn = document.querySelector("[data-pin-approval-submit]");
+  const cancelBtn = document.querySelector("[data-pin-approval-cancel]");
+  if (!backdrop || !input || !submitBtn) return;
+
+  let pendingForm = null;
+
+  const closeDialog = () => {
+    pendingForm = null;
+    input.value = "";
+    if (errorEl) errorEl.hidden = true;
+    backdrop.hidden = true;
+  };
+
+  const openDialog = (form) => {
+    pendingForm = form;
+    input.value = "";
+    if (errorEl) errorEl.hidden = true;
+    backdrop.hidden = false;
+    window.requestAnimationFrame(() => input.focus());
+  };
+
+  const submitApproval = () => {
+    if (!pendingForm) return;
+    const pin = input.value.replace(/\D/g, "").slice(0, 6);
+    if (pin.length !== 6) {
+      if (errorEl) errorEl.hidden = false;
+      input.focus();
+      return;
+    }
+    let hidden = pendingForm.querySelector('input[name="approval_pin"]');
+    if (!hidden) {
+      hidden = document.createElement("input");
+      hidden.type = "hidden";
+      hidden.name = "approval_pin";
+      pendingForm.appendChild(hidden);
+    }
+    hidden.value = pin;
+    const form = pendingForm;
+    closeDialog();
+    form.submit();
+  };
+
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.hasAttribute("data-approval-form")) return;
+    event.preventDefault();
+    openDialog(form);
+  });
+
+  submitBtn.addEventListener("click", submitApproval);
+  cancelBtn?.addEventListener("click", closeDialog);
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) closeDialog();
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submitApproval();
+    }
+    if (event.key === "Escape") closeDialog();
+  });
+}
+
+function initEmployeePermissions() {
+  const root = document.querySelector("[data-employee-permissions]");
+  if (!root) return;
+  const csrf =
+    document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
+    document.querySelector('meta[name="csrf-token"]')?.content ||
+    "";
+
+  root.addEventListener("change", async (event) => {
+    const input = event.target.closest(".perm-switch-input");
+    if (!input || input.disabled) return;
+    const label = input.closest(".perm-switch");
+    const url = input.getAttribute("data-toggle-url");
+    const activity = input.getAttribute("data-activity");
+    if (!url || !activity) return;
+
+    const enabled = input.checked;
+    label?.classList.add("is-saving");
+    input.disabled = true;
+
+    try {
+      const body = new URLSearchParams({
+        activity,
+        enabled: enabled ? "1" : "0",
+      });
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Requested-With": "XMLHttpRequest",
+          "X-CSRFToken": csrf,
+        },
+        body,
+      });
+      if (!response.ok) throw new Error("save failed");
+      const data = await response.json();
+      input.checked = Boolean(data.enabled);
+    } catch (_err) {
+      input.checked = !enabled;
+    } finally {
+      input.disabled = false;
+      label?.classList.remove("is-saving");
+    }
+  });
+}
+
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     initDarajaSetup();
     initDarajaTests();
+    initHubBalance();
+    initUtilityTransfer();
     initWebPush();
+    initEmployeePermissions();
+    initAppSettings();
+    initPinApproval();
   });
 } else {
   initDarajaSetup();
   initDarajaTests();
+  initHubBalance();
+  initUtilityTransfer();
   initWebPush();
+  initEmployeePermissions();
+  initAppSettings();
+  initPinApproval();
 }
 
 function initWebPush() {

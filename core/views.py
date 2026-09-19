@@ -14,9 +14,9 @@ from pathlib import Path
 from accounts.mixins import ApprovedRequiredMixin, RoleRequiredMixin
 from accounts.models import User
 from accounts.utils import write_audit
-from core.models import PushSubscription
+from core.approval import approval_pin_ok
+from core.models import AppSettings, PushSubscription
 from core.notifications import (
-    REVIEW_ROLES,
     mark_money_request_notifications_read,
     mark_notification_read,
     notifications_for_session_user,
@@ -31,21 +31,21 @@ from integrations.daraja import (
     apply_sandbox_to_instance,
     callback_urls,
     capability_status,
+    hub_balance_operation,
+    panel_blockers,
     integration_status,
+    request_hub_balance,
     sandbox_defaults_payload,
+    serialize_hub_balance,
 )
 from integrations.daraja_client import DarajaClient, DarajaError
 from integrations.forms import (
     SECRET_FIELDS,
     BalanceQueryForm,
-    DarajaAgentShopForm,
-    DarajaB2BForm,
-    DarajaB2CForm,
-    DarajaBalanceForm,
-    DarajaSetupForm,
-    DarajaStkForm,
+    DarajaUnifiedForm,
     SendMoneyForm,
     StkPromptForm,
+    UtilityTransferForm,
 )
 from integrations.models import DarajaConfig, DarajaOperation
 from paybill.forms import MoneyRequestForm
@@ -68,12 +68,50 @@ def _safe_next_url(request, fallback_name="core:dashboard"):
     return reverse(fallback_name)
 
 
+def _shows_hub_balance(user) -> bool:
+    return user.can_view_hub_balance()
+
+
+def _daraja_ack_fields(body: dict) -> dict:
+    return {
+        "merchant_request_id": body.get("MerchantRequestID") or "",
+        "checkout_request_id": body.get("CheckoutRequestID") or "",
+        "conversation_id": body.get("ConversationID") or "",
+        "originator_conversation_id": body.get("OriginatorConversationID") or "",
+        "result_desc": (body.get("ResponseDescription") or body.get("CustomerMessage") or "")[:255],
+        "response_payload": body,
+    }
+
+
+def _redact_daraja_payload(payload: dict) -> dict:
+    data = dict(payload or {})
+    for key in ("SecurityCredential", "Password"):
+        if key in data:
+            data[key] = "[redacted]"
+    return data
+
+
 class DashboardView(ApprovedRequiredMixin, TemplateView):
     template_name = "core/dashboard.html"
 
+    def get(self, request, *args, **kwargs):
+        if request.GET.get("poll") == "hub-balance" and _shows_hub_balance(request.user):
+            expire_stale_queues()
+            config = DarajaConfig.load()
+            operation = hub_balance_operation(config)
+            payload = serialize_hub_balance(config, operation)
+            payload["ok"] = True
+            return JsonResponse(payload)
+        return super().get(request, *args, **kwargs)
+
     def post(self, request, *args, **kwargs):
-        if request.user.effective_role != User.Role.EMPLOYEE:
-            messages.error(request, "Only employees can submit money requests.")
+        intent = (request.POST.get("intent") or "").strip()
+        if intent == "hub-balance":
+            return self._post_hub_balance(request)
+        if intent == "utility-transfer":
+            return self._post_utility_transfer(request)
+        if not request.user.can_submit_requests():
+            messages.error(request, "You are not allowed to submit money requests.")
             return redirect("core:dashboard")
 
         source = _hub_paybill_account()
@@ -118,26 +156,25 @@ class DashboardView(ApprovedRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        is_employee = user.effective_role == User.Role.EMPLOYEE
-        today = timezone.localdate()
-        completed = LedgerEntry.objects.filter(status=LedgerEntry.Status.COMPLETED)
-        today_qs = completed.filter(posted_at__date=today)
-        context.update(
-            {
-                "is_employee_dashboard": is_employee,
-                "today_volume": today_qs.aggregate(total=Sum("amount"))["total"] or 0,
-                "today_count": today_qs.count(),
-                "system_count": ConnectedSystem.objects.filter(is_active=True).count(),
-                "paybill_count": PaybillAccount.objects.filter(is_active=True).count(),
-                "pending_people": User.objects.filter(is_active=True)
-                .filter(Q(is_approved=False) | Q(role=User.Role.PENDING_APPROVAL))
-                .count(),
-                "recent_entries": LedgerEntry.objects.select_related(
-                    "paybill_account", "connected_system"
-                )[:8],
-            }
-        )
-        if is_employee:
+        is_employee = user.can_submit_requests()
+        is_account_dashboard = _shows_hub_balance(user)
+        context["is_employee_dashboard"] = is_employee and not is_account_dashboard
+        if not is_employee and not is_account_dashboard:
+            today = timezone.localdate()
+            completed = LedgerEntry.objects.filter(status=LedgerEntry.Status.COMPLETED)
+            today_qs = completed.filter(posted_at__date=today)
+            context.update(
+                {
+                    "today_volume": today_qs.aggregate(total=Sum("amount"))["total"] or 0,
+                    "today_count": today_qs.count(),
+                    "system_count": ConnectedSystem.objects.filter(is_active=True).count(),
+                    "paybill_count": PaybillAccount.objects.filter(is_active=True).count(),
+                    "pending_people": User.objects.filter(is_active=True)
+                    .filter(Q(is_approved=False) | Q(role=User.Role.PENDING_APPROVAL))
+                    .count(),
+                }
+            )
+        if is_employee and not is_account_dashboard:
             source = _hub_paybill_account()
             context["source_paybill"] = source
             if "money_form" not in context:
@@ -165,7 +202,177 @@ class DashboardView(ApprovedRequiredMixin, TemplateView):
                     or mpesa_receipt_from_operation(row.daraja_operation)
                 )
             context["approved_money_requests"] = approved_rows
+        elif is_account_dashboard:
+            config = DarajaConfig.load()
+            operation = hub_balance_operation(config)
+            context["is_account_dashboard"] = True
+            context["show_hub_balance"] = True
+            context["hub_paybill"] = _hub_paybill_account()
+            context["hub_balance"] = serialize_hub_balance(config, operation)
+            context["utility_transfer_form"] = UtilityTransferForm()
         return context
+
+    def _post_hub_balance(self, request):
+        if not _shows_hub_balance(request.user):
+            return JsonResponse(
+                {"ok": False, "detail": "You cannot request live balance from this role."},
+                status=403,
+            )
+        wants_json = (
+            request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            or "application/json" in (request.headers.get("Accept") or "")
+        )
+        config = DarajaConfig.load()
+        snapshot = serialize_hub_balance(config)
+        if not config.balance_ready:
+            payload = {**snapshot, "ok": False, "detail": "Live balance is not configured yet."}
+            if wants_json:
+                return JsonResponse(payload, status=400)
+            messages.error(request, payload["detail"])
+            return redirect("core:dashboard")
+
+        pending = hub_balance_operation(config, queued_only=True)
+        if pending and pending.is_fresh_queue():
+            payload = {**serialize_hub_balance(config, pending), "ok": True}
+            if wants_json:
+                return JsonResponse(payload)
+            return redirect("core:dashboard")
+
+        urls = callback_urls(request)
+        try:
+            operation = request_hub_balance(
+                config=config,
+                created_by=request.user,
+                result_url=urls.get("result_url") or config.result_url,
+                timeout_url=urls.get("timeout_url") or config.timeout_url,
+            )
+        except DarajaError as exc:
+            payload = {**snapshot, "ok": False, "detail": str(exc)}
+            if wants_json:
+                return JsonResponse(payload, status=400)
+            messages.error(request, str(exc))
+            return redirect("core:dashboard")
+
+        write_audit(
+            request,
+            "daraja.balance.sent",
+            object_type="daraja_operation",
+            object_id=operation.pk,
+        )
+        payload = {**serialize_hub_balance(config, operation), "ok": True}
+        if wants_json:
+            return JsonResponse(payload)
+        messages.success(
+            request,
+            operation.summary or "Balance requested. This page updates when Safaricom responds.",
+        )
+        return redirect("core:dashboard")
+
+    def _post_utility_transfer(self, request):
+        if not _shows_hub_balance(request.user):
+            return JsonResponse(
+                {"ok": False, "detail": "You cannot move float from this role."},
+                status=403,
+            )
+        wants_json = (
+            request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            or "application/json" in (request.headers.get("Accept") or "")
+        )
+        config = DarajaConfig.load()
+        snapshot = serialize_hub_balance(config)
+        if not config.b2b_enabled or not config.balance_ready:
+            detail = "Internal float transfer is not configured yet. Turn on B2B and live balance on Daraja setup."
+            payload = {**snapshot, "ok": False, "detail": detail}
+            if wants_json:
+                return JsonResponse(payload, status=400)
+            messages.error(request, detail)
+            return redirect("core:dashboard")
+
+        form = UtilityTransferForm(request.POST)
+        if not form.is_valid():
+            detail = " ".join(
+                error for errors in form.errors.values() for error in errors
+            )
+            payload = {**snapshot, "ok": False, "detail": detail or "Enter a valid amount."}
+            if wants_json:
+                return JsonResponse(payload, status=400)
+            messages.error(request, payload["detail"])
+            context = self.get_context_data(utility_transfer_form=form)
+            return self.render_to_response(context)
+
+        amount = form.cleaned_data["amount"]
+        utility_amount = snapshot.get("utility_amount")
+        if utility_amount is not None and amount > utility_amount:
+            detail = f"Amount exceeds utility balance of KES {utility_amount}."
+            payload = {**snapshot, "ok": False, "detail": detail}
+            if wants_json:
+                return JsonResponse(payload, status=400)
+            messages.error(request, detail)
+            context = self.get_context_data(utility_transfer_form=form)
+            return self.render_to_response(context)
+
+        urls = callback_urls(request)
+        client = DarajaClient(config)
+        try:
+            body, payload_req, shortcode = client.utility_to_working(
+                amount=amount,
+                result_url=urls.get("result_url") or config.result_url,
+                timeout_url=urls.get("timeout_url") or config.timeout_url,
+            )
+        except DarajaError as exc:
+            payload = {**snapshot, "ok": False, "detail": str(exc)}
+            if wants_json:
+                return JsonResponse(payload, status=400)
+            messages.error(request, str(exc))
+            return redirect("core:dashboard")
+
+        operation = DarajaOperation.objects.create(
+            kind=DarajaOperation.Kind.B2B,
+            destination=shortcode,
+            amount=amount,
+            account_ref="UTILITY-WORKING",
+            request_payload=_redact_daraja_payload(payload_req),
+            summary=body.get("ResponseDescription") or "Utility transfer queued.",
+            created_by=request.user,
+            **_daraja_ack_fields(body),
+        )
+        operation = wait_for_result(operation)
+        write_audit(
+            request,
+            "daraja.utility_transfer.sent",
+            object_type="daraja_operation",
+            object_id=operation.pk,
+            detail={"amount": str(amount), "shortcode": shortcode},
+        )
+
+        if operation.status == DarajaOperation.Status.SUCCESS:
+            detail = operation.summary or f"Moved KES {amount} to working capital."
+            messages.success(request, detail)
+        elif operation.status == DarajaOperation.Status.FAILED:
+            detail = operation.summary or operation.result_desc or "Utility transfer failed."
+            messages.error(request, detail)
+        elif operation.status == DarajaOperation.Status.TIMEOUT:
+            detail = operation.summary or "Safaricom timed out. Check the transfer history below."
+            messages.error(request, detail)
+        else:
+            detail = operation.summary or "Utility transfer queued with Safaricom."
+            messages.success(request, detail)
+
+        response_payload = {
+            **serialize_hub_balance(config),
+            "ok": operation.status != DarajaOperation.Status.FAILED,
+            "detail": detail,
+            "transfer": {
+                "id": operation.pk,
+                "status": operation.status,
+                "status_label": operation.get_status_display(),
+                "summary": operation.summary,
+                "amount": str(amount),
+            },
+        }
+        if wants_json:
+            return JsonResponse(response_payload)
+        return redirect("core:dashboard")
 
 
 class DestinationLookupView(ApprovedRequiredMixin, View):
@@ -216,7 +423,7 @@ class NotificationOpenView(ApprovedRequiredMixin, View):
 
 
 class NotificationReviewView(RoleRequiredMixin, View):
-    allowed_roles = REVIEW_ROLES
+    required_activity = "review_requests"
 
     def post(self, request, pk, *args, **kwargs):
         notification = get_object_or_404(
@@ -245,6 +452,9 @@ class NotificationReviewView(RoleRequiredMixin, View):
 
         if intent != "approve":
             messages.error(request, "Choose approve or reject.")
+            return redirect(next_url)
+
+        if not approval_pin_ok(request, next_url=next_url):
             return redirect(next_url)
 
         try:
@@ -378,19 +588,50 @@ class SettingsView(ApprovedRequiredMixin, TemplateView):
         return context
 
 
+class AppSettingsView(RoleRequiredMixin, TemplateView):
+    template_name = "core/app_settings.html"
+    required_activity = "manage_app_settings"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        settings = AppSettings.load()
+        context["app_settings"] = settings
+        context["pin_approval_required"] = settings.pin_approval_required
+        return context
+
+    def post(self, request, *args, **kwargs):
+        if not request.user.can_manage_app_settings() and not (
+            request.user.is_superuser and not request.user.is_role_switched
+        ):
+            return JsonResponse({"ok": False, "detail": "Not allowed."}, status=403)
+
+        settings = AppSettings.load()
+        enabled = request.POST.get("pin_approval_required") in {"1", "true", "on"}
+        settings.pin_approval_required = enabled
+        settings.save(update_fields=["pin_approval_required", "updated_at"])
+        write_audit(
+            request,
+            "app_settings.pin_approval",
+            object_type="app_settings",
+            object_id=settings.pk,
+            detail={"pin_approval_required": enabled},
+        )
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({"ok": True, "pin_approval_required": settings.pin_approval_required})
+
+        label = "enabled" if enabled else "disabled"
+        messages.success(request, f"PIN approval prompting {label}.")
+        return redirect("core:app-settings")
+
+
 class DarajaSetupView(RoleRequiredMixin, UpdateView):
     template_name = "core/daraja.html"
-    form_class = DarajaSetupForm
+    form_class = DarajaUnifiedForm
     success_url = reverse_lazy("core:daraja")
     context_object_name = "config"
-    allowed_roles = (
-        User.Role.ADMIN,
-        User.Role.MANAGER,
-        User.Role.IT_SUPPORT,
-    )
-    section_key = "app"
-    audit_action = "daraja.setup.saved"
-    success_prefix = "Daraja app"
+    required_activity = "manage_daraja"
+    scroll_anchor = ""
 
     def get_object(self, queryset=None):
         obj = DarajaConfig.load()
@@ -409,19 +650,20 @@ class DarajaSetupView(RoleRequiredMixin, UpdateView):
         context["secrets"] = {field: config.secret_is_set(field) for field in SECRET_FIELDS}
         context["sandbox_defaults"] = sandbox_defaults_payload(self.request)
         context["integration"] = integration_status(config, self.request)
-        context["section_key"] = self.section_key
+        context["scroll_anchor"] = self.scroll_anchor
         return context
 
     def form_valid(self, form):
+        if self.request.POST.get("intent") == "enable":
+            form.instance.b2b_enabled = True
         form.instance.updated_by = self.request.user
         response = super().form_valid(form)
         write_audit(
             self.request,
-            self.audit_action,
+            "daraja.setup.saved",
             object_type="daraja",
             object_id=self.object.pk,
             detail={
-                "section": self.section_key,
                 "environment": self.object.environment,
                 "shortcode": self.object.shortcode,
                 "stk_ready": self.object.stk_ready,
@@ -433,90 +675,37 @@ class DarajaSetupView(RoleRequiredMixin, UpdateView):
         )
         status = integration_status(self.object, self.request)
         if status["integrated"]:
-            messages.success(self.request, f"{self.success_prefix} saved. Successfully integrated.")
+            messages.success(self.request, "Daraja setup saved. Successfully integrated.")
         elif self.request.POST.get("intent") == "test":
             messages.error(self.request, status["detail"])
         else:
-            messages.success(self.request, f"{self.success_prefix} saved. " + status["detail"])
+            messages.success(self.request, "Daraja setup saved. " + status["detail"])
         return response
 
 
 class DarajaStkSetupView(DarajaSetupView):
-    template_name = "core/daraja_stk.html"
-    form_class = DarajaStkForm
-    success_url = reverse_lazy("core:daraja-stk")
-    section_key = "stk"
-    audit_action = "daraja.stk.saved"
-    success_prefix = "STK setup"
-
-    def get_object(self, queryset=None):
-        return DarajaConfig.load()
+    scroll_anchor = "stk"
 
 
 class DarajaBalanceSetupView(DarajaSetupView):
-    template_name = "core/daraja_balance.html"
-    form_class = DarajaBalanceForm
-    success_url = reverse_lazy("core:daraja-balance")
-    section_key = "balance"
-    audit_action = "daraja.balance.saved"
-    success_prefix = "Balance setup"
-
-    def get_object(self, queryset=None):
-        return DarajaConfig.load()
+    scroll_anchor = "balance"
 
 
 class DarajaB2CSetupView(DarajaSetupView):
-    template_name = "core/daraja_b2c.html"
-    form_class = DarajaB2CForm
-    success_url = reverse_lazy("core:daraja-b2c")
-    section_key = "b2c"
-    audit_action = "daraja.b2c.saved"
-    success_prefix = "Phone payout setup"
-
-    def get_object(self, queryset=None):
-        return DarajaConfig.load()
+    scroll_anchor = "payouts"
 
 
 class DarajaB2BSetupView(DarajaSetupView):
-    template_name = "core/daraja_b2b.html"
-    form_class = DarajaB2BForm
-    success_url = reverse_lazy("core:daraja-b2b")
-    section_key = "b2b"
-    audit_action = "daraja.b2b.saved"
-    success_prefix = "Paybill and till payout setup"
-
-    def get_object(self, queryset=None):
-        return DarajaConfig.load()
-
-    def form_valid(self, form):
-        # One-click enable: button can turn B2B on without hunting for the checkbox.
-        if self.request.POST.get("intent") == "enable":
-            form.instance.b2b_enabled = True
-        return super().form_valid(form)
+    scroll_anchor = "payouts"
 
 
 class DarajaAgentShopSetupView(DarajaSetupView):
-    template_name = "core/daraja_agent.html"
-    form_class = DarajaAgentShopForm
-    success_url = reverse_lazy("core:daraja-agent")
-    section_key = "agent"
-    audit_action = "daraja.agent.saved"
-    success_prefix = "Agent shop setup"
-
-    def get_object(self, queryset=None):
-        return DarajaConfig.load()
-
-
-DARAJA_ROLES = (
-    User.Role.ADMIN,
-    User.Role.MANAGER,
-    User.Role.IT_SUPPORT,
-)
+    scroll_anchor = "agent"
 
 
 class DarajaTestView(RoleRequiredMixin, TemplateView):
     template_name = "core/daraja_test.html"
-    allowed_roles = DARAJA_ROLES
+    required_activity = "manage_daraja"
 
     def get_config(self):
         return DarajaConfig.load()
@@ -528,11 +717,23 @@ class DarajaTestView(RoleRequiredMixin, TemplateView):
         urls = callback_urls(self.request)
         sandbox = str(config.environment) == "SANDBOX"
         integration = capability_status(config, self.request)
+        caps = integration["by_id"]
         context.update(
             {
                 "config": config,
                 "integration": integration,
-                "capabilities": integration["by_id"],
+                "capabilities": caps,
+                "stk_blockers": panel_blockers(integration, "stk"),
+                "balance_blockers": panel_blockers(integration, "balance"),
+                "b2c_blockers": panel_blockers(integration, "b2c"),
+                "b2b_blockers": panel_blockers(integration, "b2b"),
+                "runnable_tests": sum(
+                    [
+                        caps["stk"]["ready"],
+                        caps["balance"]["ready"],
+                        caps["b2c"]["ready"] or caps["b2b"]["ready"],
+                    ]
+                ),
                 "stk_form": kwargs.get("stk_form")
                 or StkPromptForm(
                     initial={

@@ -88,6 +88,12 @@
           <span>Connected platforms</span>
         </a>
       {% endif %}
+      {% if can_manage_app_settings %}
+        <a class="link-tile" href="{% url 'core:app-settings' %}">
+          <strong>App settings</strong>
+          <span>Payment approval and hub toggles</span>
+        </a>
+      {% endif %}
       {% if user.can_manage_daraja %}
         <a class="link-tile" href="{% url 'core:daraja' %}">
           <strong>Daraja</strong>

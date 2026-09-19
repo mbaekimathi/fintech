@@ -1,0 +1,27 @@
+{% comment %}
+  Inline readiness for a Daraja test panel.
+  Expects: ready, blockers (list), detail, last_note (optional), setup_anchor
+{% endcomment %}
+<div class="daraja-test-status {% if ready %}is-ready{% else %}is-blocked{% endif %}">
+  <div class="daraja-test-status-head">
+    <span class="chip {% if ready %}is-on{% endif %}">{% if ready %}Ready{% else %}Needs setup{% endif %}</span>
+    {% if ready and detail %}
+      <span class="daraja-test-status-detail">{{ detail }}</span>
+    {% endif %}
+  </div>
+  {% if not ready %}
+    {% if blockers %}
+      <ul class="daraja-test-fix">
+        {% for blocker in blockers %}
+          <li>{{ blocker }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% if setup_anchor %}
+      <a class="btn btn-ghost btn-small" href="{% url 'core:daraja' %}#{{ setup_anchor }}">Fix in setup</a>
+    {% endif %}
+  {% endif %}
+  {% if last_note %}
+    <p class="muted daraja-test-last">{{ last_note }}</p>
+  {% endif %}
+</div>

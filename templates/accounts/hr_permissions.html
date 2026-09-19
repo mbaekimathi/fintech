@@ -3,55 +3,98 @@
 {% block eyebrow %}HR{% endblock %}
 {% block heading %}Employee permissions{% endblock %}
 {% block content %}
-  <section class="page-intro">
-    <div class="page-intro-copy">
-      <h2>Access roles</h2>
-      <p>Assign the workspace role that controls what each employee can open.</p>
+  <section class="perm-intro">
+    <p class="muted">
+      Employees are grouped by role. Toggle each activity on or off — changes apply immediately.
+      Grant <strong>Review requests</strong> to staff who should approve payments.
+      Turn on <strong>PIN on approve</strong> for approvers who must enter their 6-digit password before sending (when hub PIN approval is on).
+      Grant <strong>App settings</strong> to staff who configure hub-wide options.
+    </p>
+    <div class="toolbar">
+      <a class="btn btn-ghost btn-small" href="{% url 'accounts:hr-employees' %}">Edit employee details</a>
+      {% if can_manage_app_settings %}
+        <a class="btn btn-ghost btn-small" href="{% url 'core:app-settings' %}">App settings</a>
+      {% endif %}
     </div>
   </section>
 
-  <section class="panel">
-    <div class="panel-head">
-      <div>
-        <h2>Roles</h2>
-        <p class="muted">Changes apply immediately after save.</p>
+  <section class="integration-banner {% if pin_approval_required %}is-ok{% else %}is-bad{% endif %}" role="status">
+    <p class="eyebrow">Payment approvals</p>
+    <h2>PIN approval prompting is {% if pin_approval_required %}on{% else %}off{% endif %}</h2>
+    <p class="muted">
+      {% if pin_approval_required %}
+        Hub PIN approval is on. Toggle <strong>PIN on approve</strong> below for each person who should enter their 6-digit login password before sending.
+      {% else %}
+        Hub PIN approval is off. Turn it on from App settings, then enable <strong>PIN on approve</strong> per person below.
+      {% endif %}
+    </p>
+    {% if can_manage_app_settings %}
+      <div class="toolbar">
+        <a class="btn btn-ghost btn-small" href="{% url 'core:app-settings' %}">Change in App settings</a>
       </div>
-    </div>
-    <div class="table-wrap">
-      <table class="data">
-        <thead>
-          <tr>
-            <th>Code</th>
-            <th>Name</th>
-            <th>Email</th>
-            <th>Current role</th>
-            <th>Set role</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for person in employees %}
-            <tr>
-              <td>{{ person.staff_code }}</td>
-              <td>{{ person.get_full_name|default:"—" }}</td>
-              <td>{{ person.email }}</td>
-              <td>{{ person.get_role_display }}</td>
-              <td>
-                <form method="post" action="{% url 'accounts:set_role' person.pk %}" class="inline-form">
-                  {% csrf_token %}
-                  <input type="hidden" name="next" value="{% url 'accounts:hr-permissions' %}">
-                  <select name="role" class="select" onchange="this.form.submit()" aria-label="Role for {{ person.staff_code }}">
-                    {% for value, label in assignable_roles %}
-                      <option value="{{ value }}" {% if person.role == value %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                  </select>
-                </form>
-              </td>
-            </tr>
-          {% empty %}
-            <tr><td colspan="5" class="empty">No employees to manage.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    {% endif %}
   </section>
+
+  <div class="perm-legend panel">
+    <p class="eyebrow">Activities</p>
+    <ul class="perm-legend-list">
+      {% for activity in activities %}
+        <li><strong>{{ activity.label }}</strong> — {{ activity.hint }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="perm-groups" data-employee-permissions>
+    {% for group in role_groups %}
+      <section class="perm-role-group panel">
+        <div class="panel-head">
+          <div>
+            <h2>{{ group.label }}</h2>
+            <p class="muted">{{ group.employees|length }} employee{{ group.employees|length|pluralize }}</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data perm-matrix">
+            <thead>
+              <tr>
+                <th class="perm-sticky">Employee</th>
+                {% for activity in activities %}
+                  <th class="perm-col" title="{{ activity.hint }}">{{ activity.label }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for person in group.employees %}
+                <tr data-user-id="{{ person.pk }}">
+                  <td class="perm-sticky">
+                    <strong class="mono">{{ person.staff_code }}</strong>
+                    <span class="perm-name">{{ person.get_full_name|default:person.email }}</span>
+                  </td>
+                  {% for row in person.permission_rows %}
+                    <td class="perm-col">
+                      <label class="perm-switch" title="{{ row.hint }}">
+                        <input
+                          type="checkbox"
+                          class="perm-switch-input"
+                          data-toggle-url="{% url 'accounts:hr-permission-toggle' person.pk %}"
+                          data-activity="{{ row.code }}"
+                          {% if row.enabled %}checked{% endif %}
+                          aria-label="{{ row.label }} for {{ person.staff_code }}"
+                        >
+                        <span class="perm-switch-ui" aria-hidden="true"></span>
+                      </label>
+                    </td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    {% empty %}
+      <section class="panel">
+        <p class="empty">No employees to manage.</p>
+      </section>
+    {% endfor %}
+  </div>
 {% endblock %}

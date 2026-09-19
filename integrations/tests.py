@@ -124,42 +124,40 @@ class DarajaSettingsTests(TestCase):
         response = self.client.get(role_url("core:daraja", User.Role.EMPLOYEE))
         self.assertEqual(response.status_code, 403)
 
-    def test_admin_form_includes_app_fields_only(self):
+    def test_unified_form_includes_all_sections(self):
         self.client.force_login(self.admin)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 200)
-        form = response.context['form']
+        form = response.context["form"]
         for name in REQUIRED_DARAJA_APP_FIELDS:
             self.assertIn(name, form.fields, msg=name)
-        self.assertNotIn('passkey', form.fields)
-        self.assertNotIn('agent_shop_enabled', form.fields)
-        self.assertContains(response, 'Shared Daraja app')
-        self.assertContains(response, 'Paybill number')
-        self.assertContains(response, 'Collect and disburse with')
-        self.assertContains(response, 'Agent shop')
-        self.assertNotContains(response, 'Select a paybill account')
-
-    def test_section_pages_have_own_fields_and_sidebar_urls(self):
-        self.client.force_login(self.admin)
-        for name, fields in REQUIRED_SECTION_FIELDS.items():
-            url = role_url(name, User.Role.ADMIN)
-            response = self.client.get(url)
-            self.assertEqual(response.status_code, 200, msg=name)
-            form = response.context['form']
+        for fields in REQUIRED_SECTION_FIELDS.values():
             for field in fields:
-                self.assertIn(field, form.fields, msg=f'{name}:{field}')
-            for item in (
-                'Daraja app',
-                'STK push',
-                'Live balance',
-                'Phone payout',
-                'Paybill &amp; till',
-                'Agent shop',
-                'Test credentials',
-            ):
-                self.assertContains(response, item, msg_prefix=name)
+                self.assertIn(field, form.fields, msg=field)
+        self.assertContains(response, "Daraja setup")
+        self.assertContains(response, "App credentials")
+        self.assertContains(response, "STK collect")
+        self.assertContains(response, "Balance &amp; initiator")
+        self.assertContains(response, "Agent shop")
+        self.assertContains(response, "Test credentials")
+        self.assertNotContains(response, "Select a paybill account")
 
-    def test_b2b_enable_button_turns_on_without_checkbox(self):
+    def test_legacy_daraja_urls_render_unified_page(self):
+        self.client.force_login(self.admin)
+        anchors = {
+            "core:daraja-stk": "stk",
+            "core:daraja-balance": "balance",
+            "core:daraja-b2c": "payouts",
+            "core:daraja-b2b": "payouts",
+            "core:daraja-agent": "agent",
+        }
+        for name, anchor in anchors.items():
+            response = self.client.get(role_url(name, User.Role.ADMIN))
+            self.assertEqual(response.status_code, 200, msg=name)
+            self.assertEqual(response.context["scroll_anchor"], anchor, msg=name)
+            self.assertContains(response, 'data-daraja-setup', msg_prefix=name)
+
+    def test_b2b_enable_intent_turns_on_without_checkbox(self):
         self.client.force_login(self.admin)
         self.client.post(
             self.url,
@@ -173,8 +171,7 @@ class DarajaSettingsTests(TestCase):
         config = DarajaConfig.load()
         config.b2b_enabled = False
         config.save(update_fields=["b2b_enabled"])
-        b2b_url = role_url("core:daraja-b2b", User.Role.ADMIN)
-        response = self.client.post(b2b_url, {"intent": "enable"}, follow=True)
+        response = self.client.post(self.url, {"intent": "enable"}, follow=True)
         self.assertEqual(response.status_code, 200)
         config = DarajaConfig.load()
         self.assertTrue(config.b2b_enabled)
@@ -203,19 +200,18 @@ class DarajaSettingsTests(TestCase):
         self.assertTrue(config.b2b_ready)
         self.assertFalse(config.agent_shop_enabled)
 
+    def _sandbox_base(self):
+        return {
+            "environment": DarajaConfig.Environment.SANDBOX,
+            "channel": "PAYBILL",
+            "consumer_key": "sandbox-consumer-key",
+            "consumer_secret": "sandbox-consumer-secret",
+        }
+
     def test_admin_saves_agent_shop_logic(self):
         self.client.force_login(self.admin)
-        self.client.post(
-            self.url,
-            {
-                'environment': DarajaConfig.Environment.SANDBOX,
-                'channel': 'PAYBILL',
-                'consumer_key': 'sandbox-consumer-key',
-                'consumer_secret': 'sandbox-consumer-secret',
-            },
-        )
-        agent_url = role_url('core:daraja-agent', User.Role.ADMIN)
         payload = {
+            **self._sandbox_base(),
             'agent_shop_enabled': 'on',
             'agent_channel': DarajaConfig.AgentChannel.BUSINESS,
             'agent_use_shared_app': 'on',
@@ -231,7 +227,7 @@ class DarajaSettingsTests(TestCase):
             'agent_float_warn_kes': '2500',
             'agent_receipt_prefix': 'NX',
         }
-        response = self.client.post(agent_url, payload, follow=True)
+        response = self.client.post(self.url, payload, follow=True)
         self.assertEqual(response.status_code, 200)
         config = DarajaConfig.load()
         self.assertTrue(config.agent_shop_enabled)
@@ -251,17 +247,8 @@ class DarajaSettingsTests(TestCase):
 
     def test_admin_saves_safaricom_agent_future_config(self):
         self.client.force_login(self.admin)
-        self.client.post(
-            self.url,
-            {
-                'environment': DarajaConfig.Environment.SANDBOX,
-                'channel': 'PAYBILL',
-                'consumer_key': 'sandbox-consumer-key',
-                'consumer_secret': 'sandbox-consumer-secret',
-            },
-        )
-        agent_url = role_url('core:daraja-agent', User.Role.ADMIN)
         payload = {
+            **self._sandbox_base(),
             'agent_shop_enabled': 'on',
             'agent_channel': DarajaConfig.AgentChannel.SAFARICOM,
             'agent_api_enabled': 'on',
@@ -285,7 +272,7 @@ class DarajaSettingsTests(TestCase):
             'agent_receipt_prefix': 'AG',
             'agent_api_notes': 'Awaiting Safaricom pack',
         }
-        response = self.client.post(agent_url, payload, follow=True)
+        response = self.client.post(self.url, payload, follow=True)
         self.assertEqual(response.status_code, 200)
         config = DarajaConfig.load()
         self.assertEqual(config.agent_channel, DarajaConfig.AgentChannel.SAFARICOM)
@@ -311,14 +298,15 @@ class DarajaSettingsTests(TestCase):
         }
         response = self.client.post(self.url, payload, follow=True)
         self.assertEqual(response.status_code, 200)
-        balance_url = role_url('core:daraja-balance', User.Role.ADMIN)
         balance_payload = {
+            **self._sandbox_base(),
+            'org_shortcode': '600984',
             'initiator_name': 'Safaricomapi',
             'security_credential': 'PortalPassword1',
             'balance_identifier_type': DarajaConfig.IdentifierType.SHORTCODE,
             'balance_remarks': 'Balance',
         }
-        response = self.client.post(balance_url, balance_payload, follow=True)
+        response = self.client.post(self.url, balance_payload, follow=True)
         self.assertEqual(response.status_code, 200)
         config = DarajaConfig.load()
         self.assertEqual(config.org_shortcode, '600984')
@@ -467,14 +455,24 @@ class DarajaTestPageTests(TestCase):
     def test_test_page_and_poll(self):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "View account balance")
+        self.assertContains(response, "STK push")
+        self.assertContains(response, "Account balance")
         self.assertContains(response, "Send money")
-        self.assertContains(response, "Ready to work")
-        self.assertContains(response, "Not well integrated")
-        self.assertContains(response, "Daraja app login")
+        self.assertContains(response, "Needs setup")
+        self.assertContains(response, "Fix app credentials")
+        self.assertContains(response, "Recent results")
         poll = self.client.get(self.url, {"poll": "1"})
         self.assertEqual(poll.status_code, 200)
         self.assertEqual(poll.json()["operations"], [])
+
+    def test_panel_blockers_deduplicate_oauth(self):
+        from integrations.daraja import capability_status, panel_blockers
+
+        status = capability_status(DarajaConfig.load())
+        stk_only = panel_blockers(status, "stk")
+        oauth_msgs = set(status["by_id"]["oauth"]["blockers"])
+        for msg in oauth_msgs:
+            self.assertNotIn(msg, stk_only)
 
     def test_capability_status_empty_config(self):
         from integrations.daraja import capability_status

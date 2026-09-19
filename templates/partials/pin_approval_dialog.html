@@ -1,0 +1,41 @@
+<div
+  class="detail-backdrop pin-approval-backdrop"
+  data-pin-approval-backdrop
+  hidden
+  role="presentation"
+>
+  <div
+    class="detail-dialog pin-approval-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="pin-approval-title"
+    data-pin-approval-dialog
+  >
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Confirm approval</p>
+        <h2 id="pin-approval-title">Enter your 6-digit password</h2>
+      </div>
+      <button type="button" class="btn btn-ghost btn-small" data-pin-approval-cancel>Cancel</button>
+    </div>
+    <p class="muted">Your login password is required to approve this payment transfer.</p>
+    <label class="label">
+      Password
+      <input
+        type="password"
+        class="pin-field"
+        inputmode="numeric"
+        autocomplete="current-password"
+        maxlength="6"
+        pattern="\d{6}"
+        placeholder="••••••"
+        aria-label="6-digit password"
+        data-pin-approval-input
+      >
+    </label>
+    <p class="field-error" data-pin-approval-error hidden>Enter your 6-digit password.</p>
+    <div class="toolbar">
+      <button type="button" class="btn btn-primary" data-pin-approval-submit>Approve &amp; send</button>
+    </div>
+  </div>
+</div>

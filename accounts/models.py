@@ -136,6 +136,15 @@ class User(AbstractUser):
         """IT Support may temporarily view the app as another role (session only)."""
         return self.role == self.Role.IT_SUPPORT
 
+    def has_activity(self, code: str) -> bool:
+        if self.is_superuser and not self.is_role_switched:
+            return True
+        from accounts.permissions import activity_enabled, role_default_permissions
+
+        if self.is_role_switched:
+            return bool(role_default_permissions(self.effective_role).get(code))
+        return activity_enabled(self, code)
+
     def apply_approval(self, approved: bool, actor=None) -> list[str]:
         """Set approval state and return the fields that changed."""
         self.is_approved = bool(approved)
@@ -152,43 +161,80 @@ class User(AbstractUser):
         return update_fields
 
     def can_manage_users(self) -> bool:
-        if self.is_superuser and not self.is_role_switched:
-            return True
-        return self.effective_role in {self.Role.ADMIN, self.Role.MANAGER}
+        return self.has_activity("manage_people")
 
     def can_manage_hr(self) -> bool:
-        if self.is_superuser and not self.is_role_switched:
-            return True
-        return self.effective_role in {
-            self.Role.ADMIN,
-            self.Role.MANAGER,
-            self.Role.IT_SUPPORT,
-        }
+        return self.has_activity("manage_hr")
 
     def can_manage_ledger(self) -> bool:
-        if self.is_superuser and not self.is_role_switched:
-            return True
-        return self.effective_role in {
-            self.Role.ADMIN,
-            self.Role.MANAGER,
-            self.Role.ACCOUNTS,
-        }
+        return self.has_activity("manage_ledger")
 
     def can_manage_integrations(self) -> bool:
-        if self.is_superuser and not self.is_role_switched:
-            return True
-        return self.effective_role in {
-            self.Role.ADMIN,
-            self.Role.IT_SUPPORT,
-        }
+        return self.has_activity("manage_integrations")
 
     def can_manage_daraja(self) -> bool:
-        if self.is_superuser and not self.is_role_switched:
-            return True
-        return self.effective_role in {
-            self.Role.ADMIN,
-            self.Role.MANAGER,
-            self.Role.IT_SUPPORT,
+        return self.has_activity("manage_daraja")
+
+    def can_manage_app_settings(self) -> bool:
+        return self.has_activity("manage_app_settings")
+
+    def can_review_requests(self) -> bool:
+        return self.has_activity("review_requests")
+
+    def can_pin_approval_prompt(self) -> bool:
+        return self.has_activity("pin_approval_prompt")
+
+    def requires_pin_on_approval(self) -> bool:
+        from core.models import AppSettings
+
+        return AppSettings.load().pin_approval_required and self.can_pin_approval_prompt()
+
+    def can_submit_requests(self) -> bool:
+        return self.has_activity("submit_requests")
+
+    def can_view_hub_balance(self) -> bool:
+        return self.has_activity("view_hub_balance")
+
+
+class EmployeePermissions(models.Model):
+    """Per-employee workspace activity toggles (seeded from role defaults)."""
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="permissions",
+    )
+    submit_requests = MysqlBooleanEnumField(default=False)
+    review_requests = MysqlBooleanEnumField(default=False)
+    pin_approval_prompt = MysqlBooleanEnumField(default=False)
+    manage_people = MysqlBooleanEnumField(default=False)
+    manage_hr = MysqlBooleanEnumField(default=False)
+    manage_ledger = MysqlBooleanEnumField(default=False)
+    manage_daraja = MysqlBooleanEnumField(default=False)
+    view_hub_balance = MysqlBooleanEnumField(default=False)
+    manage_integrations = MysqlBooleanEnumField(default=False)
+    manage_app_settings = MysqlBooleanEnumField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "employee permissions"
+        verbose_name_plural = "employee permissions"
+
+    def __str__(self):
+        return f"Permissions · {self.user.staff_code}"
+
+    def as_flags(self) -> dict[str, bool]:
+        return {
+            "submit_requests": bool(self.submit_requests),
+            "review_requests": bool(self.review_requests),
+            "pin_approval_prompt": bool(self.pin_approval_prompt),
+            "manage_people": bool(self.manage_people),
+            "manage_hr": bool(self.manage_hr),
+            "manage_ledger": bool(self.manage_ledger),
+            "manage_daraja": bool(self.manage_daraja),
+            "view_hub_balance": bool(self.view_hub_balance),
+            "manage_integrations": bool(self.manage_integrations),
+            "manage_app_settings": bool(self.manage_app_settings),
         }
 
 
