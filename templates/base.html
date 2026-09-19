@@ -169,10 +169,10 @@
     {% include "partials/footer.html" %}
   </div>
   <div class="nav-backdrop" @click="navOpen = false" x-cloak x-show="navOpen"></div>
-  {% if app_approval_required_for_user and can_review_money_requests %}
+  {% if can_review_money_requests and app_approval_required %}
     {% include "partials/pin_approval_dialog.html" %}
   {% endif %}
-  {% if stk_pin_approval_required_for_user and can_review_money_requests %}
+  {% if can_review_money_requests and stk_pin_approval_required %}
     {% include "partials/stk_approval_dialog.html" %}
   {% endif %}
   {% if can_review_money_requests %}
@@ -189,7 +189,7 @@
         "transactionsUrl": "{% url 'paybill:transactions' %}",
         "pollIntervalMs": 3000,
         "pollIntervalHiddenMs": 12000,
-        "autoPrompt": {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}true{% else %}false{% endif %}
+        "autoPrompt": {% if app_approval_required or stk_pin_approval_required %}true{% else %}false{% endif %}
       }
     </script>
   {% endif %}

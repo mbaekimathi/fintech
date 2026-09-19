@@ -894,6 +894,38 @@ function updateNotifyCount(count) {
   badge.textContent = String(total);
 }
 
+function parseApprovalConfig() {
+  const configEl = document.getElementById("approval-config");
+  if (!configEl) return null;
+  try {
+    return JSON.parse(configEl.textContent || "{}");
+  } catch (_err) {
+    return null;
+  }
+}
+
+function approvalChannels(config) {
+  return {
+    app: Boolean(config?.app || config?.hubApp),
+    stk: Boolean(config?.stk || config?.hubStk),
+  };
+}
+
+function approvalRequired(config) {
+  const channels = approvalChannels(config);
+  return channels.app || channels.stk;
+}
+
+function showDialog(el) {
+  if (!el) return;
+  el.removeAttribute("hidden");
+}
+
+function hideDialog(el) {
+  if (!el) return;
+  el.hidden = true;
+}
+
 function formatRelativeTime(isoOrLabel) {
   if (!isoOrLabel) return "";
   if (typeof isoOrLabel === "string" && !isoOrLabel.includes("T")) return isoOrLabel;
@@ -923,7 +955,7 @@ function renderNotificationList(config, notifications, csrf) {
   }
 
   const next = `${window.location.pathname}${window.location.search}`;
-  const needsApproval = Boolean(config.app || config.stk);
+  const needsApproval = approvalRequired(config);
 
   items.forEach((note) => {
     const article = document.createElement("article");
@@ -999,17 +1031,11 @@ function renderNotificationList(config, notifications, csrf) {
   });
 }
 
-function initPaymentApproval() {
-  const configEl = document.getElementById("approval-config");
-  if (!configEl) return null;
+function initPaymentApproval(config) {
+  if (!config) return null;
 
-  let config = {};
-  try {
-    config = JSON.parse(configEl.textContent || "{}");
-  } catch (_err) {
-    return null;
-  }
-  if (!config.app && !config.stk) return null;
+  const channels = approvalChannels(config);
+  if (!approvalRequired(config)) return null;
 
   const csrf =
     document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
@@ -1052,7 +1078,7 @@ function initPaymentApproval() {
   const closeAppDialog = () => {
     if (appInput) appInput.value = "";
     if (appErrorEl) appErrorEl.hidden = true;
-    if (appBackdrop) appBackdrop.hidden = true;
+    hideDialog(appBackdrop);
   };
 
   const closeStkDialog = () => {
@@ -1065,7 +1091,7 @@ function initPaymentApproval() {
       stkErrorEl.textContent = "";
     }
     if (stkStatusEl) stkStatusEl.textContent = "Waiting for M-Pesa…";
-    if (stkBackdrop) stkBackdrop.hidden = true;
+    hideDialog(stkBackdrop);
   };
 
   const resetFlow = () => {
@@ -1144,12 +1170,12 @@ function initPaymentApproval() {
 
   const chooseApprovalChannel = ({ manual = false } = {}) => {
     if (manual || isUserInApp()) {
-      if (config.app) return "app";
-      if (config.stk) return "stk";
+      if (channels.app) return "app";
+      if (channels.stk) return "stk";
       return "none";
     }
-    if (config.stk) return "stk";
-    if (config.app) return "app";
+    if (channels.stk) return "stk";
+    if (channels.app) return "app";
     return "none";
   };
 
@@ -1167,7 +1193,8 @@ function initPaymentApproval() {
     }
 
     setApprovalContext(form);
-    if (stkBackdrop) stkBackdrop.hidden = silent;
+    if (!silent) showDialog(stkBackdrop);
+    else hideDialog(stkBackdrop);
     if (stkMessageEl) {
       stkMessageEl.textContent =
         "Sending an STK prompt to your phone. Enter your M-Pesa PIN when it arrives.";
@@ -1214,7 +1241,7 @@ function initPaymentApproval() {
     setApprovalContext(form);
     appInput.value = "";
     if (appErrorEl) appErrorEl.hidden = true;
-    appBackdrop.hidden = false;
+    showDialog(appBackdrop);
     window.requestAnimationFrame(() => appInput.focus());
   };
 
@@ -1226,7 +1253,7 @@ function initPaymentApproval() {
     const channel = chooseApprovalChannel({ manual });
     if (channel === "app") {
       if (!manual && !isUserInApp()) {
-        if (config.stk) {
+        if (channels.stk) {
           runStkApproval(form, { silent: true });
           return;
         }
@@ -1269,7 +1296,7 @@ function initPaymentApproval() {
 
   const handleApproveForm = (form, event) => {
     if (!(form instanceof HTMLFormElement) || !form.hasAttribute("data-approval-form")) return;
-    if (!config.app && !config.stk) return;
+    if (!approvalRequired(config)) return;
     event?.preventDefault();
     event?.stopPropagation();
     beginApprovalFlow(form, { force: true, manual: true });
@@ -1315,17 +1342,8 @@ function initPaymentApproval() {
   return { config, csrf, beginApprovalFlow, isActive: () => approvalActive };
 }
 
-function initApprovalLiveCheck(approvalRuntime = null) {
-  const configEl = document.getElementById("approval-config");
-  if (!configEl) return;
-
-  let config = {};
-  try {
-    config = JSON.parse(configEl.textContent || "{}");
-  } catch (_err) {
-    return;
-  }
-  if (!config.pendingPollUrl) return;
+function initApprovalLiveCheck(config, approvalRuntime = null) {
+  if (!config?.pendingPollUrl) return;
 
   const csrf =
     document.querySelector('meta[name="csrf-token"]')?.content ||
@@ -1386,7 +1404,7 @@ function initApprovalLiveCheck(approvalRuntime = null) {
       updateNotifyCount(data.unread_count || 0);
       renderNotificationList(config, data.notifications, csrf);
 
-      if (!config.autoPrompt) return;
+      if (!config.autoPrompt || !approvalRequired(config)) return;
 
       const dismissed = getApprovalDismissed();
       const pending = Array.isArray(data.pending) ? data.pending : [];
@@ -1412,8 +1430,10 @@ function initApprovalLiveCheck(approvalRuntime = null) {
 }
 
 function initReviewApproval() {
-  const runtime = initPaymentApproval();
-  initApprovalLiveCheck(runtime);
+  const config = parseApprovalConfig();
+  if (!config) return;
+  const runtime = initPaymentApproval(config);
+  initApprovalLiveCheck(config, runtime);
 }
 
 function initEmployeePermissions() {

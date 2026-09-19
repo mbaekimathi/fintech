@@ -195,12 +195,18 @@ class User(AbstractUser):
     def requires_app_on_approval(self) -> bool:
         from core.models import AppSettings
 
-        return AppSettings.load().app_approval_required and self.can_pin_approval_prompt()
+        return (
+            AppSettings.load().app_approval_required
+            and self.can_review_requests()
+        )
 
     def requires_stk_on_approval(self) -> bool:
         from core.models import AppSettings
 
-        return AppSettings.load().stk_pin_approval_required and self.can_stk_pin_approval_prompt()
+        return (
+            AppSettings.load().stk_pin_approval_required
+            and self.can_review_requests()
+        )
 
     def requires_pin_on_approval(self) -> bool:
         return self.requires_app_on_approval() or self.requires_stk_on_approval()

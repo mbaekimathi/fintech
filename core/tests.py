@@ -876,10 +876,17 @@ class AppSettingsTests(TestCase):
         req.refresh_from_db()
         self.assertEqual(req.status, MoneyRequest.Status.PAID)
 
-    def test_approve_skips_pin_when_person_toggle_off(self):
+    def test_approve_requires_pin_when_hub_on_without_person_toggle(self):
         settings = AppSettings.load()
         settings.app_approval_required = True
         settings.save(update_fields=["app_approval_required"])
+        sync_permissions_from_role(self.it_support, reset=True)
+        perms = EmployeePermissions.objects.get(user=self.it_support)
+        perms.pin_approval_prompt = False
+        perms.save(update_fields=["pin_approval_prompt", "updated_at"])
+        self.it_support.set_approval_password("778899")
+        self.it_support.save(update_fields=["approval_password"])
+        self.assertTrue(self.it_support.requires_app_on_approval())
 
         req = MoneyRequest.objects.create(
             requester=self.employee,
@@ -900,6 +907,15 @@ class AppSettingsTests(TestCase):
             money_request=req,
         )
         self.client.force_login(self.it_support)
+
+        blocked = self.client.post(
+            self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
+            {"intent": "approve", "next": "/"},
+        )
+        self.assertEqual(blocked.status_code, 302)
+        req.refresh_from_db()
+        self.assertEqual(req.status, MoneyRequest.Status.PENDING)
+
         ack = {
             "ResponseCode": "0",
             "ResponseDescription": "Accept the service request successfully.",
@@ -919,8 +935,44 @@ class AppSettingsTests(TestCase):
                     wait.side_effect = mark_success
                     response = self.client.post(
                         self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
-                        {"intent": "approve", "next": "/"},
+                        {"intent": "approve", "approval_pin": "778899", "next": "/"},
                     )
         self.assertEqual(response.status_code, 302)
         req.refresh_from_db()
         self.assertEqual(req.status, MoneyRequest.Status.PAID)
+
+    def test_reviewer_workspace_includes_pin_dialog_and_approval_config(self):
+        settings = AppSettings.load()
+        settings.app_approval_required = True
+        settings.stk_pin_approval_required = True
+        settings.save(update_fields=["app_approval_required", "stk_pin_approval_required"])
+        self.it_support.set_approval_password("778899")
+        self.it_support.save(update_fields=["approval_password"])
+
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("250.00"),
+            reason="Taxi",
+            status=MoneyRequest.Status.PENDING,
+        )
+        Notification.objects.create(
+            recipient=self.it_support,
+            actor=self.employee,
+            kind=Notification.Kind.MONEY_REQUEST,
+            title="Emp Apps requested KES 250.00",
+            body="Phone number · 0712345678",
+            money_request=req,
+        )
+        self.client.force_login(self.it_support)
+        page = self.client.get(self._url(User.Role.IT_SUPPORT, "core:dashboard"))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "data-pin-approval-backdrop")
+        self.assertContains(page, "data-pin-approval-input")
+        self.assertContains(page, '"hubApp": true')
+        self.assertContains(page, '"autoPrompt": true')
+        self.assertContains(page, "data-approval-trigger")
+        self.assertContains(page, f'data-money-request-id="{req.pk}"')
