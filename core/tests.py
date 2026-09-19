@@ -999,3 +999,5 @@ class AppSettingsTests(TestCase):
         self.assertTrue(config["hubStk"])
         self.assertTrue(config["stkPollUrl"].endswith("/"))
         self.assertIn("/approval/stk/", config["stkPollUrl"])
+        self.assertIn("hasApprovalPassword", config)
+        self.assertIn("profileUrl", config)

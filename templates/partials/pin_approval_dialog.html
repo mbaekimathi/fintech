@@ -19,6 +19,11 @@
       <button type="button" class="btn btn-ghost btn-small" data-pin-approval-cancel>Cancel</button>
     </div>
     <p class="muted">Your approval password is required to send this payment transfer.</p>
+    <p class="field-error" data-pin-approval-setup hidden>
+      Set your 6-digit approval password on
+      <a href="{% url 'accounts:profile' %}">Profile</a>
+      before you can approve payments.
+    </p>
     <p class="muted" data-pin-approval-detail hidden></p>
     <label class="label">
       Approval password

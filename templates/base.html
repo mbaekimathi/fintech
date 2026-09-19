@@ -189,7 +189,9 @@
         "transactionsUrl": "{% url 'paybill:transactions' %}",
         "pollIntervalMs": 3000,
         "pollIntervalHiddenMs": 12000,
-        "autoPrompt": {% if app_approval_required or stk_pin_approval_required %}true{% else %}false{% endif %}
+        "autoPrompt": {% if app_approval_required or stk_pin_approval_required %}true{% else %}false{% endif %},
+        "hasApprovalPassword": {% if reviewer_has_approval_password %}true{% else %}false{% endif %},
+        "profileUrl": "{{ profile_url|escapejs }}"
       }
     </script>
   {% endif %}

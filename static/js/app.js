@@ -857,6 +857,7 @@ let paymentApprovalApi = {
   isActive: () => false,
   beginApprovalFlow: () => {},
 };
+let approvalBooted = false;
 
 function getApprovalDismissed() {
   try {
@@ -1045,6 +1046,7 @@ function initPaymentApproval(config) {
   const appBackdrop = document.querySelector("[data-pin-approval-backdrop]");
   const appInput = document.querySelector("[data-pin-approval-input]");
   const appErrorEl = document.querySelector("[data-pin-approval-error]");
+  const appSetupEl = document.querySelector("[data-pin-approval-setup]");
   const appSubmitBtn = document.querySelector("[data-pin-approval-submit]");
   const appCancelBtn = document.querySelector("[data-pin-approval-cancel]");
 
@@ -1076,8 +1078,13 @@ function initPaymentApproval(config) {
   };
 
   const closeAppDialog = () => {
-    if (appInput) appInput.value = "";
+    if (appInput) {
+      appInput.value = "";
+      appInput.disabled = false;
+    }
+    if (appSubmitBtn) appSubmitBtn.disabled = false;
     if (appErrorEl) appErrorEl.hidden = true;
+    if (appSetupEl) appSetupEl.hidden = true;
     hideDialog(appBackdrop);
   };
 
@@ -1241,8 +1248,19 @@ function initPaymentApproval(config) {
     setApprovalContext(form);
     appInput.value = "";
     if (appErrorEl) appErrorEl.hidden = true;
+    const needsSetup = config.hasApprovalPassword === false;
+    if (appSetupEl) appSetupEl.hidden = !needsSetup;
+    if (needsSetup) {
+      appInput.disabled = true;
+      if (appSubmitBtn) appSubmitBtn.disabled = true;
+    } else {
+      appInput.disabled = false;
+      if (appSubmitBtn) appSubmitBtn.disabled = false;
+    }
     showDialog(appBackdrop);
-    window.requestAnimationFrame(() => appInput.focus());
+    if (!needsSetup) {
+      window.requestAnimationFrame(() => appInput.focus());
+    }
   };
 
   const beginApprovalFlow = (form, { force = false, manual = false } = {}) => {
@@ -1282,6 +1300,10 @@ function initPaymentApproval(config) {
 
   const submitAppApproval = () => {
     if (!pendingForm || !appInput) return;
+    if (config.hasApprovalPassword === false) {
+      if (appSetupEl) appSetupEl.hidden = false;
+      return;
+    }
     const pin = appInput.value.replace(/\D/g, "").slice(0, 6);
     if (pin.length !== 6) {
       if (appErrorEl) appErrorEl.hidden = false;
@@ -1430,11 +1452,14 @@ function initApprovalLiveCheck(config, approvalRuntime = null) {
 }
 
 function initReviewApproval() {
+  if (approvalBooted) return;
   const config = parseApprovalConfig();
   if (!config) return;
+  approvalBooted = true;
   const runtime = initPaymentApproval(config);
   initApprovalLiveCheck(config, runtime);
   window.nexusApproval = {
+    ready: true,
     config,
     beginApprovalFlow: runtime?.beginApprovalFlow || paymentApprovalApi.beginApprovalFlow,
     triggerFromButton(button, event) {
@@ -1497,11 +1522,7 @@ function initEmployeePermissions() {
 }
 
 function runShellInits() {
-  try {
-    initReviewApproval();
-  } catch (_err) {
-    /* keep shell usable if a secondary init fails */
-  }
+  initReviewApproval();
   const secondaryInits = [
     initDarajaSetup,
     initDarajaTests,

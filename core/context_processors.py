@@ -63,6 +63,8 @@ def shell(request):
     app_approval_required_for_user = False
     stk_pin_approval_required_for_user = False
     approval_stk_poll_url_base = ""
+    reviewer_has_approval_password = False
+    profile_url = ""
     if user and user.is_authenticated and not user.is_pending:
         current = getattr(getattr(request, "resolver_match", None), "view_name", "")
         sections = _section_items(user)
@@ -75,6 +77,8 @@ def shell(request):
         stk_pin_approval_required = settings.stk_pin_approval_required
         app_approval_required_for_user = user.requires_app_on_approval()
         stk_pin_approval_required_for_user = user.requires_stk_on_approval()
+        reviewer_has_approval_password = user.has_approval_password
+        profile_url = reverse("accounts:profile")
         # Dashboard is the hub: show every section the role can open.
         # Other pages keep only their own section link. System settings and
         # log out stay in the sidebar footer on every page. Daraja setup expands
@@ -126,6 +130,8 @@ def shell(request):
         "app_approval_required_for_user": app_approval_required_for_user,
         "stk_pin_approval_required_for_user": stk_pin_approval_required_for_user,
         "approval_stk_poll_url_base": approval_stk_poll_url_base,
+        "reviewer_has_approval_password": reviewer_has_approval_password,
+        "profile_url": profile_url,
         "webpush_enabled": webpush_enabled(),
         "webpush_vapid_public_key": vapid_public_key() if webpush_enabled() else "",
         "asset_version": getattr(django_settings, "ASSET_VERSION", ""),

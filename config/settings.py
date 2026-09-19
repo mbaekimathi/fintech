@@ -2,6 +2,7 @@
 NEXUS Ledger — central paybill and accounts hub.
 """
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -140,7 +141,20 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
-ASSET_VERSION = os.getenv("ASSET_VERSION", "20260919d").strip()
+
+
+def _asset_version() -> str:
+    """Cache-bust static assets when JS/CSS changes, even if ASSET_VERSION is pinned in .env."""
+    label = os.getenv("ASSET_VERSION", "20260919e").strip() or "20260919e"
+    app_js = BASE_DIR / "static" / "js" / "app.js"
+    try:
+        digest = hashlib.sha256(app_js.read_bytes()).hexdigest()[:10]
+    except OSError:
+        digest = "static"
+    return f"{label}-{digest}"
+
+
+ASSET_VERSION = _asset_version()
 WHITENOISE_MAX_AGE = 31536000 if not DEBUG else 0
 WHITENOISE_USE_FINDERS = DEBUG
 STORAGES = {
