@@ -371,6 +371,15 @@ class DarajaConfig(models.Model):
         blank=True,
         help_text="Last C2B URL registration result from the automations page.",
     )
+    company_client_auto_payout = MysqlBooleanEnumField(
+        default=False,
+        help_text="When on, inbound collections for this registered company auto-send to the company client phone (unless a collection account overrides).",
+    )
+    company_client_payout_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Default client M-Pesa number for the registered hub company (07… or 254…).",
+    )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

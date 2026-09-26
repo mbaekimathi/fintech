@@ -1,82 +1,138 @@
 {% extends "base.html" %}
-{% block title %}Account configuration{% endblock %}
+{% block title %}Company configuration{% endblock %}
 {% block eyebrow %}Collections{% endblock %}
-{% block heading %}Account configuration{% endblock %}
+{% block heading %}Company configuration{% endblock %}
 {% block content %}
-  <div class="automations-page automations-config-page">
-    <p class="automations-account-back">
-      <a class="text-link" href="{{ hub_url }}">← Automations hub</a>
-    </p>
+  <div class="automations-page automations-config-page collections-shell">
+    <nav class="collections-breadcrumb" aria-label="Collections">
+      <a class="collections-breadcrumb__link" href="{{ hub_url }}">← Automations hub</a>
+    </nav>
 
-    <section class="panel automations-config-panel">
-      <div class="panel-head panel-head-compact">
-        <div>
-          <h2>Client payout automation</h2>
-          <p class="muted automations-config-lead">
-            For each collection account, choose whether inbound payments are automatically sent to the client’s M-Pesa phone (B2C).
-          </p>
+    {% if not company_registered %}
+      <section class="panel panel-collections automations-config-panel">
+        <div class="panel-head panel-head-compact">
+          <div>
+            <h2>Register your company first</h2>
+            <p class="muted automations-config-lead">
+              Client payout automation applies to the paybill or till registered on Daraja setup.
+            </p>
+          </div>
         </div>
-      </div>
-
-      {% if not b2c_ready %}
-        <p class="flash automations-config-banner">
-          Phone payout (B2C) is not ready.
-          <a class="text-link" href="{% url 'core:daraja' %}#payouts">Enable B2C on Daraja setup</a>
-          before turning on auto-send.
-        </p>
-      {% endif %}
-
-      {% if rows %}
-        <div class="table-wrap">
-          <table class="data automations-config-table">
-            <thead>
-              <tr>
-                <th scope="col">Account</th>
-                <th scope="col">Collection ID</th>
-                <th scope="col">Auto-send</th>
-                <th scope="col">Client phone</th>
-                <th scope="col"><span class="sr-only">Save</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in rows %}
-                <tr>
-                  <td data-label="Account">
-                    <strong>{{ row.monitor.label }}</strong>
-                    <span class="muted automations-config-meta">{{ row.monitor.get_account_type_display }} · {{ row.monitor.display_identifier }}</span>
-                  </td>
-                  <td data-label="Collection ID">
-                    <code class="collection-code collection-code-tight">{{ row.monitor.collection_code }}</code>
-                  </td>
-                  <td colspan="3" data-label="Settings">
-                    <form method="post" action="{% url 'paybill:account-configuration' %}" class="automations-config-form">
-                      {% csrf_token %}
-                      <input type="hidden" name="monitor_id" value="{{ row.monitor.pk }}">
-                      <label class="check-row automations-config-check">
-                        {{ row.form.auto_payout_enabled }}
-                        <span>{{ row.form.auto_payout_enabled.label }}</span>
-                      </label>
-                      <label class="label automations-config-phone">
-                        <span class="sr-only">{{ row.form.auto_payout_phone.label }}</span>
-                        {{ row.form.auto_payout_phone }}
-                        {% if row.form.auto_payout_phone.errors %}
-                          <span class="field-error">{{ row.form.auto_payout_phone.errors|join:", " }}</span>
-                        {% endif %}
-                      </label>
-                      <button type="submit" class="btn btn-primary btn-small">Save</button>
-                    </form>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% else %}
         <p class="muted automations-config-empty">
-          No collection accounts yet.
-          <a class="text-link" href="{{ hub_url }}">Register an account</a> on the Automations hub.
+          <a class="text-link" href="{{ daraja_url }}">Complete Daraja setup</a>
+          with your hub paybill or till, then return here to configure auto-send to your client’s phone.
         </p>
-      {% endif %}
-    </section>
+      </section>
+    {% else %}
+      <section class="panel panel-collections automations-config-company">
+        <div class="panel-head collections-panel-head">
+          <div>
+            <p class="eyebrow collections-eyebrow">Registered company</p>
+            <h2>{{ company_name }}</h2>
+            <p class="muted collections-lead">
+              Hub {% if company.hub_paybill_number %}{{ company.hub_paybill_number }}{% else %}paybill{% endif %}
+              · {{ company.environment }}
+              {% if company.shortcode %} · Lipa {{ company.shortcode }}{% endif %}
+            </p>
+          </div>
+          <a class="btn btn-ghost" href="{{ daraja_url }}">Daraja setup</a>
+        </div>
+
+        {% if not b2c_ready %}
+          <p class="flash automations-config-banner collections-alert">
+            Phone payout (B2C) is not ready.
+            <a class="text-link" href="{{ daraja_url }}#payouts">Enable B2C on Daraja setup</a>
+            before turning on auto-send.
+          </p>
+        {% endif %}
+
+        <form method="post" action="{% url 'paybill:account-configuration' %}" class="automations-company-payout-form">
+          {% csrf_token %}
+          <input type="hidden" name="intent" value="save-company">
+          <div class="automations-company-payout-grid">
+            <label class="check-row automations-config-check span-2">
+              {{ company_form.company_client_auto_payout }}
+              <span>{{ company_form.company_client_auto_payout.label }}</span>
+            </label>
+            <label class="label automations-company-phone">
+              <span>{{ company_form.company_client_payout_phone.label }}</span>
+              {{ company_form.company_client_payout_phone }}
+              {% if company_form.company_client_payout_phone.errors %}
+                <span class="field-error">{{ company_form.company_client_payout_phone.errors|join:", " }}</span>
+              {% endif %}
+              <span class="field-hint">{{ company_form.company_client_payout_phone.help_text }}</span>
+            </label>
+            <div class="automations-company-payout-actions">
+              <button type="submit" class="btn btn-primary">Save company settings</button>
+            </div>
+          </div>
+          <p class="field-hint automations-company-payout-note">
+            When enabled, every inbound collection under <strong>{{ company_name }}</strong> is sent to this client phone via B2C (unless a collection account overrides below).
+          </p>
+        </form>
+      </section>
+
+      <section class="panel panel-collections automations-config-panel">
+        <div class="panel-head panel-head-compact">
+          <div>
+            <h2>Collection account overrides</h2>
+            <p class="muted automations-config-lead">
+              Optional: send a specific paybill, till, or phone collection to a different client number.
+            </p>
+          </div>
+        </div>
+
+        {% if rows %}
+          <div class="table-wrap">
+            <table class="data automations-config-table responsive-table--cards">
+              <thead>
+                <tr>
+                  <th scope="col">Account</th>
+                  <th scope="col">Collection ID</th>
+                  <th scope="col">Settings</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in rows %}
+                  <tr>
+                    <td data-label="Account">
+                      <strong>{{ row.monitor.label }}</strong>
+                      <span class="muted automations-config-meta">{{ row.monitor.get_account_type_display }} · {{ row.monitor.display_identifier }}</span>
+                    </td>
+                    <td data-label="Collection ID">
+                      <code class="collection-code collection-code-tight">{{ row.monitor.collection_code }}</code>
+                    </td>
+                    <td class="responsive-table-actions" data-label="Override">
+                      <form method="post" action="{% url 'paybill:account-configuration' %}" class="automations-config-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="intent" value="save-monitor">
+                        <input type="hidden" name="monitor_id" value="{{ row.monitor.pk }}">
+                        <label class="check-row automations-config-check">
+                          {{ row.form.auto_payout_enabled }}
+                          <span>{{ row.form.auto_payout_enabled.label }}</span>
+                        </label>
+                        <label class="label automations-config-phone">
+                          <span class="sr-only">{{ row.form.auto_payout_phone.label }}</span>
+                          {{ row.form.auto_payout_phone }}
+                          {% if row.form.auto_payout_phone.errors %}
+                            <span class="field-error">{{ row.form.auto_payout_phone.errors|join:", " }}</span>
+                          {% endif %}
+                        </label>
+                        <button type="submit" class="btn btn-ghost btn-small">Save override</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="muted automations-config-empty">
+            No collection accounts under this company yet.
+            <a class="text-link" href="{{ hub_url }}">Register an account</a> on the Automations hub.
+          </p>
+        {% endif %}
+      </section>
+    {% endif %}
   </div>
 {% endblock %}

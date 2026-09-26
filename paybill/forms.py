@@ -228,43 +228,101 @@ class CollectionMonitorForm(forms.ModelForm):
 class CollectionMonitorPayoutForm(forms.ModelForm):
     class Meta:
         model = CollectionMonitor
-        fields = ("auto_payout_enabled", "auto_payout_phone")
+        fields = (
+            "auto_payout_enabled",
+            "auto_payout_utility_first",
+            "auto_payout_destination_type",
+            "auto_payout_destination",
+            "auto_payout_account_ref",
+        )
         widgets = {
             "auto_payout_enabled": forms.CheckboxInput(attrs={"class": "check"}),
-            "auto_payout_phone": forms.TextInput(
+            "auto_payout_utility_first": forms.CheckboxInput(attrs={"class": "check"}),
+            "auto_payout_destination_type": forms.Select(attrs={**SELECT, "class": "select select-compact"}),
+            "auto_payout_destination": forms.TextInput(
                 attrs={
                     **FIELD,
-                    "inputmode": "tel",
-                    "autocomplete": "tel",
-                    "placeholder": "07XX XXX XXX or 2547…",
+                    "autocomplete": "off",
+                    "placeholder": "Phone, paybill, or till",
+                }
+            ),
+            "auto_payout_account_ref": forms.TextInput(
+                attrs={
+                    **FIELD,
+                    "autocomplete": "off",
+                    "placeholder": "Paybill account no.",
                 }
             ),
         }
         labels = {
-            "auto_payout_enabled": "Auto-send to client",
-            "auto_payout_phone": "Client phone",
+            "auto_payout_enabled": "Auto-send after collection",
+            "auto_payout_utility_first": "Utility→working first",
+            "auto_payout_destination_type": "Send to",
+            "auto_payout_destination": "Destination",
+            "auto_payout_account_ref": "Paybill account no.",
         }
-        help_texts = {
-            "auto_payout_enabled": "After each inbound collection, queue a B2C payout to the client phone.",
-            "auto_payout_phone": "Kenyan mobile number that receives the collected amount.",
-        }
-
-    def clean_auto_payout_phone(self):
-        from paybill.auto_payout import normalize_client_phone
-
-        raw = (self.cleaned_data.get("auto_payout_phone") or "").strip()
-        enabled = self.cleaned_data.get("auto_payout_enabled")
-        if not enabled:
-            return raw
-        if not raw:
-            raise forms.ValidationError("Enter the client phone when auto-send is enabled.")
-        try:
-            return normalize_client_phone(raw)
-        except Exception as exc:
-            raise forms.ValidationError(str(exc)) from exc
 
     def clean(self):
+        from paybill.auto_payout import normalize_client_phone
+        from paybill.models import MoneyRequest
+
         cleaned = super().clean()
-        if cleaned.get("auto_payout_enabled") and not (cleaned.get("auto_payout_phone") or "").strip():
-            self.add_error("auto_payout_phone", "Enter the client phone when auto-send is enabled.")
+        if not cleaned.get("auto_payout_enabled"):
+            return cleaned
+
+        dest_type = cleaned.get("auto_payout_destination_type") or MoneyRequest.DestinationType.PHONE
+        if dest_type in (
+            MoneyRequest.DestinationType.PAYBILL,
+            MoneyRequest.DestinationType.TILL,
+        ) and not cleaned.get("auto_payout_utility_first"):
+            self.add_error(
+                "auto_payout_utility_first",
+                "Turn on utility→working before paybill or till payouts.",
+            )
+            return cleaned
+        raw = (cleaned.get("auto_payout_destination") or "").strip()
+        if not raw:
+            self.add_error("auto_payout_destination", "Enter where funds should be sent.")
+            return cleaned
+
+        digits = re.sub(r"\D", "", raw)
+        if dest_type == MoneyRequest.DestinationType.PHONE:
+            try:
+                phone = normalize_client_phone(raw)
+            except Exception as exc:
+                self.add_error("auto_payout_destination", str(exc))
+                return cleaned
+            cleaned["auto_payout_destination"] = phone
+            cleaned["auto_payout_phone"] = phone
+            cleaned["auto_payout_account_ref"] = ""
+        elif dest_type in (
+            MoneyRequest.DestinationType.PAYBILL,
+            MoneyRequest.DestinationType.TILL,
+        ):
+            if raw.startswith("254") or len(digits) >= 10:
+                self.add_error(
+                    "auto_payout_destination",
+                    "Enter a paybill or till number, not a phone.",
+                )
+            elif len(digits) < 5 or len(digits) > 8:
+                self.add_error("auto_payout_destination", "Enter a valid paybill/till (5–8 digits).")
+            else:
+                cleaned["auto_payout_destination"] = digits
+                cleaned["auto_payout_phone"] = ""
+            if dest_type == MoneyRequest.DestinationType.PAYBILL:
+                ref = (cleaned.get("auto_payout_account_ref") or "").strip()
+                if not ref:
+                    self.add_error("auto_payout_account_ref", "Required for paybill payouts.")
+            else:
+                cleaned["auto_payout_account_ref"] = ""
         return cleaned
+
+    def save(self, commit=True):
+        from paybill.models import MoneyRequest as MR
+
+        instance = super().save(commit=False)
+        if instance.auto_payout_destination_type == MR.DestinationType.PHONE:
+            instance.auto_payout_phone = instance.auto_payout_destination
+        if commit:
+            instance.save()
+        return instance

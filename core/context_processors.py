@@ -40,12 +40,10 @@ HR_URLS = {
 
 COLLECTIONS_NAV = [
     {"name": "Automations", "url": "paybill:automations", "icon": "card"},
-    {"name": "Account configuration", "url": "paybill:account-configuration", "icon": "gear"},
 ]
 COLLECTIONS_URLS = {
     "paybill:automations",
     "paybill:automation-account",
-    "paybill:account-configuration",
 }
 
 

@@ -30,7 +30,6 @@ from paybill.automation import (
     collection_integration_copy,
     collection_stk_api_url,
     ensure_paybill_account,
-    hub_company_snapshot,
     monitor_ledger_queryset,
     monitor_ledger_totals,
     request_monitor_balance,
@@ -423,6 +422,28 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
 
     template_name = "paybill/automation_account.html"
 
+    @staticmethod
+    def _local_phone_display(raw: str) -> str:
+        phone = (raw or "").strip()
+        if phone.startswith("254") and len(phone) == 12:
+            return "0" + phone[3:]
+        return phone
+
+    def _payout_form(self, monitor: CollectionMonitor) -> CollectionMonitorPayoutForm:
+        from paybill.auto_payout import monitor_payout_destination
+
+        dest = monitor_payout_destination(monitor)
+        if (
+            monitor.auto_payout_destination_type == MoneyRequest.DestinationType.PHONE
+            and dest.startswith("254")
+            and len(dest) == 12
+        ):
+            dest = self._local_phone_display(dest)
+        return CollectionMonitorPayoutForm(
+            instance=monitor,
+            initial={"auto_payout_destination": dest},
+        )
+
     def _monitor(self, pk: int):
         return get_object_or_404(
             CollectionMonitor.objects.select_related("paybill_account"),
@@ -464,6 +485,9 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
                 "ledger_entries": ledger_entries,
                 "ledger_page": ledger_page,
                 "ledger_totals": ledger_totals,
+                "payout_form": self._payout_form(monitor),
+                "b2c_ready": config.b2c_ready,
+                "b2b_ready": config.b2b_ready,
                 **api_ctx,
             },
         )
@@ -473,6 +497,29 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
         intent = (request.POST.get("intent") or "").strip().lower()
         wants_json = self._wants_json(request)
         account_url = reverse("paybill:automation-account", kwargs={"pk": pk})
+        config = DarajaConfig.load()
+
+        if intent == "save-payout":
+            form = CollectionMonitorPayoutForm(request.POST, instance=monitor)
+            if not form.is_valid():
+                messages.error(request, "Fix the client payout fields.")
+                return redirect(f"{account_url}#client-payout")
+            form.save()
+            write_audit(
+                request,
+                "collection_monitor.payout_config",
+                object_type="collection_monitor",
+                object_id=monitor.pk,
+                detail={"auto_payout_enabled": monitor.auto_payout_enabled},
+            )
+            if monitor.auto_payout_enabled:
+                messages.success(
+                    request,
+                    "Client auto-send is on — inbound collections will B2C to the configured phone.",
+                )
+            else:
+                messages.success(request, "Client auto-send is off for this account.")
+            return redirect(f"{account_url}#client-payout")
 
         if intent == "issue-credential":
             _cred, raw_key = CollectionMonitorCredential.issue(monitor)
@@ -585,64 +632,14 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
 
 
 class AccountConfigurationView(CollectionAutomationMixin, RoleRequiredMixin, View):
-    """Configure automatic B2C transfer of collected funds to each client's phone."""
-
-    template_name = "paybill/account_configuration.html"
+    """Legacy URL — client payout is configured on each collection account page."""
 
     def get(self, request, *args, **kwargs):
-        config = DarajaConfig.load()
-        monitors = list(self._monitors())
-        rows = []
-        for monitor in monitors:
-            phone_display = monitor.auto_payout_phone
-            if phone_display.startswith("254") and len(phone_display) == 12:
-                phone_display = "0" + phone_display[3:]
-            rows.append(
-                {
-                    "monitor": monitor,
-                    "form": CollectionMonitorPayoutForm(
-                        instance=monitor,
-                        initial={"auto_payout_phone": phone_display or monitor.auto_payout_phone},
-                    ),
-                }
-            )
-        return render(
+        messages.info(
             request,
-            self.template_name,
-            {
-                "rows": rows,
-                "b2c_ready": config.b2c_ready,
-                "hub_url": reverse("paybill:automations"),
-            },
+            "Open a collection account and use Client payout automation on that account’s page.",
         )
+        return redirect("paybill:automations")
 
     def post(self, request, *args, **kwargs):
-        monitor = get_object_or_404(
-            CollectionMonitor,
-            pk=request.POST.get("monitor_id"),
-            is_active=True,
-        )
-        form = CollectionMonitorPayoutForm(request.POST, instance=monitor)
-        if not form.is_valid():
-            messages.error(request, f"{monitor.label}: fix the highlighted fields.")
-            return redirect("paybill:account-configuration")
-
-        form.save()
-        write_audit(
-            request,
-            "collection_monitor.payout_config",
-            object_type="collection_monitor",
-            object_id=monitor.pk,
-            detail={
-                "auto_payout_enabled": monitor.auto_payout_enabled,
-                "auto_payout_phone": monitor.auto_payout_phone[-4:] if monitor.auto_payout_phone else "",
-            },
-        )
-        if monitor.auto_payout_enabled:
-            messages.success(
-                request,
-                f"{monitor.label}: collections will auto-send to the client phone via B2C.",
-            )
-        else:
-            messages.success(request, f"{monitor.label}: auto-send to client is off.")
-        return redirect("paybill:account-configuration")
+        return redirect("paybill:automations")

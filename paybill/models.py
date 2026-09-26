@@ -298,7 +298,27 @@ class CollectionMonitor(models.Model):
     auto_payout_phone = models.CharField(
         max_length=20,
         blank=True,
-        help_text="Client M-Pesa number (07… or 254…) to receive automated transfers.",
+        help_text="Legacy phone field; synced with auto_payout_destination for phone payouts.",
+    )
+    auto_payout_destination_type = models.CharField(
+        max_length=12,
+        choices=MoneyRequest.DestinationType.choices,
+        default=MoneyRequest.DestinationType.PHONE,
+        help_text="Where automated payouts go after collection.",
+    )
+    auto_payout_destination = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Phone, paybill, or till number for automated payout.",
+    )
+    auto_payout_account_ref = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="Paybill account number when destination type is paybill.",
+    )
+    auto_payout_utility_first = models.BooleanField(
+        default=False,
+        help_text="Move collected amount from utility to working float before B2B/B2C payout.",
     )
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(

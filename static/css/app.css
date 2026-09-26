@@ -231,6 +231,9 @@ a:hover {
   gap: 1.1rem;
   align-content: start;
   animation: rise-in 0.45s var(--ease) both;
+  background:
+    radial-gradient(ellipse 120% 80% at 50% -20%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 55%),
+    transparent;
 }
 
 .app-main > * {
@@ -3829,6 +3832,607 @@ button.text-link:hover {
   font-size: 0.88rem;
 }
 
+.automations-config-company {
+  margin-bottom: 0.25rem;
+}
+
+.automations-company-payout-form {
+  margin-top: 0.35rem;
+}
+
+.automations-company-payout-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.65rem 1rem;
+  align-items: end;
+}
+
+.automations-company-phone .field {
+  width: 100%;
+  min-width: min(100%, 16rem);
+}
+
+.automations-company-payout-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.automations-company-payout-note {
+  margin: 0.75rem 0 0;
+  max-width: 40rem;
+}
+
+.automations-account-payout-panel {
+  margin-top: 0.15rem;
+  padding: 0.65rem 0.75rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 8%, var(--raised)),
+    color-mix(in srgb, var(--violet) 6%, var(--raised))
+  );
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+}
+
+.automations-account-payout-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.automations-account-payout-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.automations-account-payout-title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.automations-account-payout-sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.automations-account-payout-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent-deep);
+  cursor: pointer;
+  user-select: none;
+}
+
+.automations-account-payout-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.automations-account-payout-toggle-ui {
+  width: 2.1rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 35%, var(--line));
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.automations-account-payout-toggle-ui::after {
+  content: "";
+  position: absolute;
+  top: 0.15rem;
+  left: 0.15rem;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  background: var(--raised);
+  box-shadow: 0 1px 2px rgba(12, 22, 36, 0.15);
+  transition: transform 0.2s;
+}
+
+.automations-account-payout-toggle input:checked + .automations-account-payout-toggle-ui {
+  background: var(--mpesa);
+}
+
+.automations-account-payout-toggle input:checked + .automations-account-payout-toggle-ui::after {
+  transform: translateX(0.9rem);
+}
+
+.automations-account-payout-toggle input:focus-visible + .automations-account-payout-toggle-ui {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.automations-account-payout-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.automations-account-payout-step {
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mpesa) 12%, var(--raised));
+  color: var(--mpesa-deep);
+  border: 1px solid color-mix(in srgb, var(--mpesa) 25%, transparent);
+}
+
+.automations-account-payout-step--optional {
+  background: color-mix(in srgb, var(--violet) 10%, var(--raised));
+  color: var(--violet-deep);
+  border-color: color-mix(in srgb, var(--violet) 22%, transparent);
+}
+
+.automations-account-payout-step--out {
+  background: color-mix(in srgb, var(--accent) 10%, var(--raised));
+  color: var(--accent-deep);
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.automations-account-payout-arrow {
+  opacity: 0.45;
+  font-size: 0.75rem;
+}
+
+.automations-account-payout-utility {
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--ink) 3%, var(--raised));
+  border: 1px solid var(--line);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.automations-account-payout-utility strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.automations-account-payout-utility-note {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.74rem;
+}
+
+.automations-account-payout-utility--highlight {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: color-mix(in srgb, var(--accent) 6%, var(--raised));
+}
+
+.automations-account-payout-fields {
+  display: grid;
+  grid-template-columns: minmax(7rem, 9rem) 1fr minmax(7rem, 10rem);
+  gap: 0.45rem 0.65rem;
+  align-items: end;
+}
+
+.automations-account-payout-field {
+  margin: 0;
+  min-width: 0;
+}
+
+.automations-account-payout-field-label {
+  display: block;
+  margin-bottom: 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.automations-account-payout-form .field,
+.automations-account-payout-form .select,
+.automations-account-payout-form .select-compact {
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.86rem;
+}
+
+.automations-account-payout-error {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.automations-account-payout-hint {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.automations-account-payout-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.15rem;
+}
+
+@media (max-width: 640px) {
+  .automations-company-payout-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .automations-company-payout-actions .btn {
+    width: 100%;
+  }
+
+  .automations-account-payout-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .automations-account-payout-foot .btn {
+    width: 100%;
+  }
+}
+
+/* Collections shell — color, depth, responsive tables */
+.collections-shell {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+}
+
+.collections-shell::before {
+  content: "";
+  position: absolute;
+  inset: -0.5rem -1rem 0;
+  height: min(14rem, 42vw);
+  background:
+    radial-gradient(ellipse 70% 80% at 8% 0%, var(--accent-soft), transparent 72%),
+    radial-gradient(ellipse 55% 70% at 92% 5%, var(--mpesa-soft), transparent 68%),
+    radial-gradient(ellipse 40% 50% at 50% 100%, var(--violet-soft), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.9;
+}
+
+.collections-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.panel-collections {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--accent) 5%, var(--raised)) 0%,
+    var(--raised) 42%
+  );
+  box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.panel-collections::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--modal-stripe);
+  background-size: 200% 100%;
+}
+
+.panel-collections-dialog.detail-dialog::before {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.collections-eyebrow {
+  color: var(--accent-deep);
+  font-weight: 700;
+}
+
+.collections-lead {
+  max-width: 36rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.collections-panel-head {
+  gap: 0.75rem 1rem;
+}
+
+.collections-stat-highlight {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 1rem;
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--mpesa) 16%, var(--raised)),
+    color-mix(in srgb, var(--accent) 10%, var(--raised))
+  );
+  border: 1px solid color-mix(in srgb, var(--mpesa) 28%, var(--line));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 50%, transparent);
+}
+
+.collections-stat-highlight__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mpesa-deep);
+}
+
+.collections-stat-highlight__value {
+  font-family: var(--display);
+  font-size: clamp(1.25rem, 4vw, 1.65rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.collections-stat-highlight__meta {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.collections-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.collections-tile {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--ink) 2%, var(--raised));
+  border: 1px solid var(--line);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.collections-tile:hover {
+  border-color: color-mix(in srgb, var(--accent) 25%, var(--line));
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.collections-tile dt {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.collections-tile dd {
+  margin: 0.25rem 0 0;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.collections-tile--wide {
+  grid-column: span 2;
+}
+
+.collections-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.collections-amount-cell {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--mpesa-deep);
+  font-variant-numeric: tabular-nums;
+}
+
+.collections-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.collections-breadcrumb__link {
+  color: var(--accent-deep);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.collections-breadcrumb__link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.collections-breadcrumb__sep {
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+.collections-breadcrumb__current {
+  color: var(--muted);
+}
+
+.collections-alert {
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line));
+  color: var(--ink-soft);
+  border-radius: var(--radius-sm);
+}
+
+.automations-account-board.panel-collections {
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--violet) 4%, var(--raised)) 0%,
+    var(--raised) 55%
+  );
+}
+
+.automations-account-card__stat:first-of-type dd {
+  color: var(--mpesa-deep);
+}
+
+.automations-account-payout-panel + .automations-account-card__tools {
+  margin-top: 0.35rem;
+  padding-top: 0.4rem;
+}
+
+.automations-account-card__stk .btn-primary {
+  background: linear-gradient(180deg, var(--mpesa), var(--mpesa-deep));
+  border-color: var(--mpesa-deep);
+}
+
+.automation-ledger-stats {
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 5%, var(--raised));
+  border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--line));
+}
+
+.automation-ledger-stat strong {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 768px) {
+  .collections-tile--wide {
+    grid-column: span 1;
+  }
+
+  .collections-stat-highlight__meta {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .collections-panel-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .collections-panel-head .btn {
+    width: 100%;
+  }
+
+  .automations-hub-head-actions {
+    width: 100%;
+  }
+
+  .automations-hub-head-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .automation-ledger-stats {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 640px) {
+  .collections-shell::before {
+    inset: -0.25rem -0.5rem 0;
+    height: 10rem;
+  }
+
+  .responsive-table--cards thead {
+    display: none;
+  }
+
+  .responsive-table--cards tbody tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--accent) 15%, var(--line));
+    border-radius: var(--radius-sm);
+    background: var(--raised);
+    box-shadow: var(--shadow);
+  }
+
+  .responsive-table--cards tbody td {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.65rem;
+    padding: 0.42rem 0;
+    border-bottom: 0;
+    white-space: normal;
+    text-align: right;
+    word-break: break-word;
+  }
+
+  .responsive-table--cards tbody td::before {
+    content: attr(data-label);
+    flex: 0 0 38%;
+    max-width: 42%;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: left;
+  }
+
+  .responsive-table--cards tbody td[data-label=""]::before,
+  .responsive-table--cards tbody td:not([data-label])::before {
+    display: none;
+  }
+
+  .responsive-table--cards .responsive-table-actions {
+    display: block;
+    padding-top: 0.55rem;
+    margin-top: 0.35rem;
+    border-top: 1px solid var(--line);
+    text-align: left;
+  }
+
+  .responsive-table--cards .responsive-table-actions::before {
+    display: block;
+    margin-bottom: 0.45rem;
+  }
+
+  .responsive-table--cards .responsive-table-actions .btn {
+    width: 100%;
+  }
+
+  .automations-config-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .automations-config-phone .field {
+    max-width: none;
+  }
+
+  .automations-config-check {
+    white-space: normal;
+  }
+}
+
 .automation-ledger-stats {
   display: flex;
   flex-wrap: wrap;
@@ -4203,6 +4807,20 @@ button.text-link:hover {
 .automation-register-dialog {
   width: min(26rem, calc(100vw - 2rem));
   max-height: min(90vh, 42rem);
+}
+
+.panel-collections-dialog.detail-dialog {
+  border-color: color-mix(in srgb, var(--accent) 25%, var(--line));
+  overflow: hidden;
+}
+
+.panel-collections-dialog.detail-dialog::before {
+  content: "";
+  display: block;
+  height: 3px;
+  background: var(--modal-stripe);
+  background-size: 200% 100%;
+  margin: 0;
 }
 
 .automation-register-intro {

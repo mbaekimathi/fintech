@@ -239,6 +239,10 @@ def apply_result_callback(payload: dict) -> DarajaOperation | None:
     from paybill.services import sync_money_request_from_operation
 
     sync_money_request_from_operation(operation)
+    if operation.status == DarajaOperation.Status.SUCCESS:
+        from paybill.auto_payout import continue_auto_payout_chain
+
+        continue_auto_payout_chain(operation)
     return operation
 
 

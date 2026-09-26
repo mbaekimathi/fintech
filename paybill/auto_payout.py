@@ -1,8 +1,9 @@
-"""Queue B2C payouts to a client phone after collection inbound ledger posts."""
+"""Queue payouts after collection: optional utility→working, then B2C or B2B."""
 
 from __future__ import annotations
 
 import logging
+import re
 from decimal import Decimal
 
 from django.db import transaction
@@ -10,7 +11,7 @@ from django.db import transaction
 from integrations.daraja import callback_urls
 from integrations.daraja_client import DarajaClient, DarajaError, kenya_msisdn
 from integrations.models import DarajaConfig, DarajaOperation
-from paybill.models import CollectionMonitor, LedgerEntry
+from paybill.models import CollectionMonitor, LedgerEntry, MoneyRequest
 from paybill.services import _ack_fields, _redact
 
 logger = logging.getLogger(__name__)
@@ -20,43 +21,62 @@ def normalize_client_phone(raw: str) -> str:
     return kenya_msisdn((raw or "").strip())
 
 
-def maybe_auto_payout_inbound(
+def _digits(value: str) -> str:
+    return re.sub(r"\D", "", value or "")
+
+
+def monitor_payout_destination(monitor: CollectionMonitor) -> str:
+    raw = (monitor.auto_payout_destination or monitor.auto_payout_phone or "").strip()
+    return raw
+
+
+def auto_payout_is_enabled(monitor: CollectionMonitor) -> bool:
+    if not monitor.auto_payout_enabled:
+        return False
+    dest = monitor_payout_destination(monitor)
+    if not dest:
+        return False
+    dest_type = monitor.auto_payout_destination_type or MoneyRequest.DestinationType.PHONE
+    if dest_type == MoneyRequest.DestinationType.PAYBILL and not (
+        monitor.auto_payout_account_ref or ""
+    ).strip():
+        return False
+    return True
+
+
+def _payout_already_queued(ledger_entry_id: int) -> bool:
+    return DarajaOperation.objects.filter(
+        request_payload__auto_payout_ledger_id=ledger_entry_id,
+    ).exists()
+
+
+def _chain_payload(*, monitor: CollectionMonitor, entry: LedgerEntry, phase: str) -> dict:
+    return {
+        "phase": phase,
+        "monitor_id": monitor.pk,
+        "ledger_entry_id": entry.pk,
+        "collection_code": monitor.collection_code,
+        "destination_type": monitor.auto_payout_destination_type,
+    }
+
+
+def execute_auto_payout_transfer(
     monitor: CollectionMonitor,
     entry: LedgerEntry,
+    *,
+    skip_utility: bool = False,
 ) -> DarajaOperation | None:
-    """Send collected amount to the configured client phone when automation is enabled."""
-    if not monitor.auto_payout_enabled:
-        return None
-    if entry.direction != LedgerEntry.Direction.IN:
-        return None
-    if entry.status != LedgerEntry.Status.COMPLETED:
+    """Send payout for one inbound ledger row (B2B/B2C, optional utility→working first)."""
+    if entry.direction != LedgerEntry.Direction.IN or entry.status != LedgerEntry.Status.COMPLETED:
         return None
     if entry.amount is None or entry.amount < Decimal("1"):
         return None
-
-    try:
-        phone = normalize_client_phone(monitor.auto_payout_phone)
-    except DarajaError:
-        logger.warning(
-            "Auto payout skipped for monitor %s: invalid client phone",
-            monitor.collection_code,
-        )
+    if not monitor.auto_payout_enabled:
         return None
-
-    if DarajaOperation.objects.filter(
-        kind=DarajaOperation.Kind.B2C,
-        request_payload__auto_payout_ledger_id=entry.pk,
-    ).exists():
+    if _payout_already_queued(entry.pk):
         return None
 
     config = DarajaConfig.load()
-    if not config.b2c_ready:
-        logger.warning(
-            "Auto payout skipped for monitor %s: B2C not ready on Daraja setup",
-            monitor.collection_code,
-        )
-        return None
-
     urls = callback_urls()
     result_url = urls.get("result_url") or ""
     timeout_url = urls.get("timeout_url") or ""
@@ -64,41 +84,118 @@ def maybe_auto_payout_inbound(
         logger.warning("Auto payout skipped: no public result URL configured")
         return None
 
+    if monitor.auto_payout_utility_first and not skip_utility:
+        if not config.b2b_enabled or not config.balance_ready:
+            logger.warning("Auto payout utility step skipped: B2B/balance not ready")
+            return None
+        client = DarajaClient(config)
+        try:
+            body, payload, shortcode = client.utility_to_working(
+                amount=entry.amount,
+                result_url=result_url,
+                timeout_url=timeout_url,
+            )
+        except DarajaError as exc:
+            logger.warning("Auto payout utility step failed: %s", exc)
+            return None
+        meta = {
+            "auto_payout_ledger_id": entry.pk,
+            "auto_payout_chain": _chain_payload(monitor=monitor, entry=entry, phase="utility"),
+        }
+        with transaction.atomic():
+            return DarajaOperation.objects.create(
+                kind=DarajaOperation.Kind.B2B,
+                destination=shortcode,
+                amount=entry.amount,
+                account_ref="UTILITY-WORKING",
+                request_payload={**_redact(payload), **meta},
+                summary=body.get("ResponseDescription") or "Utility→working (auto payout step 1).",
+                collection_monitor=monitor,
+                **_ack_fields(body),
+            )
+
+    dest_type = monitor.auto_payout_destination_type or MoneyRequest.DestinationType.PHONE
+    raw_dest = monitor_payout_destination(monitor)
     client = DarajaClient(config)
+
     try:
-        body, payload, dest = client.b2c_send(
-            phone=phone,
-            amount=entry.amount,
-            result_url=result_url,
-            timeout_url=timeout_url,
-        )
+        if dest_type == MoneyRequest.DestinationType.PHONE:
+            if not config.b2c_ready:
+                logger.warning("Auto payout skipped: B2C not ready")
+                return None
+            phone = normalize_client_phone(raw_dest)
+            body, payload, dest = client.b2c_send(
+                phone=phone,
+                amount=entry.amount,
+                result_url=result_url,
+                timeout_url=timeout_url,
+            )
+            kind = DarajaOperation.Kind.B2C
+            account_ref = monitor.collection_code
+        else:
+            if not config.b2b_ready:
+                logger.warning("Auto payout skipped: B2B not ready")
+                return None
+            to_till = dest_type == MoneyRequest.DestinationType.TILL
+            body, payload, dest = client.b2b_send(
+                destination=_digits(raw_dest),
+                amount=entry.amount,
+                to_till=to_till,
+                account_ref=(monitor.auto_payout_account_ref or "").strip(),
+                result_url=result_url,
+                timeout_url=timeout_url,
+            )
+            kind = DarajaOperation.Kind.B2B
+            account_ref = (monitor.auto_payout_account_ref or monitor.collection_code or "")[:64]
     except DarajaError as exc:
-        logger.warning("Auto payout B2C failed for ledger %s: %s", entry.pk, exc)
+        logger.warning("Auto payout failed for ledger %s: %s", entry.pk, exc)
         return None
 
     meta = {
         "auto_payout_ledger_id": entry.pk,
-        "collection_monitor_id": monitor.pk,
-        "collection_code": monitor.collection_code,
-        "source_mpesa_reference": entry.mpesa_reference or entry.reference,
+        "auto_payout_chain": _chain_payload(monitor=monitor, entry=entry, phase="payout"),
+        "auto_payout_source": "monitor",
     }
     with transaction.atomic():
-        operation = DarajaOperation.objects.create(
-            kind=DarajaOperation.Kind.B2C,
+        return DarajaOperation.objects.create(
+            kind=kind,
             destination=dest,
             amount=entry.amount,
-            account_ref=monitor.collection_code,
+            account_ref=account_ref,
             request_payload={**_redact(payload), **meta},
             summary=body.get("ResponseDescription") or "Client auto payout queued.",
             collection_monitor=monitor,
             **_ack_fields(body),
         )
-    return operation
+
+
+def continue_auto_payout_chain(operation: DarajaOperation) -> None:
+    """After utility→working succeeds, run the configured paybill/till/phone payout."""
+    chain = (operation.request_payload or {}).get("auto_payout_chain") or {}
+    if chain.get("phase") != "utility":
+        return
+    if operation.status != DarajaOperation.Status.SUCCESS:
+        return
+    monitor_id = chain.get("monitor_id")
+    ledger_id = chain.get("ledger_entry_id")
+    if not monitor_id or not ledger_id:
+        return
+    monitor = CollectionMonitor.objects.filter(pk=monitor_id, is_active=True).first()
+    entry = LedgerEntry.objects.filter(pk=ledger_id).first()
+    if not monitor or not entry:
+        return
+    execute_auto_payout_transfer(monitor, entry, skip_utility=True)
+
+
+def maybe_auto_payout_inbound(
+    monitor: CollectionMonitor,
+    entry: LedgerEntry,
+) -> DarajaOperation | None:
+    return execute_auto_payout_transfer(monitor, entry)
 
 
 def schedule_auto_payout_inbound(monitor: CollectionMonitor, entry: LedgerEntry) -> None:
-    """Queue B2C after the inbound ledger row is committed (keeps Safaricom callbacks fast)."""
-    if not monitor.auto_payout_enabled:
+    if not auto_payout_is_enabled(monitor):
         return
     if entry.direction != LedgerEntry.Direction.IN:
         return
@@ -108,11 +205,8 @@ def schedule_auto_payout_inbound(monitor: CollectionMonitor, entry: LedgerEntry)
     entry_id = entry.pk
 
     def _run() -> None:
-        from paybill.models import CollectionMonitor as MonitorModel
-        from paybill.models import LedgerEntry as EntryModel
-
-        fresh_monitor = MonitorModel.objects.filter(pk=monitor_id, is_active=True).first()
-        fresh_entry = EntryModel.objects.filter(pk=entry_id).first()
+        fresh_monitor = CollectionMonitor.objects.filter(pk=monitor_id, is_active=True).first()
+        fresh_entry = LedgerEntry.objects.filter(pk=entry_id).first()
         if fresh_monitor and fresh_entry:
             maybe_auto_payout_inbound(fresh_monitor, fresh_entry)
 

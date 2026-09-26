@@ -164,18 +164,57 @@ def serialize_collection_monitor_summary(
     }
 
 
+def company_is_registered(*, config: DarajaConfig | None = None) -> bool:
+    config = config or DarajaConfig.load()
+    if config.paybill_account_id:
+        return True
+    return bool((config.shortcode or "").strip() or (config.org_shortcode or "").strip())
+
+
+def company_display_name(*, config: DarajaConfig | None = None) -> str:
+    config = config or DarajaConfig.load()
+    if config.paybill_account_id:
+        account = config.paybill_account
+        name = (account.account_name or "").strip()
+        if name:
+            return name
+        return (account.paybill_number or "").strip() or "Registered company"
+    if (config.shortcode or "").strip():
+        return f"M-Pesa {config.shortcode}"
+    return "Registered company"
+
+
+def monitor_belongs_to_hub(monitor: CollectionMonitor, *, config: DarajaConfig | None = None) -> bool:
+    """True when this collection account is under the Daraja-registered hub company."""
+    config = config or DarajaConfig.load()
+    if not company_is_registered(config=config):
+        return False
+    return hub_collection_monitors(config=config).filter(pk=monitor.pk).exists()
+
+
+def hub_collection_monitors(*, config: DarajaConfig | None = None):
+    """Collection accounts for the registered hub company (single-tenant hub)."""
+    config = config or DarajaConfig.load()
+    qs = CollectionMonitor.objects.filter(is_active=True).select_related("paybill_account")
+    if not company_is_registered(config=config):
+        return qs.none()
+    return qs.order_by("label", "identifier")
+
+
 def hub_company_snapshot(*, config: DarajaConfig | None = None) -> dict:
     config = config or DarajaConfig.load()
     paybill_name = ""
     if config.paybill_account_id:
         paybill_name = (config.paybill_account.account_name or "").strip()
+    display = company_display_name(config=config)
     return {
+        "display_name": display,
         "environment": config.get_environment_display(),
         "environment_code": str(config.environment),
         "shortcode": (config.shortcode or "").strip(),
         "org_shortcode": (config.org_shortcode or "").strip(),
         "till_number": (config.till_number or "").strip(),
-        "hub_paybill_name": paybill_name,
+        "hub_paybill_name": paybill_name or display,
         "hub_paybill_number": (
             (config.paybill_account.paybill_number if config.paybill_account_id else "")
             or (config.shortcode or "").strip()
@@ -183,6 +222,7 @@ def hub_company_snapshot(*, config: DarajaConfig | None = None) -> dict:
         "stk_ready": config.stk_ready,
         "balance_ready": config.balance_ready,
         "has_app_credentials": config.has_app_credentials,
+        "is_registered": company_is_registered(config=config),
     }
 
 
