@@ -16,6 +16,10 @@ TERMINAL_STATUSES = {
     DarajaOperation.Status.TIMEOUT,
 }
 
+# Safaricom STK Push Query — non-final codes (keep operation QUEUED, refresh live message).
+STK_QUERY_PENDING_CODES = frozenset({"4999"})
+STK_QUERY_SUCCESS_CODES = frozenset({"0", "00"})
+
 
 def format_account_balances(raw: str) -> str:
     parts = []
@@ -127,15 +131,21 @@ def _stk_items(payload: dict) -> dict:
 
 def apply_stk_query(operation: DarajaOperation, payload: dict) -> DarajaOperation:
     code = str(payload.get("ResultCode", ""))
+    desc = (payload.get("ResultDesc") or "")[:255]
     operation.result_payload = payload
     operation.result_code = code
-    operation.result_desc = (payload.get("ResultDesc") or "")[:255]
-    if code in {"0", "00"}:
+    operation.result_desc = desc
+
+    if code in STK_QUERY_SUCCESS_CODES:
         operation.status = DarajaOperation.Status.SUCCESS
-        operation.summary = operation.result_desc or "Payment completed."
+        operation.summary = desc or "M-Pesa PIN accepted."
+    elif code in STK_QUERY_PENDING_CODES or not code:
+        if operation.status not in TERMINAL_STATUSES:
+            operation.status = DarajaOperation.Status.QUEUED
+        operation.summary = desc or operation.summary or "Waiting for M-Pesa PIN on your phone…"
     else:
         operation.status = DarajaOperation.Status.FAILED
-        operation.summary = operation.result_desc or "STK was not completed."
+        operation.summary = desc or "STK was not completed."
     operation.save()
     return operation
 

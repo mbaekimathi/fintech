@@ -33,6 +33,10 @@
   --gutter: max(1.15rem, calc((100% - var(--page)) / 2));
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --grid-line: rgba(13, 115, 119, 0.06);
+  --mpesa: #2eab2e;
+  --mpesa-deep: #1e7b1e;
+  --mpesa-soft: rgba(46, 171, 46, 0.14);
+  --mpesa-glow: rgba(46, 171, 46, 0.35);
 }
 
 *,
@@ -1783,7 +1787,8 @@ a:hover {
 }
 
 .pin-approval-backdrop[hidden],
-.stk-approval-backdrop[hidden] {
+.stk-approval-backdrop[hidden],
+.approval-backdrop[hidden] {
   display: none !important;
 }
 
@@ -1796,6 +1801,499 @@ a:hover {
   flex-wrap: wrap;
   gap: 0.5rem;
   justify-content: flex-end;
+}
+
+/* —— Payment approval modals —— */
+.approval-backdrop:not([hidden]) {
+  animation: approval-backdrop-in 0.35s var(--ease) both;
+}
+
+.approval-backdrop:not([hidden]) .approval-dialog {
+  animation: approval-dialog-in 0.45s var(--ease) both;
+}
+
+@keyframes approval-backdrop-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(6px);
+  }
+}
+
+@keyframes approval-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.approval-dialog {
+  width: min(26rem, 100%);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: linear-gradient(165deg, var(--raised) 0%, color-mix(in srgb, var(--surface-2) 40%, var(--raised)) 100%);
+}
+
+.approval-dialog__head {
+  padding: 1.15rem 1.2rem 0.85rem;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-soft) 55%, transparent) 0%,
+    transparent 100%
+  );
+}
+
+.stk-approval-dialog .approval-dialog__head {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--mpesa-soft) 80%, transparent) 0%,
+    transparent 100%
+  );
+}
+
+.approval-dialog__brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.approval-dialog__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.approval-dialog__badge--mpesa {
+  color: var(--mpesa-deep);
+  background: var(--mpesa-soft);
+  border: 1px solid color-mix(in srgb, var(--mpesa) 35%, transparent);
+}
+
+.approval-dialog__badge--app {
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.approval-dialog__close {
+  min-width: 2.25rem;
+  padding: 0.35rem;
+}
+
+.approval-dialog__title {
+  font-size: 1.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.approval-dialog__subtitle {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.approval-dialog__hero {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 7.5rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.approval-hero-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid var(--mpesa-glow);
+  opacity: 0;
+}
+
+.stk-approval-dialog[data-approval-state="sending"] .approval-hero-ring,
+.stk-approval-dialog[data-approval-state="waiting"] .approval-hero-ring,
+.stk-approval-dialog[data-approval-state="processing"] .approval-hero-ring {
+  opacity: 1;
+}
+
+.approval-hero-ring--outer {
+  width: 6.5rem;
+  height: 6.5rem;
+  animation: approval-ring-pulse 2.2s var(--ease) infinite;
+}
+
+.approval-hero-ring--inner {
+  width: 5rem;
+  height: 5rem;
+  animation: approval-ring-pulse 2.2s var(--ease) 0.45s infinite;
+}
+
+@keyframes approval-ring-pulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
+
+.approval-hero-icon {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 4.25rem;
+  height: 4.25rem;
+  border-radius: 1.1rem;
+  color: var(--mpesa-deep);
+  background: linear-gradient(145deg, var(--raised), color-mix(in srgb, var(--mpesa-soft) 60%, var(--raised)));
+  box-shadow:
+    0 4px 16px var(--mpesa-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.stk-approval-dialog[data-approval-state="sending"] .approval-hero-icon,
+.stk-approval-dialog[data-approval-state="waiting"] .approval-hero-icon {
+  animation: approval-phone-float 2.5s ease-in-out infinite;
+}
+
+.stk-approval-dialog[data-approval-state="success"] .approval-hero-icon {
+  color: var(--ok);
+  background: linear-gradient(145deg, var(--raised), var(--ok-soft));
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--ok) 25%, transparent);
+}
+
+.stk-approval-dialog[data-approval-state="error"] .approval-hero-icon {
+  color: var(--danger);
+  animation: approval-shake 0.45s var(--ease);
+}
+
+@keyframes approval-phone-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes approval-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+.approval-icon-signal {
+  animation: approval-signal-blink 1.2s step-end infinite;
+}
+
+@keyframes approval-signal-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
+.approval-summary-card {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  margin: 0 1.2rem 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--slate);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.approval-summary-card[hidden] {
+  display: none !important;
+}
+
+.approval-summary-card svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: var(--accent);
+}
+
+.approval-summary-card__text {
+  margin: 0;
+}
+
+.approval-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0 1.2rem 0.85rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--slate);
+}
+
+.approval-status__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.approval-status__headline {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.approval-status__label {
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.approval-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  align-self: flex-start;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mpesa-deep);
+  background: var(--mpesa-soft);
+  border: 1px solid color-mix(in srgb, var(--mpesa) 28%, transparent);
+}
+
+.approval-live-pill[hidden] {
+  display: none !important;
+}
+
+.approval-live-pill__dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--mpesa);
+  animation: approval-status-pulse 1.5s ease-out infinite;
+}
+
+.approval-outcome {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  margin: 0 1.2rem 0.85rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.approval-outcome[hidden] {
+  display: none !important;
+}
+
+.approval-outcome strong {
+  display: block;
+  margin-bottom: 0.15rem;
+}
+
+.approval-outcome p {
+  margin: 0;
+  color: inherit;
+  opacity: 0.92;
+}
+
+.approval-outcome--success {
+  color: var(--ok);
+  background: var(--ok-soft);
+  border: 1px solid color-mix(in srgb, var(--ok) 25%, var(--line));
+}
+
+.approval-outcome--fail {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 22%, var(--line));
+}
+
+.approval-status__dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.stk-approval-dialog[data-approval-state="sending"] .approval-status__dot,
+.stk-approval-dialog[data-approval-state="waiting"] .approval-status__dot,
+.stk-approval-dialog[data-approval-state="processing"] .approval-status__dot {
+  background: var(--mpesa);
+  box-shadow: 0 0 0 0 var(--mpesa-glow);
+  animation: approval-status-pulse 1.5s ease-out infinite;
+}
+
+.stk-approval-dialog[data-approval-state="success"] .approval-status {
+  background: var(--ok-soft);
+  border-color: color-mix(in srgb, var(--ok) 25%, var(--line));
+  color: var(--ok);
+}
+
+.stk-approval-dialog[data-approval-state="success"] .approval-status__dot {
+  background: var(--ok);
+  animation: none;
+}
+
+.stk-approval-dialog[data-approval-state="error"] .approval-status {
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 22%, var(--line));
+  color: var(--danger);
+}
+
+.stk-approval-dialog[data-approval-state="error"] .approval-status__dot {
+  background: var(--danger);
+  animation: none;
+}
+
+@keyframes approval-status-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--mpesa-glow);
+  }
+  70% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.approval-alert {
+  margin: 0 1.2rem 0.85rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.approval-alert[hidden] {
+  display: none !important;
+}
+
+.approval-alert--error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 20%, var(--line));
+}
+
+.approval-alert--warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--warn) 22%, var(--line));
+}
+
+.approval-dialog__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  padding: 0.85rem 1.2rem 1.15rem;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-2) 50%, var(--raised));
+}
+
+.approval-btn-alt,
+.approval-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.approval-btn-primary {
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
+
+.approval-pin-field {
+  margin: 0 1.2rem 0.65rem;
+}
+
+.approval-pin-field__label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--slate);
+}
+
+.approval-pin-field__wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--raised);
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+
+.approval-pin-field__wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.approval-pin-field__wrap svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.approval-pin-input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  font-size: 1.25rem;
+  letter-spacing: 0.35em;
+  font-family: var(--mono);
+  padding: 0.15rem 0;
+  outline: none;
+}
+
+.approval-pin-input::placeholder {
+  letter-spacing: 0.2em;
+  opacity: 0.45;
 }
 
 .readiness-grid {
@@ -2116,6 +2614,212 @@ a:hover {
 .row-view-btn:hover,
 .row-view-btn:focus-visible {
   color: var(--ink);
+}
+
+.transfer-detail-backdrop {
+  z-index: 120;
+  backdrop-filter: blur(6px);
+}
+
+.transfer-detail-dialog {
+  width: min(28rem, 100%);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
+  background: linear-gradient(165deg, var(--raised) 0%, color-mix(in srgb, var(--surface-2) 35%, var(--raised)) 100%);
+  box-shadow: var(--shadow-lg);
+}
+
+.transfer-detail-enter {
+  transition: opacity 0.32s var(--ease);
+}
+
+.transfer-detail-enter-start {
+  opacity: 0;
+}
+
+.transfer-detail-enter-end {
+  opacity: 1;
+}
+
+.transfer-detail-leave {
+  transition: opacity 0.22s var(--ease);
+}
+
+.transfer-detail-leave-start {
+  opacity: 1;
+}
+
+.transfer-detail-leave-end {
+  opacity: 0;
+}
+
+.transfer-detail-panel-enter {
+  transition:
+    opacity 0.42s var(--ease),
+    transform 0.42s var(--ease);
+}
+
+.transfer-detail-panel-enter-start {
+  opacity: 0;
+  transform: translateY(14px) scale(0.96);
+}
+
+.transfer-detail-panel-enter-end {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.transfer-detail__head {
+  padding: 1.1rem 1.2rem 0.75rem;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-soft) 50%, transparent) 0%,
+    transparent 100%
+  );
+}
+
+.transfer-detail__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.transfer-detail__title {
+  margin: 0;
+  font-size: 1.35rem;
+  flex: 1 1 auto;
+}
+
+.transfer-detail__status {
+  font-size: 0.78rem;
+}
+
+.transfer-detail__amount {
+  margin: 0 1.2rem 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--accent-soft), color-mix(in srgb, var(--mpesa-soft) 40%, var(--accent-soft)));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+}
+
+.transfer-detail__amount-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.2rem;
+}
+
+.transfer-detail__amount-value {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.transfer-detail-grid {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0 1.2rem 0.85rem;
+}
+
+.transfer-detail-item {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  transition:
+    border-color 0.2s var(--ease),
+    background 0.2s var(--ease);
+}
+
+.transfer-detail-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
+  background: var(--raised);
+}
+
+.transfer-detail-item__icon {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.55rem;
+  flex-shrink: 0;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+}
+
+.transfer-detail-item__icon--mpesa {
+  color: var(--mpesa-deep);
+  background: var(--mpesa-soft);
+}
+
+.transfer-detail-item__label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.12rem;
+}
+
+.transfer-detail-item__value {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--ink);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.transfer-detail-reason {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  margin: 0 1.2rem 0.85rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--warn) 22%, var(--line));
+  background: var(--warn-soft);
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.transfer-detail-reason strong {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--warn);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.transfer-detail-reason p {
+  margin: 0;
+}
+
+.transfer-detail-reason svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: var(--warn);
+}
+
+.transfer-detail__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.85rem 1.2rem 1.1rem;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-2) 55%, var(--raised));
 }
 
 .detail-list {
@@ -2785,6 +3489,18 @@ a:hover {
   }
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (max-width: 640px) {
   :root {
     --gutter: 0.9rem;
@@ -2824,6 +3540,210 @@ a:hover {
 
   .page-intro-copy h2 {
     font-size: 1.15rem;
+  }
+
+  .app-main {
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0));
+  }
+
+  .transactions-page .page-intro {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .transactions-page .metric-strip {
+    width: 100%;
+    align-self: stretch;
+  }
+
+  .transactions-page .panel {
+    overflow: hidden;
+  }
+
+  .ledger-table-wrap {
+    overflow: visible;
+    margin-inline: -0.15rem;
+  }
+
+  .ledger-table--cards thead {
+    display: none;
+  }
+
+  .ledger-table--cards tbody tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--raised);
+    box-shadow: var(--shadow);
+  }
+
+  .ledger-table--cards tbody tr:hover {
+    background: var(--raised);
+  }
+
+  .ledger-table--cards tbody td {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.65rem;
+    padding: 0.4rem 0;
+    border-bottom: 0;
+    white-space: normal;
+    text-align: right;
+    word-break: break-word;
+  }
+
+  .ledger-table--cards tbody td::before {
+    content: attr(data-label);
+    flex: 0 0 38%;
+    max-width: 42%;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: left;
+    padding-top: 0.12rem;
+  }
+
+  .ledger-table--cards tbody td[data-label=""]::before {
+    display: none;
+  }
+
+  .ledger-table--cards td.ledger-table-view {
+    justify-content: flex-end;
+    padding-top: 0.15rem;
+  }
+
+  .ledger-table--cards td.ledger-table-actions {
+    display: block;
+    padding-top: 0.65rem;
+    margin-top: 0.35rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .ledger-table--cards td.ledger-table-actions::before {
+    display: block;
+    margin-bottom: 0.45rem;
+    max-width: none;
+  }
+
+  .ledger-table--cards td.ledger-table-empty {
+    display: block;
+    text-align: center;
+  }
+
+  .ledger-table--cards td.ledger-table-empty::before {
+    display: none;
+  }
+
+  .ledger-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .ledger-toolbar .inline-form,
+  .ledger-toolbar .btn {
+    width: 100%;
+  }
+
+  .ledger-toolbar .btn {
+    justify-content: center;
+  }
+
+  /* Modals: bottom sheet, scrollable body */
+  .detail-backdrop,
+  .transfer-detail-backdrop,
+  .approval-backdrop,
+  .pin-approval-backdrop,
+  .stk-approval-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .detail-dialog,
+  .transfer-detail-dialog,
+  .approval-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: min(92dvh, 100%);
+    margin: 0;
+    border-radius: 1rem 1rem 0 0;
+    border-bottom: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: env(safe-area-inset-bottom, 0.5rem);
+  }
+
+  .modal-sheet-body,
+  .transfer-detail-shell {
+    min-height: 0;
+  }
+
+  .transfer-detail__head,
+  .approval-dialog__head {
+    padding-inline: 1rem;
+  }
+
+  .transfer-detail__amount,
+  .transfer-detail-grid,
+  .transfer-detail-reason,
+  .approval-status,
+  .approval-outcome,
+  .approval-alert,
+  .approval-pin-field,
+  .approval-dialog__hero {
+    margin-inline: 1rem;
+  }
+
+  .transfer-detail__foot,
+  .approval-dialog__foot {
+    padding-inline: 1rem;
+    padding-bottom: calc(0.85rem + env(safe-area-inset-bottom, 0));
+    flex-shrink: 0;
+  }
+
+  .transfer-detail__foot .btn,
+  .approval-dialog__foot .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .transfer-detail__title {
+    font-size: 1.15rem;
+  }
+
+  .transfer-detail__amount-value {
+    font-size: 1.45rem;
+  }
+
+  .approval-dialog__title {
+    font-size: 1.15rem;
+  }
+
+  .approval-dialog__foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .approval-btn-alt,
+  .approval-btn-primary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .approval-hero-icon {
+    width: 3.75rem;
+    height: 3.75rem;
+  }
+
+  .approval-dialog__hero {
+    height: 6.5rem;
   }
 }
 

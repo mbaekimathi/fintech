@@ -116,6 +116,11 @@
     return false;
   }
 
+  function openTransferDetail(detail) {
+    if (!detail || typeof detail !== "object") return;
+    window.dispatchEvent(new CustomEvent("open-transfer-detail", { detail }));
+  }
+
   function formatWhen(iso) {
     if (!iso) return "—";
     const date = new Date(iso);
@@ -175,7 +180,7 @@
       tr.setAttribute("data-pending-empty", "");
       const td = document.createElement("td");
       td.colSpan = colSpan;
-      td.className = "muted";
+      td.className = "muted ledger-table-empty";
       td.textContent = "No pending money requests.";
       tr.append(td);
       tbody.appendChild(tr);
@@ -191,34 +196,73 @@
       const title = row.title || `${row.requester_name} requested KES ${row.amount_label}`;
       const body = row.body || destText;
 
-      [
-        formatWhen(row.created_at),
-        `${row.requester_name || ""} · ${row.requester_code || ""}`.trim(),
-        row.category || "—",
-        destText,
-        row.source_paybill || "—",
-        `KES ${row.amount_label || row.amount || ""}`,
-      ].forEach((text) => {
+      const addCell = (label, content, { className = "" } = {}) => {
         const td = document.createElement("td");
-        td.textContent = text;
+        if (label) td.setAttribute("data-label", label);
+        if (className) td.className = className;
+        if (content instanceof Node) td.appendChild(content);
+        else td.textContent = content;
         tr.appendChild(td);
-      });
+        return td;
+      };
 
-      const statusTd = document.createElement("td");
+      addCell("When", formatWhen(row.created_at));
+      addCell(
+        "Initiator",
+        `${row.requester_name || ""}${row.requester_code ? ` · ${row.requester_code}` : ""}`.trim() ||
+          "—",
+      );
+      addCell("Category", row.category || "—");
+      addCell("To", destText);
+      addCell("From", row.source_paybill || "—");
+      addCell("Amount", `KES ${row.amount_label || row.amount || ""}`);
+
       const badge = document.createElement("span");
       badge.className = "badge badge-pending";
       badge.textContent = "Pending";
-      statusTd.appendChild(badge);
-      tr.appendChild(statusTd);
+      addCell("Status", badge);
 
       const viewTd = document.createElement("td");
-      viewTd.textContent = "—";
+      viewTd.className = "ledger-table-view";
+      viewTd.setAttribute("data-label", "");
+      const viewBtn = document.createElement("button");
+      viewBtn.type = "button";
+      viewBtn.className = "icon-btn row-view-btn";
+      viewBtn.setAttribute("aria-label", "View transfer details");
+      viewBtn.title = "View reason and details";
+      viewBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M2.1 12s3.6-7 9.9-7 9.9 7 9.9 7-3.6 7-9.9 7-9.9-7-9.9-7Z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      `;
+      const destFull = row.account_ref
+        ? `${destText} / ${row.account_ref}`
+        : destText;
+      viewBtn.addEventListener("click", () => {
+        openTransferDetail({
+          when: formatWhen(row.created_at),
+          initiator: row.requester_name || "",
+          initiatorCode: row.requester_code || "",
+          category: row.category || "",
+          reason: row.reason || "",
+          destination: destFull,
+          source: row.source_paybill || "",
+          amount: `KES ${row.amount_label || row.amount || ""}`,
+          status: "Pending",
+          statusBadge: row.status_badge || "pending",
+          reference: `MR-${row.money_request_id}`,
+        });
+      });
+      viewTd.appendChild(viewBtn);
       tr.appendChild(viewTd);
 
       if (canReview) {
         const actionsTd = document.createElement("td");
+        actionsTd.className = "ledger-table-actions";
+        actionsTd.setAttribute("data-label", "Actions");
         const toolbar = document.createElement("div");
-        toolbar.className = "toolbar";
+        toolbar.className = "toolbar ledger-toolbar";
 
         const approveForm = document.createElement("form");
         approveForm.method = "post";
@@ -416,13 +460,81 @@
       appSubmit: document.querySelector("[data-pin-approval-submit]"),
       appCancel: document.querySelector("[data-pin-approval-cancel]"),
       appDetail: document.querySelector("[data-pin-approval-detail]"),
+      appDetailWrap: document.querySelector("[data-pin-approval-detail-wrap]"),
       stkBackdrop: document.querySelector("[data-stk-approval-backdrop]"),
+      stkDialog: document.querySelector("[data-stk-approval-dialog]"),
       stkMessage: document.querySelector("[data-stk-approval-message]"),
       stkStatus: document.querySelector("[data-stk-approval-status]"),
       stkError: document.querySelector("[data-stk-approval-error]"),
       stkUseApp: document.querySelector("[data-stk-approval-use-app]"),
       stkCancel: document.querySelectorAll("[data-stk-approval-cancel]"),
       stkDetail: document.querySelector("[data-stk-approval-detail]"),
+      stkDetailWrap: document.querySelector("[data-stk-approval-detail-wrap]"),
+      stkHeadline: document.querySelector("[data-stk-approval-headline]"),
+      stkLive: document.querySelector("[data-stk-approval-live]"),
+      stkOutcomeSuccess: document.querySelector("[data-stk-approval-outcome-success]"),
+      stkOutcomeFail: document.querySelector("[data-stk-approval-outcome-fail]"),
+      stkSuccessReason: document.querySelector("[data-stk-approval-success-reason]"),
+      stkFailReason: document.querySelector("[data-stk-approval-fail-reason]"),
+      stkRetry: document.querySelector("[data-stk-approval-retry]"),
+    };
+
+    const STK_POLL_MS = 1500;
+
+    const setStkState = (state) => {
+      if (dom.stkDialog) dom.stkDialog.setAttribute("data-approval-state", state || "idle");
+    };
+
+    const resetStkOutcomes = () => {
+      if (dom.stkOutcomeSuccess) dom.stkOutcomeSuccess.hidden = true;
+      if (dom.stkOutcomeFail) dom.stkOutcomeFail.hidden = true;
+      if (dom.stkSuccessReason) dom.stkSuccessReason.textContent = "";
+      if (dom.stkFailReason) dom.stkFailReason.textContent = "";
+      if (dom.stkLive) dom.stkLive.hidden = true;
+      if (dom.stkRetry) dom.stkRetry.hidden = true;
+    };
+
+    const applyStkPoll = (data) => {
+      if (!data) return;
+      const phase = data.phase || (data.complete ? (data.success ? "success" : "failed") : "waiting");
+      setStkState(data.complete ? (data.success ? "success" : "error") : phase);
+
+      if (dom.stkHeadline) {
+        dom.stkHeadline.textContent =
+          data.headline ||
+          (data.complete
+            ? data.success
+              ? "M-Pesa PIN accepted"
+              : "M-Pesa did not approve"
+            : "Checking M-Pesa status…");
+      }
+      if (dom.stkStatus) {
+        dom.stkStatus.textContent = data.summary || data.reason || "Waiting for M-Pesa…";
+      }
+
+      const showLive = !data.complete;
+      if (dom.stkLive) dom.stkLive.hidden = !showLive;
+
+      if (dom.stkOutcomeSuccess) dom.stkOutcomeSuccess.hidden = !(data.complete && data.success);
+      if (dom.stkOutcomeFail) dom.stkOutcomeFail.hidden = !(data.complete && !data.success);
+      if (data.complete && data.success && dom.stkSuccessReason) {
+        dom.stkSuccessReason.textContent = data.reason || data.summary || "Your PIN was verified.";
+      }
+      if (data.complete && !data.success) {
+        const failText =
+          data.reason ||
+          data.summary ||
+          "The STK prompt was cancelled, timed out, or declined.";
+        if (dom.stkFailReason) dom.stkFailReason.textContent = failText;
+        if (dom.stkError) {
+          dom.stkError.textContent = failText;
+          dom.stkError.hidden = false;
+        }
+        if (dom.stkRetry) dom.stkRetry.hidden = false;
+      } else if (dom.stkError && !data.complete) {
+        dom.stkError.hidden = true;
+        dom.stkError.textContent = "";
+      }
     };
 
     let pendingForm = null;
@@ -436,14 +548,10 @@
       const detail = [form.getAttribute("data-approval-title"), form.getAttribute("data-approval-body")]
         .filter(Boolean)
         .join(" · ");
-      if (dom.appDetail) {
-        dom.appDetail.textContent = detail;
-        dom.appDetail.hidden = !detail;
-      }
-      if (dom.stkDetail) {
-        dom.stkDetail.textContent = detail;
-        dom.stkDetail.hidden = !detail;
-      }
+      if (dom.appDetail) dom.appDetail.textContent = detail;
+      if (dom.appDetailWrap) dom.appDetailWrap.hidden = !detail;
+      if (dom.stkDetail) dom.stkDetail.textContent = detail;
+      if (dom.stkDetailWrap) dom.stkDetailWrap.hidden = !detail;
     };
 
     const clearDeferred = () => {
@@ -476,11 +584,14 @@
 
     const closeStk = () => {
       stopStkPoll();
+      setStkState("idle");
+      resetStkOutcomes();
       if (dom.stkError) {
         dom.stkError.hidden = true;
         dom.stkError.textContent = "";
       }
-      if (dom.stkStatus) dom.stkStatus.textContent = "Waiting for M-Pesa…";
+      if (dom.stkHeadline) dom.stkHeadline.textContent = "Waiting for M-Pesa…";
+      if (dom.stkStatus) dom.stkStatus.textContent = "We check Safaricom every few seconds.";
       if (dom.stkUseApp) dom.stkUseApp.hidden = true;
       hideEl(dom.stkBackdrop);
     };
@@ -570,16 +681,16 @@
           try {
             const response = await fetch(pollUrl, {
               headers: { "X-Requested-With": "XMLHttpRequest" },
+              cache: "no-store",
             });
             if (!response.ok) throw new Error("Could not check STK status.");
             const data = await response.json();
-            if (dom.stkStatus) {
-              dom.stkStatus.textContent = data.summary || "Waiting for M-Pesa…";
-            }
+            applyStkPoll(data);
             if (data.complete) {
               finish(
                 Boolean(data.success),
-                data.summary ||
+                data.reason ||
+                  data.summary ||
                   "M-Pesa did not confirm this approval. Check your phone or try again.",
               );
             }
@@ -589,7 +700,7 @@
         };
 
         tick();
-        stkPollTimer = window.setInterval(tick, 2500);
+        stkPollTimer = window.setInterval(tick, STK_POLL_MS);
       });
 
     const openApp = (form) => {
@@ -650,11 +761,14 @@
       if (dom.stkUseApp) {
         dom.stkUseApp.hidden = !(ch.app && config.dualApproval && appReady(config, ch));
       }
+      resetStkOutcomes();
+      setStkState("sending");
       if (dom.stkMessage) {
         dom.stkMessage.textContent =
           "Sending an STK prompt to your phone. Enter your M-Pesa PIN when it arrives.";
       }
-      if (dom.stkStatus) dom.stkStatus.textContent = "Sending STK prompt…";
+      if (dom.stkHeadline) dom.stkHeadline.textContent = "Sending STK prompt…";
+      if (dom.stkStatus) dom.stkStatus.textContent = "Connecting to Safaricom…";
       if (dom.stkError) dom.stkError.hidden = true;
 
       try {
@@ -679,19 +793,36 @@
           dom.stkMessage.textContent =
             data.summary || "Check your phone and enter your M-Pesa PIN to approve this payment.";
         }
-        if (dom.stkStatus) dom.stkStatus.textContent = "Waiting for M-Pesa PIN…";
+        applyStkPoll({
+          phase: "waiting",
+          headline: "Enter your M-Pesa PIN on your phone",
+          summary:
+            data.summary || "STK sent — enter your PIN when prompted, then wait for confirmation.",
+          reason: data.summary || "",
+          complete: false,
+          success: false,
+        });
 
         const operationId = await pollStk(data.operation_id);
+        applyStkPoll({
+          phase: "success",
+          headline: "M-Pesa PIN accepted",
+          summary: "Sending the approved payment…",
+          reason: dom.stkSuccessReason?.textContent || "Your M-Pesa PIN was verified.",
+          complete: true,
+          success: true,
+        });
         await postApprove(form, operationId);
       } catch (err) {
         stopStkPoll();
-        if (dom.stkError) {
-          dom.stkError.textContent = err.message || "PIN approval failed.";
-          dom.stkError.hidden = false;
-        }
-        if (dom.stkStatus) {
-          dom.stkStatus.textContent = "STK prompt not completed. Fix the issue below or cancel.";
-        }
+        applyStkPoll({
+          phase: "failed",
+          headline: "M-Pesa did not approve this payment",
+          summary: err.message || "PIN approval failed.",
+          reason: err.message || "PIN approval failed.",
+          complete: true,
+          success: false,
+        });
         active = true;
         pendingForm = form;
         if (visible) showEl(dom.stkBackdrop);
@@ -838,6 +969,11 @@
       if (event.key === "Escape") cancel();
     });
     dom.stkCancel.forEach((btn) => btn.addEventListener("click", cancel));
+    dom.stkRetry?.addEventListener("click", () => {
+      if (!pendingForm) return;
+      const form = pendingForm;
+      runStk(form, { visible: true });
+    });
     dom.stkBackdrop?.addEventListener("click", (event) => {
       if (event.target === dom.stkBackdrop) cancel();
     });

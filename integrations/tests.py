@@ -674,3 +674,55 @@ class DarajaB2BPayloadTests(TestCase):
                 timeout_url=config.timeout_url,
             )
         self.assertIn("testapi", str(ctx.exception).lower())
+
+
+class StkQueryApplyTests(TestCase):
+    def test_pending_result_code_stays_queued(self):
+        from integrations.callbacks import apply_stk_query
+        from integrations.models import DarajaOperation
+
+        operation = DarajaOperation.objects.create(
+            kind=DarajaOperation.Kind.STK,
+            status=DarajaOperation.Status.QUEUED,
+            checkout_request_id="ws_CO_123",
+        )
+        apply_stk_query(
+            operation,
+            {
+                "ResultCode": "4999",
+                "ResultDesc": "The transaction is still under processing.",
+            },
+        )
+        operation.refresh_from_db()
+        self.assertEqual(operation.status, DarajaOperation.Status.QUEUED)
+        self.assertIn("processing", operation.summary.lower())
+
+    def test_success_result_code_marks_success(self):
+        from integrations.callbacks import apply_stk_query
+        from integrations.models import DarajaOperation
+
+        operation = DarajaOperation.objects.create(
+            kind=DarajaOperation.Kind.STK,
+            status=DarajaOperation.Status.QUEUED,
+            checkout_request_id="ws_CO_456",
+        )
+        apply_stk_query(
+            operation,
+            {"ResultCode": "0", "ResultDesc": "The service request is processed successfully."},
+        )
+        operation.refresh_from_db()
+        self.assertEqual(operation.status, DarajaOperation.Status.SUCCESS)
+
+    def test_cancel_result_code_marks_failed(self):
+        from integrations.callbacks import apply_stk_query
+        from integrations.models import DarajaOperation
+
+        operation = DarajaOperation.objects.create(
+            kind=DarajaOperation.Kind.STK,
+            status=DarajaOperation.Status.QUEUED,
+            checkout_request_id="ws_CO_789",
+        )
+        apply_stk_query(operation, {"ResultCode": "1032", "ResultDesc": "Request cancelled by user."})
+        operation.refresh_from_db()
+        self.assertEqual(operation.status, DarajaOperation.Status.FAILED)
+        self.assertIn("cancelled", operation.summary.lower())

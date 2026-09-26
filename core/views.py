@@ -19,6 +19,7 @@ from core.approval import (
     approval_ok,
     initiate_stk_approval,
     poll_stk_approval,
+    stk_approval_poll_payload,
     user_requires_stk_on_approval,
 )
 from core.approval_poll import pending_approval_queue_for_user
@@ -780,20 +781,7 @@ class StkApprovalPollView(RoleRequiredMixin, View):
             created_by=request.user,
         )
         operation = poll_stk_approval(operation)
-        return JsonResponse(
-            {
-                "ok": True,
-                "status": operation.status,
-                "summary": operation.summary or operation.result_desc or "Waiting",
-                "complete": operation.status
-                in {
-                    DarajaOperation.Status.SUCCESS,
-                    DarajaOperation.Status.FAILED,
-                    DarajaOperation.Status.TIMEOUT,
-                },
-                "success": operation.status == DarajaOperation.Status.SUCCESS,
-            }
-        )
+        return JsonResponse(stk_approval_poll_payload(operation))
 
 
 class DarajaSetupView(RoleRequiredMixin, UpdateView):

@@ -37,6 +37,8 @@ def _pending_item(
         "account_ref": money_request.account_ref or "",
         "source_paybill": money_request.source_paybill.paybill_number,
         "amount_label": f"{money_request.amount:,.2f}",
+        "reason": (money_request.reason or "").strip(),
+        "status_badge": "pending",
     }
 
 

@@ -9,7 +9,7 @@ from django.contrib import messages
 from django.utils import timezone
 
 from core.models import AppSettings
-from integrations.callbacks import TERMINAL_STATUSES, apply_stk_query
+from integrations.callbacks import STK_QUERY_PENDING_CODES, TERMINAL_STATUSES, apply_stk_query
 from integrations.daraja import callback_urls
 from integrations.daraja_client import DarajaClient, DarajaError
 from integrations.models import DarajaConfig, DarajaOperation
@@ -116,6 +116,40 @@ def poll_stk_approval(operation: DarajaOperation) -> DarajaOperation:
         body = DarajaClient(DarajaConfig.load()).stk_query(operation.checkout_request_id)
         apply_stk_query(operation, body)
     return operation
+
+
+def stk_approval_poll_payload(operation: DarajaOperation) -> dict:
+    """JSON for live STK approval polling in the browser."""
+    complete = operation.status in TERMINAL_STATUSES
+    success = operation.status == DarajaOperation.Status.SUCCESS
+    reason = (operation.result_desc or operation.summary or "").strip()
+    summary = (operation.summary or reason or "Waiting for M-Pesa…").strip()
+
+    if complete and success:
+        phase = "success"
+        headline = "M-Pesa PIN accepted"
+    elif complete:
+        phase = "failed"
+        headline = "M-Pesa did not approve this payment"
+    elif operation.result_code in STK_QUERY_PENDING_CODES or "processing" in reason.lower():
+        phase = "processing"
+        headline = "Confirming with Safaricom…"
+    else:
+        phase = "waiting"
+        headline = "Enter your M-Pesa PIN on your phone"
+
+    return {
+        "ok": True,
+        "status": operation.status,
+        "status_label": operation.get_status_display(),
+        "phase": phase,
+        "headline": headline,
+        "summary": summary,
+        "reason": reason or summary,
+        "result_code": operation.result_code or "",
+        "complete": complete,
+        "success": success,
+    }
 
 
 def verify_stk_approval(user, operation_id, money_request: MoneyRequest) -> bool:
