@@ -67,6 +67,8 @@ def shell(request):
     reviewer_has_phone = False
     profile_url = ""
     dual_approval_required = False
+    reviewer_approval_personal_off = False
+    reviewer_approval_profile_incomplete = False
     if user and user.is_authenticated and not user.is_pending:
         current = getattr(getattr(request, "resolver_match", None), "view_name", "")
         sections = _section_items(user)
@@ -84,6 +86,16 @@ def shell(request):
         profile_url = reverse("accounts:profile")
         dual_approval_required = (
             app_approval_required_for_user and stk_pin_approval_required_for_user
+        )
+        reviewer_approval_personal_off = (
+            user.can_review_requests()
+            and (app_approval_required or stk_pin_approval_required)
+            and not app_approval_required_for_user
+            and not stk_pin_approval_required_for_user
+        )
+        reviewer_approval_profile_incomplete = (
+            (app_approval_required_for_user and not reviewer_has_approval_password)
+            or (stk_pin_approval_required_for_user and not reviewer_has_phone)
         )
         # Dashboard is the hub: show every section the role can open.
         # Other pages keep only their own section link. System settings and
@@ -139,6 +151,8 @@ def shell(request):
         "reviewer_has_approval_password": reviewer_has_approval_password,
         "reviewer_has_phone": reviewer_has_phone,
         "dual_approval_required": dual_approval_required,
+        "reviewer_approval_personal_off": reviewer_approval_personal_off,
+        "reviewer_approval_profile_incomplete": reviewer_approval_profile_incomplete,
         "profile_url": profile_url,
         "webpush_enabled": webpush_enabled(),
         "webpush_vapid_public_key": vapid_public_key() if webpush_enabled() else "",

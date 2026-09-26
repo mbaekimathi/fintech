@@ -98,7 +98,7 @@
                         <button
                           type="{% if app_approval_required_for_user or stk_pin_approval_required_for_user %}button{% else %}submit{% endif %}"
                           class="btn btn-primary btn-small"
-                          {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}data-approval-trigger onclick="window.nexusApproval && window.nexusApproval.triggerFromButton(this, event)"{% endif %}
+                          {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}data-approval-trigger{% endif %}
                         >Approve &amp; send</button>
                       </form>
                       <form method="post" action="{% url 'core:notification-review' note.pk %}" class="inline-form">

@@ -978,12 +978,14 @@ function stkChannelReady(config, channels) {
 
 function showDialog(el) {
   if (!el) return;
+  el.hidden = false;
   el.removeAttribute("hidden");
 }
 
 function hideDialog(el) {
   if (!el) return;
   el.hidden = true;
+  el.setAttribute("hidden", "");
 }
 
 function formatRelativeTime(isoOrLabel) {
@@ -1584,6 +1586,28 @@ function initPaymentApproval(config) {
       runStkApproval(form, { silent: !manual && !isUserInApp() });
       return;
     }
+    approvalActive = false;
+    pendingForm = null;
+    const hubOn = Boolean(config?.hubApp || config?.hubStk);
+    if (hubOn && !channels.app && !channels.stk) {
+      window.alert(
+        "Hub payment approval is on, but your account is missing App on approve and/or PIN on approve under employee permissions. Ask an admin to enable them on your people profile, then refresh this page.",
+      );
+      return;
+    }
+    if (approvalRequired(config)) {
+      const needs = [];
+      if (channels.app && config?.hasApprovalPassword === false) {
+        needs.push("a 6-digit approval password on Profile");
+      }
+      if (channels.stk && config?.hasPhone === false) {
+        needs.push("your phone number on Profile");
+      }
+      if (needs.length) {
+        window.alert(`Before you can approve, set ${needs.join(" and ")}.`);
+        return;
+      }
+    }
     submitForm(form);
   };
 
@@ -1618,30 +1642,15 @@ function initPaymentApproval(config) {
     continueApproval(form);
   };
 
-  const handleApproveForm = (form, event) => {
-    if (!(form instanceof HTMLFormElement) || !form.hasAttribute("data-approval-form")) return;
-    if (!approvalRequired(config)) return;
-    event?.preventDefault();
-    event?.stopPropagation();
-    beginApprovalFlow(form, { force: true, manual: true });
-  };
-
-  document.addEventListener(
-    "click",
-    (event) => {
-      const btn = event.target.closest("[data-approval-trigger], form[data-approval-form] button[type='submit']");
-      if (!btn) return;
-      const form = btn.closest("form[data-approval-form]");
-      if (!form) return;
-      handleApproveForm(form, event);
-    },
-    true,
-  );
-
   document.addEventListener(
     "submit",
     (event) => {
-      handleApproveForm(event.target, event);
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement) || !form.hasAttribute("data-approval-form")) return;
+      if (!approvalRequired(config)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      beginApprovalFlow(form, { force: true, manual: true });
     },
     true,
   );
@@ -1776,6 +1785,36 @@ function initApprovalLiveCheck(config, approvalRuntime = null) {
   });
 }
 
+function triggerApprovalFromForm(form, event, runtime) {
+  if (!(form instanceof HTMLFormElement) || !form.hasAttribute("data-approval-form")) return;
+  const config = parseApprovalConfig();
+  if (!config) {
+    window.alert("Approval is not loaded. Refresh the page and try again.");
+    return;
+  }
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const begin =
+    runtime?.beginApprovalFlow ||
+    window.nexusApproval?.beginApprovalFlow ||
+    paymentApprovalApi.beginApprovalFlow;
+  if (!approvalRequired(config) && (config.hubApp || config.hubStk)) {
+    window.alert(
+      "Hub payment approval is on, but your account is missing App on approve and/or PIN on approve under employee permissions. Ask an admin to enable them on your people profile, then refresh this page.",
+    );
+    return;
+  }
+  if (!approvalRequired(config)) {
+    form.submit();
+    return;
+  }
+  if (begin === paymentApprovalApi.beginApprovalFlow) {
+    window.alert("Approval prompts failed to start. Hard-refresh the page (Ctrl+F5) and try again.");
+    return;
+  }
+  begin(form, { force: true, manual: true });
+}
+
 function initReviewApproval() {
   if (approvalBooted) return;
   const config = parseApprovalConfig();
@@ -1783,6 +1822,21 @@ function initReviewApproval() {
   approvalBooted = true;
   const runtime = initPaymentApproval(config);
   initApprovalLiveCheck(config, runtime);
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      const btn = event.target.closest(
+        "[data-approval-trigger], form[data-approval-form] button[type='submit']",
+      );
+      if (!btn) return;
+      const form = btn.closest("form[data-approval-form]");
+      if (!form) return;
+      triggerApprovalFromForm(form, event, runtime);
+    },
+    true,
+  );
+
   window.nexusApproval = {
     ready: true,
     config,
@@ -1790,12 +1844,7 @@ function initReviewApproval() {
     triggerFromButton(button, event) {
       const form = button?.closest?.("form[data-approval-form]");
       if (!form) return;
-      event?.preventDefault?.();
-      event?.stopPropagation?.();
-      (runtime?.beginApprovalFlow || paymentApprovalApi.beginApprovalFlow)(form, {
-        force: true,
-        manual: true,
-      });
+      triggerApprovalFromForm(form, event, runtime);
     },
   };
 }

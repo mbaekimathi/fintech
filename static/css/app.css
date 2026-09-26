@@ -1782,7 +1782,8 @@ a:hover {
   margin-top: 0.15rem;
 }
 
-.pin-approval-backdrop[hidden] {
+.pin-approval-backdrop[hidden],
+.stk-approval-backdrop[hidden] {
   display: none !important;
 }
 

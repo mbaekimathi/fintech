@@ -17,6 +17,26 @@
 
     {% if show_pending_requests %}
       <section class="panel">
+        {% if can_review_requests and reviewer_approval_personal_off %}
+          <p class="integration-banner is-bad" role="status">
+            Hub payment approval is on, but <strong>your account</strong> does not have
+            <strong>App on approve</strong> or <strong>PIN on approve</strong> in employee permissions.
+            Approvals will not show a password popup or STK until an admin enables at least one on your profile.
+          </p>
+        {% elif can_review_requests and reviewer_approval_profile_incomplete %}
+          <p class="integration-banner" role="status">
+            {% if app_approval_required_for_user and not reviewer_has_approval_password %}
+              Set your <a href="{{ profile_url }}">6-digit approval password</a>
+            {% endif %}
+            {% if app_approval_required_for_user and not reviewer_has_approval_password and stk_pin_approval_required_for_user and not reviewer_has_phone %}
+              and
+            {% endif %}
+            {% if stk_pin_approval_required_for_user and not reviewer_has_phone %}
+              add your <a href="{{ profile_url }}">phone number</a> for M-Pesa PIN approval
+            {% endif %}
+            before using Approve &amp; send.
+          </p>
+        {% endif %}
         <div class="panel-head">
           <div>
             <h2>Pending transactions</h2>
@@ -107,7 +127,7 @@
                           <button
                             type="{% if app_approval_required_for_user or stk_pin_approval_required_for_user %}button{% else %}submit{% endif %}"
                             class="btn btn-primary btn-small"
-                            {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}data-approval-trigger onclick="window.nexusApproval && window.nexusApproval.triggerFromButton(this, event)"{% endif %}
+                            {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}data-approval-trigger{% endif %}
                           >Approve &amp; send</button>
                         </form>
                         <form method="post" action="{% url 'paybill:money-request-review' row.pk %}" class="inline-form">
