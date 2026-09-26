@@ -1454,3 +1454,91 @@ class AppSettingsTests(TestCase):
         )
         req.refresh_from_db()
         self.assertEqual(req.status, MoneyRequest.Status.APPROVED)
+
+
+class SmsDeliveryTests(TestCase):
+    def setUp(self):
+        self.admin = UserModel.objects.create_user(
+            staff_code="500001",
+            password="test-pass-123",
+            email="admin.sms@example.com",
+            role=User.Role.ADMIN,
+            is_approved=True,
+        )
+        self.reviewer = UserModel.objects.create_user(
+            staff_code="500002",
+            password="test-pass-123",
+            email="reviewer.sms@example.com",
+            role=User.Role.IT_SUPPORT,
+            is_approved=True,
+            phone="0712345678",
+        )
+
+    @override_settings(
+        SMS_PROVIDER="africastalking",
+        AFRICASTALKING_USERNAME="",
+        AFRICASTALKING_API_KEY="",
+        APPROVAL_GUEST_LINK_SMS=True,
+    )
+    def test_unconfigured_live_sms_skips_guest_link_silently(self):
+        from core.approval_link import maybe_sms_guest_approval_link
+        from paybill.models import MoneyRequest, PaybillAccount
+
+        paybill = PaybillAccount.objects.create(paybill_number="900101", account_name="Hub")
+        req = MoneyRequest.objects.create(
+            requester=self.admin,
+            source_paybill=paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0711111111",
+            amount=Decimal("100.00"),
+            reason="SMS skip",
+            status=MoneyRequest.Status.PENDING,
+        )
+        maybe_sms_guest_approval_link(self.reviewer, req, "https://fin.example/approve/guest/token/")
+        self.assertFalse(
+            Notification.objects.filter(title="SMS delivery problem").exists()
+        )
+
+    @override_settings(
+        SMS_PROVIDER="africastalking",
+        AFRICASTALKING_USERNAME="sandbox",
+        AFRICASTALKING_API_KEY="bad-key",
+        APPROVAL_GUEST_LINK_SMS=True,
+    )
+    def test_live_sms_failure_notifies_admins(self):
+        import io
+        import urllib.error
+        from core.approval_link import maybe_sms_guest_approval_link
+        from paybill.models import MoneyRequest, PaybillAccount
+
+        paybill = PaybillAccount.objects.create(paybill_number="900102", account_name="Hub")
+        req = MoneyRequest.objects.create(
+            requester=self.admin,
+            source_paybill=paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0711111111",
+            amount=Decimal("100.00"),
+            reason="SMS fail",
+            status=MoneyRequest.Status.PENDING,
+        )
+        err = urllib.error.HTTPError(
+            url="https://api.africastalking.com/version1/messaging",
+            code=401,
+            msg="Unauthorized",
+            hdrs={},
+            fp=io.BytesIO(b"The supplied authentication is invalid"),
+        )
+        with patch("urllib.request.urlopen", side_effect=err):
+            maybe_sms_guest_approval_link(
+                self.reviewer,
+                req,
+                "https://fin.example/approve/guest/token/",
+            )
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.admin,
+                title="SMS delivery problem",
+            ).exists()
+        )

@@ -18,6 +18,28 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
 
+def _vapid_signer(private: str):
+    """Build a py_vapid.Vapid instance from PEM or base64url DER/raw key material."""
+    from py_vapid import Vapid
+
+    key = (private or "").strip()
+    if not key:
+        raise ValueError("empty VAPID private key")
+    if "BEGIN" in key:
+        return Vapid.from_pem(key.encode("utf-8"))
+    return Vapid.from_string(key)
+
+
+def _private_key_for_storage(vapid) -> str:
+    """Format pywebpush accepts via Vapid.from_string (base64url PKCS#8 DER)."""
+    der = vapid.private_key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    return _b64url(der)
+
+
 def _ensure_vapid_keys() -> tuple[str, str]:
     public = (getattr(settings, "WEBPUSH_VAPID_PUBLIC_KEY", "") or "").strip()
     private = (getattr(settings, "WEBPUSH_VAPID_PRIVATE_KEY", "") or "").strip()
@@ -47,7 +69,7 @@ def _ensure_vapid_keys() -> tuple[str, str]:
         serialization.PublicFormat.UncompressedPoint,
     )
     public = _b64url(public_bytes)
-    private = vapid.private_pem().decode("ascii")
+    private = _private_key_for_storage(vapid)
     try:
         path.write_text(
             json.dumps({"public_key": public, "private_key": private}, indent=2),
@@ -97,6 +119,11 @@ def send_web_push_to_user(user, *, title: str, body: str = "", url: str = "/") -
         }
     )
     private = vapid_private_key()
+    try:
+        signer = _vapid_signer(private)
+    except Exception:
+        logger.exception("Invalid WEBPUSH VAPID private key")
+        return 0
     claims = vapid_claims()
     sent = 0
     stale_ids: list[int] = []
@@ -105,7 +132,7 @@ def send_web_push_to_user(user, *, title: str, body: str = "", url: str = "/") -
             webpush(
                 subscription_info=row.as_subscription_info(),
                 data=payload,
-                vapid_private_key=private,
+                vapid_private_key=signer,
                 vapid_claims=claims,
             )
             sent += 1

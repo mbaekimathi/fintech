@@ -114,18 +114,22 @@ def maybe_sms_guest_approval_link(user, money_request, full_url: str) -> None:
         return
     if not getattr(django_settings, "APPROVAL_GUEST_LINK_SMS", True):
         return
-    try:
-        from core.approval_sms import _send_sms_message
-        from integrations.daraja_client import DarajaError, kenya_msisdn
+    from core.approval_sms import _handle_sms_failure, _send_sms_message, sms_delivery_mode
+    from integrations.daraja_client import DarajaError, kenya_msisdn
 
+    if sms_delivery_mode() == "off":
+        return
+    try:
         product = getattr(django_settings, "PRODUCT_SMS_NAME", "NEXUS")
         message = (
             f"{product}: Payment needs your approval. Open this link (no login): {full_url} "
             "Enter your hub approval password to approve and send."
         )
         _send_sms_message(to_msisdn=kenya_msisdn(user.phone), message=message)
-    except Exception as exc:
-        logger.warning("Guest approval SMS failed for user %s: %s", user.pk, exc)
+    except DarajaError as exc:
+        _handle_sms_failure(exc, context=f"Guest approval link SMS (user {user.pk})")
+    except Exception:
+        logger.exception("Guest approval SMS failed for user %s", user.pk)
 
 
 def request_proxy_for_user(user, post_data):
