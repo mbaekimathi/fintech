@@ -16,6 +16,11 @@ from paybill.services import _ack_fields, _redact
 
 logger = logging.getLogger(__name__)
 
+_RETRYABLE_STATUSES = {
+    DarajaOperation.Status.FAILED,
+    DarajaOperation.Status.TIMEOUT,
+}
+
 
 def normalize_client_phone(raw: str) -> str:
     return kenya_msisdn((raw or "").strip())
@@ -28,6 +33,19 @@ def _digits(value: str) -> str:
 def monitor_payout_destination(monitor: CollectionMonitor) -> str:
     raw = (monitor.auto_payout_destination or monitor.auto_payout_phone or "").strip()
     return raw
+
+
+def collection_credits_utility_float(monitor: CollectionMonitor) -> bool:
+    """Paybill/till collections usually land in the utility bucket before payout."""
+    return monitor.account_type in (
+        CollectionMonitor.AccountType.PAYBILL,
+        CollectionMonitor.AccountType.TILL,
+    )
+
+
+def should_move_utility_first(monitor: CollectionMonitor) -> bool:
+    """Move utility→working before paying out (required for paybill/till collection accounts)."""
+    return bool(monitor.auto_payout_utility_first or collection_credits_utility_float(monitor))
 
 
 def auto_payout_is_enabled(monitor: CollectionMonitor) -> bool:
@@ -44,10 +62,39 @@ def auto_payout_is_enabled(monitor: CollectionMonitor) -> bool:
     return True
 
 
-def _payout_already_queued(ledger_entry_id: int) -> bool:
+def _auto_payout_ops_for_ledger(ledger_entry_id: int):
     return DarajaOperation.objects.filter(
         request_payload__auto_payout_ledger_id=ledger_entry_id,
-    ).exists()
+    )
+
+
+def _chain_phase(operation: DarajaOperation) -> str:
+    chain = (operation.request_payload or {}).get("auto_payout_chain") or {}
+    return (chain.get("phase") or "payout").strip().lower()
+
+
+def _payout_already_queued(ledger_entry_id: int) -> bool:
+    """True when a final payout op exists and should not be duplicated."""
+    for op in _auto_payout_ops_for_ledger(ledger_entry_id):
+        if _chain_phase(op) == "utility":
+            continue
+        if op.status in _RETRYABLE_STATUSES:
+            continue
+        return True
+    return False
+
+
+def _utility_step_pending(ledger_entry_id: int) -> bool:
+    """True while utility→working is queued and not yet finished."""
+    for op in _auto_payout_ops_for_ledger(ledger_entry_id):
+        if _chain_phase(op) != "utility":
+            continue
+        if op.status == DarajaOperation.Status.SUCCESS:
+            return False
+        if op.status in _RETRYABLE_STATUSES:
+            continue
+        return True
+    return False
 
 
 def _chain_payload(*, monitor: CollectionMonitor, entry: LedgerEntry, phase: str) -> dict:
@@ -78,15 +125,24 @@ def execute_auto_payout_transfer(
 
     config = DarajaConfig.load()
     urls = callback_urls()
-    result_url = urls.get("result_url") or ""
-    timeout_url = urls.get("timeout_url") or ""
+    result_url = urls.get("result_url") or (config.result_url or "").strip()
+    timeout_url = urls.get("timeout_url") or (config.timeout_url or "").strip()
     if not result_url:
-        logger.warning("Auto payout skipped: no public result URL configured")
+        logger.warning(
+            "Auto payout skipped for ledger %s: no public result URL (set DARAJA_PUBLIC_BASE_URL)",
+            entry.pk,
+        )
         return None
 
-    if monitor.auto_payout_utility_first and not skip_utility:
-        if not config.b2b_enabled or not config.balance_ready:
-            logger.warning("Auto payout utility step skipped: B2B/balance not ready")
+    move_utility = should_move_utility_first(monitor) and not skip_utility
+    if move_utility:
+        if _utility_step_pending(entry.pk):
+            return None
+        if not config.b2b_ready:
+            logger.warning(
+                "Auto payout utility step skipped for ledger %s: B2B/balance not ready on Daraja setup",
+                entry.pk,
+            )
             return None
         client = DarajaClient(config)
         try:
@@ -96,7 +152,7 @@ def execute_auto_payout_transfer(
                 timeout_url=timeout_url,
             )
         except DarajaError as exc:
-            logger.warning("Auto payout utility step failed: %s", exc)
+            logger.warning("Auto payout utility step failed for ledger %s: %s", entry.pk, exc)
             return None
         meta = {
             "auto_payout_ledger_id": entry.pk,
@@ -121,7 +177,7 @@ def execute_auto_payout_transfer(
     try:
         if dest_type == MoneyRequest.DestinationType.PHONE:
             if not config.b2c_ready:
-                logger.warning("Auto payout skipped: B2C not ready")
+                logger.warning("Auto payout skipped for ledger %s: B2C not ready", entry.pk)
                 return None
             phone = normalize_client_phone(raw_dest)
             body, payload, dest = client.b2c_send(
@@ -134,7 +190,7 @@ def execute_auto_payout_transfer(
             account_ref = monitor.collection_code
         else:
             if not config.b2b_ready:
-                logger.warning("Auto payout skipped: B2B not ready")
+                logger.warning("Auto payout skipped for ledger %s: B2B not ready", entry.pk)
                 return None
             to_till = dest_type == MoneyRequest.DestinationType.TILL
             body, payload, dest = client.b2b_send(

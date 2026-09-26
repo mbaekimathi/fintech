@@ -270,6 +270,13 @@ class CollectionMonitorPayoutForm(forms.ModelForm):
         if not cleaned.get("auto_payout_enabled"):
             return cleaned
 
+        account_type = getattr(self.instance, "account_type", None)
+        if account_type in (
+            CollectionMonitor.AccountType.PAYBILL,
+            CollectionMonitor.AccountType.TILL,
+        ):
+            cleaned["auto_payout_utility_first"] = True
+
         dest_type = cleaned.get("auto_payout_destination_type") or MoneyRequest.DestinationType.PHONE
         if dest_type in (
             MoneyRequest.DestinationType.PAYBILL,
@@ -323,6 +330,11 @@ class CollectionMonitorPayoutForm(forms.ModelForm):
         instance = super().save(commit=False)
         if instance.auto_payout_destination_type == MR.DestinationType.PHONE:
             instance.auto_payout_phone = instance.auto_payout_destination
+        if instance.auto_payout_enabled and instance.account_type in (
+            CollectionMonitor.AccountType.PAYBILL,
+            CollectionMonitor.AccountType.TILL,
+        ):
+            instance.auto_payout_utility_first = True
         if commit:
             instance.save()
         return instance

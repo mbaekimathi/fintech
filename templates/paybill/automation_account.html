@@ -219,7 +219,13 @@
                 {{ payout_form.auto_payout_utility_first }}
                 <span>
                   Move <strong>utility</strong> to <strong>working</strong> before sending.
-                  <span class="automations-account-payout-utility-note muted">Required for paybill and till.</span>
+                  <span class="automations-account-payout-utility-note muted">
+                    {% if row.account_type == 'PAYBILL' or row.account_type == 'TILL' %}
+                      Required — collections on this paybill/till land in utility float first.
+                    {% else %}
+                      Required when paying out to another paybill or till.
+                    {% endif %}
+                  </span>
                 </span>
               </label>
               {% if payout_form.auto_payout_utility_first.errors %}

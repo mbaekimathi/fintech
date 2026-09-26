@@ -202,9 +202,17 @@ def apply_result_callback(payload: dict) -> DarajaOperation | None:
     conversation = result.get("ConversationID") or ""
     operation = None
     if origin:
-        operation = DarajaOperation.objects.filter(originator_conversation_id=origin).first()
+        operation = (
+            DarajaOperation.objects.filter(originator_conversation_id=origin)
+            .select_related("collection_monitor", "collection_monitor__paybill_account")
+            .first()
+        )
     if operation is None and conversation:
-        operation = DarajaOperation.objects.filter(conversation_id=conversation).first()
+        operation = (
+            DarajaOperation.objects.filter(conversation_id=conversation)
+            .select_related("collection_monitor", "collection_monitor__paybill_account")
+            .first()
+        )
     if operation is None:
         return None
     code = str(result.get("ResultCode", ""))
