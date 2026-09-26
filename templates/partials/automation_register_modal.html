@@ -1,0 +1,64 @@
+<div
+  class="detail-backdrop automation-register-backdrop"
+  x-show="registerOpen"
+  x-cloak
+  @click.self="registerOpen = false"
+  role="presentation"
+>
+  <div
+    class="detail-dialog automation-register-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="automation-register-title"
+    @click.stop
+    x-show="registerOpen"
+  >
+    <header class="approval-dialog__head approval-dialog__head--compact">
+      <div class="approval-dialog__headline-row">
+        <h2 id="automation-register-title">Register collection account</h2>
+        <button type="button" class="approval-dialog__close btn btn-ghost btn-small" @click="registerOpen = false" aria-label="Close">
+          ×
+        </button>
+      </div>
+      <p class="muted automation-register-intro">Linked to the ledger. Hub Daraja STK is used unless you add your own credentials below.</p>
+    </header>
+    <form method="post" action="{% url 'paybill:automations' %}" class="form-grid automations-form" novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="intent" value="create">
+      {% if form.non_field_errors %}
+        <div class="flash flash-error span-2">{{ form.non_field_errors|join:" " }}</div>
+      {% endif %}
+      {% include "partials/labeled_field.html" with field=form.label span="2" %}
+      {% include "partials/labeled_field.html" with field=form.account_type %}
+      {% include "partials/labeled_field.html" with field=form.identifier %}
+      {% include "partials/labeled_field.html" with field=form.account_ref span="2" %}
+      <div class="field span-2">
+        <label class="check-row">
+          {{ form.auto_refresh }}
+          <span>{{ form.auto_refresh.label }}</span>
+        </label>
+        {% if form.auto_refresh.help_text %}<p class="field-hint">{{ form.auto_refresh.help_text }}</p>{% endif %}
+      </div>
+      <details class="daraja-advanced span-2">
+        <summary>Own Daraja STK credentials</summary>
+        <p class="field-hint">Default: hub Daraja. Each account still gets a unique collection ID.</p>
+        <div class="form-grid">
+          <div class="field span-2">
+            <label class="check-row">
+              {{ form.use_hub_daraja }}
+              <span>{{ form.use_hub_daraja.label }}</span>
+            </label>
+          </div>
+          {% include "partials/labeled_field.html" with field=form.daraja_shortcode span="2" %}
+          {% include "partials/labeled_field.html" with field=form.daraja_consumer_key span="2" %}
+          {% include "partials/labeled_field.html" with field=form.daraja_consumer_secret secret=True span="2" %}
+          {% include "partials/labeled_field.html" with field=form.daraja_passkey secret=True span="2" %}
+        </div>
+      </details>
+      <div class="automation-register-foot span-2">
+        <button type="button" class="btn btn-ghost" @click="registerOpen = false">Cancel</button>
+        <button type="submit" class="btn btn-primary">Register account</button>
+      </div>
+    </form>
+  </div>
+</div>

@@ -901,12 +901,204 @@ function initEmployeePermissions() {
   });
 }
 
+function initAutomations() {
+  const board = document.querySelector("[data-automations]");
+  const page = document.querySelector(".automations-page");
+  if (!board && !page) return;
+  const copyRoot = page || board;
+  if (!board) {
+    page?.querySelectorAll("[data-copy-text], [data-copy-target]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        let text = btn.getAttribute("data-copy-text") || "";
+        if (!text) {
+          const id = btn.getAttribute("data-copy-target");
+          const el = id ? document.getElementById(id) : null;
+          if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+            text = el.value?.trim() || "";
+          } else {
+            text = el?.textContent?.trim() || "";
+          }
+        }
+        if (!text) return;
+        try {
+          await navigator.clipboard.writeText(text);
+          const prev = btn.textContent;
+          btn.textContent = "Copied";
+          window.setTimeout(() => {
+            btn.textContent = prev;
+          }, 1600);
+        } catch (_err) {
+          /* ignore */
+        }
+      });
+    });
+    return;
+  }
+
+  const pollUrl = board.getAttribute("data-poll-url");
+  const postUrl = board.getAttribute("data-post-url");
+  const balanceReady = board.getAttribute("data-balance-ready") === "1";
+  const tbody = board.querySelector("[data-automations-rows]");
+  const hintEl = board.querySelector("[data-automations-hint]");
+  const csrf =
+    document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") ||
+    document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
+    document.cookie.match(/csrftoken=([^;]+)/)?.[1] ||
+    "";
+
+  const formatAmount = (amount) => {
+    if (amount == null || amount === "") return "—";
+    const value = Number(amount);
+    if (!Number.isFinite(value)) return "—";
+    return value.toLocaleString("en-KE", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const applyRow = (row, data) => {
+    const tr = tbody?.querySelector(`[data-monitor-id="${data.id}"]`);
+    if (!tr) return;
+    tr.dataset.watch = data.balance_watch ? "1" : "";
+    tr.dataset.autoRefresh = data.auto_refresh ? "1" : "";
+    const set = (col, html) => {
+      const cell = tr.querySelector(`[data-col="${col}"]`);
+      if (cell) cell.innerHTML = html;
+    };
+    set("label", data.label);
+    const codeEl = tr.querySelector('[data-col="code"]');
+    if (codeEl && data.collection_code) codeEl.textContent = data.collection_code;
+    const copyBtn = tr.querySelector("[data-copy-text]");
+    if (copyBtn && data.collection_code) copyBtn.setAttribute("data-copy-text", data.collection_code);
+    const typeEl = tr.querySelector('[data-col="type"]');
+    if (typeEl) typeEl.textContent = data.account_type_label || "";
+    let idHtml = data.identifier;
+    if (data.account_ref) {
+      idHtml += ` <span class="muted"> · ac ${data.account_ref}</span>`;
+    }
+    set("identifier", idHtml);
+    set("collected", `KES ${formatAmount(data.collected_total)}`);
+    if (data.live_amount != null) {
+      set("live", `${data.live_currency || "KES"} ${formatAmount(data.live_amount)}`);
+    } else {
+      set("live", "—");
+    }
+    set("when", data.balance_when || "—");
+  };
+
+  const anyWatching = () => Boolean(tbody?.querySelector('[data-watch="1"]'));
+
+  const poll = async () => {
+    if (!pollUrl) return;
+    try {
+      const response = await fetch(pollUrl, {
+        headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+      });
+      if (!response.ok) return;
+      const payload = await response.json();
+      (payload.accounts || []).forEach((row) => applyRow(row, row));
+      if (anyWatching()) {
+        window.setTimeout(poll, 1500);
+      } else if (hintEl && payload.balance_ready) {
+        hintEl.textContent = "Balances are up to date.";
+      }
+    } catch (_err) {
+      /* keep last values */
+    }
+  };
+
+  const postIntent = async (body) => {
+    const response = await fetch(postUrl, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-CSRFToken": csrf,
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      body,
+    });
+    const data = await response.json().catch(() => ({}));
+    return { response, data };
+  };
+
+  board.addEventListener("submit", async (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !board.contains(form)) return;
+    const intentInput = form.querySelector('input[name="intent"]');
+    const intent = intentInput?.value;
+    if (intent !== "refresh" && intent !== "refresh-all") return;
+    event.preventDefault();
+    if (!balanceReady) return;
+    const body = new URLSearchParams(new FormData(form));
+    if (hintEl) hintEl.textContent = "Requesting live balance from Safaricom…";
+    const { response, data } = await postIntent(body);
+    if (!response.ok) {
+      if (hintEl) hintEl.textContent = data.detail || "Could not refresh balance.";
+      return;
+    }
+    (data.accounts || []).forEach((row) => applyRow(row, row));
+    if (hintEl) {
+      hintEl.textContent = data.refreshed
+        ? "Waiting for Safaricom callbacks…"
+        : "Refresh sent.";
+    }
+    poll();
+  });
+
+  if (anyWatching()) poll();
+
+  window.setInterval(async () => {
+    if (!balanceReady || !postUrl) return;
+    const autoRows = tbody?.querySelectorAll('[data-auto-refresh="1"]');
+    if (!autoRows?.length) return;
+    if (anyWatching()) return;
+    const body = new URLSearchParams({ intent: "refresh-all" });
+    body.append("csrfmiddlewaretoken", csrf);
+    try {
+      await postIntent(body);
+      poll();
+    } catch (_err) {
+      /* ignore background refresh errors */
+    }
+  }, 30000);
+
+  copyRoot.querySelectorAll("[data-copy-text], [data-copy-target]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      let text = btn.getAttribute("data-copy-text") || "";
+      if (!text) {
+        const id = btn.getAttribute("data-copy-target");
+        const el = id ? document.getElementById(id) : null;
+        if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+          text = el.value?.trim() || "";
+        } else {
+          text = el?.textContent?.trim() || "";
+        }
+      }
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const prev = btn.textContent;
+        btn.textContent = "Copied";
+        window.setTimeout(() => {
+          btn.textContent = prev;
+        }, 1600);
+      } catch (_err) {
+        /* ignore */
+      }
+    });
+  });
+
+  poll();
+}
+
 function runShellInits() {
   const secondaryInits = [
     initDarajaSetup,
     initDarajaTests,
     initHubBalance,
     initUtilityTransfer,
+    initAutomations,
     initWebPush,
     initEmployeePermissions,
     initAppSettings,

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from paybill.models import LedgerEntry, PaybillAccount
@@ -64,3 +66,13 @@ class LedgerEntrySerializer(serializers.ModelSerializer):
         attrs["paybill_account"] = account
         attrs["connected_system"] = system
         return attrs
+
+
+class CollectionStkSerializer(serializers.Serializer):
+    phone = serializers.CharField(max_length=20)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("1"))
+
+    def validate_phone(self, value):
+        from integrations.daraja_client import kenya_msisdn
+
+        return kenya_msisdn(value)

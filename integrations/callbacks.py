@@ -155,11 +155,19 @@ def apply_stk_callback(payload: dict) -> DarajaOperation | None:
     checkout = callback.get("CheckoutRequestID") or ""
     operation = None
     if checkout:
-        operation = DarajaOperation.objects.filter(checkout_request_id=checkout).first()
+        operation = (
+            DarajaOperation.objects.filter(checkout_request_id=checkout)
+            .select_related("collection_monitor", "collection_monitor__paybill_account")
+            .first()
+        )
     if operation is None:
         merchant = callback.get("MerchantRequestID") or ""
         if merchant:
-            operation = DarajaOperation.objects.filter(merchant_request_id=merchant).first()
+            operation = (
+                DarajaOperation.objects.filter(merchant_request_id=merchant)
+                .select_related("collection_monitor", "collection_monitor__paybill_account")
+                .first()
+            )
     if operation is None:
         return None
     code = str(callback.get("ResultCode", ""))
@@ -260,10 +268,15 @@ def _post_ledger(operation: DarajaOperation, *, amount, phone: str, receipt: str
     from paybill.models import LedgerEntry, MoneyRequest
     from paybill.services import extract_mpesa_receipt, money_request_meta
 
-    config = DarajaConfig.load()
-    account = config.paybill_account
+    monitor = getattr(operation, "collection_monitor", None)
+    account = None
+    if monitor is not None:
+        account = monitor.ensure_ledger_paybill_account()
     if account is None:
-        account = PaybillAccount.objects.filter(paybill_number=config.shortcode).first()
+        config = DarajaConfig.load()
+        account = config.paybill_account
+        if account is None:
+            account = PaybillAccount.objects.filter(paybill_number=config.shortcode).first()
     if account is None:
         return
     try:
@@ -304,6 +317,15 @@ def _post_ledger(operation: DarajaOperation, *, amount, phone: str, receipt: str
     expense_reason = ""
     narrative = operation.get_kind_display()
     raw_payload = dict(operation.result_payload or operation.response_payload or {})
+    ledger_account_ref = operation.account_ref
+    if monitor is not None and monitor.collection_code:
+        ledger_account_ref = monitor.collection_code
+        narrative = f"Collect {monitor.collection_code} · {monitor.label}"[:255]
+        raw_payload["_collection_monitor"] = {
+            "id": monitor.pk,
+            "code": monitor.collection_code,
+            "label": monitor.label,
+        }
     if money_request is not None:
         requester = money_request.requester
         payer_name = (requester.get_full_name() or requester.staff_code or "")[:160]
@@ -322,7 +344,7 @@ def _post_ledger(operation: DarajaOperation, *, amount, phone: str, receipt: str
             "mpesa_reference": mpesa_reference or existing.mpesa_reference,
             "amount": money,
             "payer_phone": str(phone)[:20] or existing.payer_phone,
-            "account_ref": operation.account_ref or existing.account_ref,
+            "account_ref": ledger_account_ref or existing.account_ref,
             "status": LedgerEntry.Status.COMPLETED,
             "narrative": narrative or existing.narrative,
             "raw_payload": raw_payload or existing.raw_payload,
@@ -355,7 +377,7 @@ def _post_ledger(operation: DarajaOperation, *, amount, phone: str, receipt: str
         amount=money,
         payer_name=payer_name,
         payer_phone=str(phone)[:20],
-        account_ref=operation.account_ref,
+        account_ref=ledger_account_ref,
         status=LedgerEntry.Status.COMPLETED,
         narrative=narrative,
         raw_payload=raw_payload,

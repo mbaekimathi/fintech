@@ -38,8 +38,15 @@ def explain_daraja_error(message: str, *, context: str = "default") -> str:
     text = (message or "").strip()
     if not text:
         return _INITIATOR_HINTS.get(context, _INITIATOR_HINTS["default"])
-    if INITIATOR_NOT_ALLOWED in text.lower():
+    lower = text.lower()
+    if INITIATOR_NOT_ALLOWED in lower:
         return _INITIATOR_HINTS.get(context, _INITIATOR_HINTS["default"])
+    if "duplicate notification" in lower:
+        return (
+            "Safaricom already has C2B validation/confirmation URLs for this shortcode "
+            "(duplicate notification). You do not need to register again unless you changed your public HTTPS callback URL. "
+            "If you are testing in sandbox, use a new bill reference on each simulate — not a fixed value like 123456."
+        )
     return text
 
 

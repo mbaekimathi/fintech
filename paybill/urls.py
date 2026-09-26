@@ -5,7 +5,12 @@ from paybill import views
 app_name = "paybill"
 
 urlpatterns = [
-    path("accounts/", views.PaybillAccountListView.as_view(), name="accounts"),
+    path("automations/", views.AutomationsView.as_view(), name="automations"),
+    path(
+        "automations/account/<int:pk>/",
+        views.AutomationAccountView.as_view(),
+        name="automation-account",
+    ),
     path("transactions/", views.TransactionListView.as_view(), name="transactions"),
     path(
         "transactions/requests/<int:pk>/",
@@ -17,5 +22,4 @@ urlpatterns = [
         views.MoneyRequestRepromptView.as_view(),
         name="money-request-reprompt",
     ),
-    path("systems/", views.ConnectedSystemListView.as_view(), name="systems"),
 ]

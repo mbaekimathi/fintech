@@ -78,14 +78,10 @@
           <span>Payroll register</span>
         </a>
       {% endif %}
-      {% if user.can_manage_ledger or user.effective_role == 'IT_SUPPORT' %}
-        <a class="link-tile" href="{% url 'paybill:accounts' %}">
-          <strong>Paybills</strong>
-          <span>Collection accounts</span>
-        </a>
-        <a class="link-tile" href="{% url 'paybill:systems' %}">
-          <strong>Systems</strong>
-          <span>Connected platforms</span>
+      {% if user.can_manage_ledger %}
+        <a class="link-tile" href="{% url 'paybill:automations' %}">
+          <strong>Automations</strong>
+          <span>Paybills, tills, phones &amp; live balances</span>
         </a>
       {% endif %}
       {% if can_manage_app_settings %}

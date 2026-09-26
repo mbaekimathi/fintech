@@ -79,9 +79,24 @@ def _error_message(payload: dict, *, context: str = "default") -> str:
 
 
 class DarajaClient:
-    def __init__(self, config):
+    def __init__(self, config, *, monitor=None):
         self.config = config
+        self.monitor = monitor
         self._token = None
+
+    def _effective(self, field: str) -> str:
+        hub = (getattr(self.config, field, "") or "").strip()
+        if self.monitor is None:
+            return hub
+        if field == "shortcode":
+            return self.monitor.effective_daraja_value("shortcode", hub_default=hub)
+        if field == "passkey":
+            return self.monitor.effective_daraja_value("passkey", hub_default=hub)
+        if field == "consumer_key":
+            return self.monitor.effective_daraja_value("consumer_key", hub_default=hub)
+        if field == "consumer_secret":
+            return self.monitor.effective_daraja_value("consumer_secret", hub_default=hub)
+        return hub
 
     @property
     def sandbox(self) -> bool:
@@ -115,8 +130,8 @@ class DarajaClient:
     def access_token(self) -> str:
         if self._token:
             return self._token
-        key = (self.config.consumer_key or "").strip()
-        secret = (self.config.consumer_secret or "").strip()
+        key = self._effective("consumer_key")
+        secret = self._effective("consumer_secret")
         if not key or not secret:
             raise DarajaError("Save a consumer key and consumer secret on Daraja setup first.")
         url = SANDBOX_OAUTH_URL if self.sandbox else PRODUCTION_OAUTH_URL
@@ -209,22 +224,31 @@ class DarajaClient:
         callback_url: str,
         transaction_desc: str | None = None,
         transaction_type: str | None = None,
+        party_b: str | None = None,
     ) -> dict:
-        if not self.config.stk_ready:
-            raise DarajaError("STK is not ready. Save passkey, shortcode, and callback URL on Daraja setup.")
         msisdn = kenya_msisdn(phone)
-        shortcode = (self.config.shortcode or "").strip()
+        shortcode = self._effective("shortcode")
+        passkey = self._effective("passkey")
+        if not shortcode or not passkey:
+            raise DarajaError("STK is not ready. Save passkey and shortcode on Daraja setup or this account.")
+        if not (self.config.stk_callback_url or callback_url):
+            raise DarajaError("STK callback URL is not configured on Daraja setup.")
         tx_type = transaction_type or self.config.stk_transaction_type or "CustomerPayBillOnline"
-        party_b = (self.config.till_number or shortcode).strip() if tx_type == "CustomerBuyGoodsOnline" else shortcode
+        if party_b:
+            dest = party_b.strip()
+        elif tx_type == "CustomerBuyGoodsOnline":
+            dest = (self.config.till_number or shortcode).strip()
+        else:
+            dest = shortcode
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         payload = {
             "BusinessShortCode": shortcode,
-            "Password": _stk_password(shortcode, self.config.passkey, timestamp),
+            "Password": _stk_password(shortcode, passkey, timestamp),
             "Timestamp": timestamp,
             "TransactionType": tx_type,
             "Amount": whole_kes(amount),
             "PartyA": msisdn,
-            "PartyB": party_b,
+            "PartyB": dest,
             "PhoneNumber": msisdn,
             "CallBackURL": self._callback(self.config.stk_callback_url, callback_url),
             "AccountReference": (account_ref or self.config.stk_account_reference or "NEXUS")[:12],
@@ -259,11 +283,63 @@ class DarajaClient:
             raise DarajaError("Safaricom returned an invalid STK query response.")
         return body
 
-    def account_balance(self, *, result_url: str, timeout_url: str, identifier: str | None = None):
+    def register_c2b_urls(
+        self,
+        *,
+        shortcode: str,
+        validation_url: str,
+        confirmation_url: str,
+        response_type: str = "Completed",
+    ) -> dict:
+        if not self.config.has_app_credentials:
+            raise DarajaError("Save consumer key, secret, and shortcode on Daraja setup first.")
+        code = re.sub(r"\D", "", shortcode or "")
+        if not code:
+            raise DarajaError("Enter a paybill or till shortcode to register C2B URLs.")
+        payload = {
+            "ShortCode": code,
+            "ResponseType": (response_type or "Completed").strip() or "Completed",
+            "ConfirmationURL": confirmation_url,
+            "ValidationURL": validation_url,
+        }
+        return self._post("/mpesa/c2b/v1/registerurl", payload, error_context="c2b")
+
+    def simulate_c2b(
+        self,
+        *,
+        shortcode: str,
+        command_id: str,
+        amount,
+        msisdn: str,
+        bill_ref: str,
+    ) -> dict:
+        if not self.sandbox:
+            raise DarajaError("C2B simulate is only for sandbox.")
+        code = re.sub(r"\D", "", shortcode or "")
+        if not code:
+            raise DarajaError("Enter a shortcode for the simulation.")
+        phone = kenya_msisdn(msisdn)
+        payload = {
+            "ShortCode": code,
+            "CommandID": command_id or "CustomerPayBillOnline",
+            "Amount": str(whole_kes(amount)),
+            "Msisdn": phone,
+            "BillRefNumber": (bill_ref or "NEXUS")[:64],
+        }
+        return self._post("/mpesa/c2b/v1/simulate", payload, error_context="c2b")
+
+    def account_balance(
+        self,
+        *,
+        result_url: str,
+        timeout_url: str,
+        identifier: str | None = None,
+        party_a: str | None = None,
+    ):
         if not self.config.balance_ready:
             raise DarajaError("Balance is not ready. Save initiator, security credential, and result URLs.")
         identifier = str(identifier or self.config.balance_identifier_type or "4")
-        party_a = self._payout_party_a(identifier=identifier)
+        party_a = (party_a or "").strip() or self._payout_party_a(identifier=identifier)
         payload = {
             "Initiator": self.config.initiator_name,
             "SecurityCredential": self._security_credential(),

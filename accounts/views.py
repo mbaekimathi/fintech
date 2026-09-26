@@ -357,7 +357,13 @@ class HREmployeePermissionsView(RoleRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         from collections import defaultdict
 
-        from accounts.permissions import ACTIVITIES, PERMISSION_ROLE_ORDER, permission_map_for_users
+        from accounts.permissions import (
+            ACTIVITIES,
+            PERMISSION_GROUPS,
+            PERMISSION_ROLE_ORDER,
+            activities_by_group,
+            permission_map_for_users,
+        )
 
         context = super().get_context_data(**kwargs)
         employees = list(self.get_queryset())
@@ -369,6 +375,8 @@ class HREmployeePermissionsView(RoleRequiredMixin, TemplateView):
                 {
                     "code": activity["code"],
                     "label": activity["label"],
+                    "short_label": activity.get("short_label") or activity["label"],
+                    "group": activity.get("group", ""),
                     "enabled": flags.get(activity["code"], False),
                     "hint": activity["hint"],
                 }
@@ -385,6 +393,21 @@ class HREmployeePermissionsView(RoleRequiredMixin, TemplateView):
             if grouped.get(role)
         ]
         context["activities"] = ACTIVITIES
+        context["permission_groups"] = PERMISSION_GROUPS
+        context["activities_by_group"] = activities_by_group()
+        viewer = self.request.user
+        context["self_permission_rows"] = [
+            {
+                "code": activity["code"],
+                "label": activity["label"],
+                "enabled": viewer.has_activity(activity["code"]),
+                "hint": activity["hint"],
+            }
+            for activity in ACTIVITIES
+        ]
+        context["role_switch_active"] = viewer.is_role_switched
+        context["role_switch_label"] = viewer.role_label if viewer.is_role_switched else ""
+        context["self_toggle_url"] = reverse("accounts:hr-permission-toggle", args=[viewer.pk])
         from core.models import AppSettings
 
         app_settings = AppSettings.load()

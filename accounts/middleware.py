@@ -2,6 +2,7 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import redirect
 from django.urls import reverse
 
+from accounts.models import User
 from accounts.role_switch import (
     SESSION_KEY,
     apply_role_switch,
@@ -65,6 +66,10 @@ class RoleSwitchMiddleware:
                 apply_role_switch(user, None)
 
             if user and user.is_authenticated and not user.is_pending:
+                if user.role == User.Role.IT_SUPPORT and not getattr(user, "_effective_role", None):
+                    from accounts.permissions import ensure_employee_permissions
+
+                    ensure_employee_permissions(user)
                 expected = role_to_slug(user.effective_role)
                 reset_current_role_slug(token)
                 token = set_current_role_slug(expected)

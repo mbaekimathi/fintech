@@ -144,10 +144,8 @@ class User(AbstractUser):
     def has_activity(self, code: str) -> bool:
         if self.is_superuser and not self.is_role_switched:
             return True
-        from accounts.permissions import activity_enabled, role_default_permissions
+        from accounts.permissions import activity_enabled
 
-        if self.is_role_switched:
-            return bool(role_default_permissions(self.effective_role).get(code))
         return activity_enabled(self, code)
 
     def apply_approval(self, approved: bool, actor=None) -> list[str]:
@@ -264,19 +262,29 @@ class EmployeePermissions(models.Model):
     def __str__(self):
         return f"Permissions · {self.user.staff_code}"
 
+    @staticmethod
+    def _flag(value) -> bool:
+        if value is True or value == 1:
+            return True
+        if value is False or value == 0 or value is None:
+            return False
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
     def as_flags(self) -> dict[str, bool]:
         return {
-            "submit_requests": bool(self.submit_requests),
-            "review_requests": bool(self.review_requests),
-            "pin_approval_prompt": bool(self.pin_approval_prompt),
-            "stk_pin_approval_prompt": bool(self.stk_pin_approval_prompt),
-            "manage_people": bool(self.manage_people),
-            "manage_hr": bool(self.manage_hr),
-            "manage_ledger": bool(self.manage_ledger),
-            "manage_daraja": bool(self.manage_daraja),
-            "view_hub_balance": bool(self.view_hub_balance),
-            "manage_integrations": bool(self.manage_integrations),
-            "manage_app_settings": bool(self.manage_app_settings),
+            "submit_requests": self._flag(self.submit_requests),
+            "review_requests": self._flag(self.review_requests),
+            "pin_approval_prompt": self._flag(self.pin_approval_prompt),
+            "stk_pin_approval_prompt": self._flag(self.stk_pin_approval_prompt),
+            "manage_people": self._flag(self.manage_people),
+            "manage_hr": self._flag(self.manage_hr),
+            "manage_ledger": self._flag(self.manage_ledger),
+            "manage_daraja": self._flag(self.manage_daraja),
+            "view_hub_balance": self._flag(self.view_hub_balance),
+            "manage_integrations": self._flag(self.manage_integrations),
+            "manage_app_settings": self._flag(self.manage_app_settings),
         }
 
 

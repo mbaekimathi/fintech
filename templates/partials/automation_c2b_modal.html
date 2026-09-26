@@ -1,0 +1,76 @@
+<div
+  class="detail-backdrop automation-register-backdrop"
+  x-show="c2bOpen"
+  x-cloak
+  @click.self="c2bOpen = false"
+  role="presentation"
+>
+  <div
+    class="detail-dialog automation-register-dialog automation-c2b-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="automation-c2b-title"
+    @click.stop
+    x-show="c2bOpen"
+  >
+    <header class="approval-dialog__head approval-dialog__head--compact">
+      <div class="approval-dialog__headline-row">
+        <h2 id="automation-c2b-title">Register C2B URLs</h2>
+        <button type="button" class="approval-dialog__close btn btn-ghost btn-small" @click="c2bOpen = false" aria-label="Close">
+          ×
+        </button>
+      </div>
+      <p class="muted automation-register-intro">
+        Sends your validation and confirmation endpoints to Safaricom for each monitored shortcode.
+      </p>
+    </header>
+    {% if c2b_detail %}
+      <p class="integration-banner integration-banner-compact" role="status">{{ c2b_detail }}</p>
+    {% endif %}
+    <form method="post" action="{% url 'paybill:automations' %}" class="automations-c2b-register">
+      {% csrf_token %}
+      <input type="hidden" name="intent" value="register-c2b">
+      <button type="submit" class="btn btn-primary btn-block" {% if not c2b_ready %}disabled{% endif %}>
+        Register URLs with Safaricom
+      </button>
+    </form>
+    <ul class="automation-url-list">
+      <li>
+        <span class="muted">Validation</span>
+        <code class="code-inline">{{ c2b_validation_url|default:"—" }}</code>
+      </li>
+      <li>
+        <span class="muted">Confirmation</span>
+        <code class="code-inline">{{ c2b_confirmation_url|default:"—" }}</code>
+      </li>
+      <li>
+        <span class="muted">Shortcodes</span>
+        <span>{% if c2b_shortcodes %}{{ c2b_shortcodes|join:", " }}{% else %}—{% endif %}</span>
+      </li>
+    </ul>
+    {% if c2b_registration_log %}
+      <p class="field-hint automation-last-reg">{{ c2b_registration_log }}</p>
+    {% endif %}
+    {% if c2b_sandbox %}
+      <details class="daraja-advanced automation-c2b-simulate">
+        <summary>Sandbox simulate payment</summary>
+        <p class="field-hint">Use a collection ID as bill reference. Each run gets a unique suffix automatically.</p>
+        <form method="post" action="{% url 'paybill:automations' %}" class="form-grid">
+          {% csrf_token %}
+          <input type="hidden" name="intent" value="simulate-c2b">
+          {% include "partials/labeled_field.html" with field=simulate_form.shortcode span="2" %}
+          {% include "partials/labeled_field.html" with field=simulate_form.command_id span="2" %}
+          {% include "partials/labeled_field.html" with field=simulate_form.amount span="2" %}
+          {% include "partials/labeled_field.html" with field=simulate_form.bill_ref span="2" %}
+          {% include "partials/labeled_field.html" with field=simulate_form.msisdn span="2" %}
+          <div class="span-2">
+            <button type="submit" class="btn btn-ghost btn-block">Run simulation</button>
+          </div>
+        </form>
+      </details>
+    {% endif %}
+    <footer class="automation-register-foot">
+      <button type="button" class="btn btn-ghost" @click="c2bOpen = false">Close</button>
+    </footer>
+  </div>
+</div>

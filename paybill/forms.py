@@ -2,7 +2,7 @@ import re
 
 from django import forms
 
-from paybill.models import MoneyRequest
+from paybill.models import CollectionMonitor, MoneyRequest
 
 FIELD = {"class": "field"}
 SELECT = {"class": "select"}
@@ -114,4 +114,110 @@ class MoneyRequestForm(forms.ModelForm):
             return cleaned
         if dest_type == MoneyRequest.DestinationType.PAYBILL and not account_ref:
             self.add_error("account_ref", "Enter the account number for that paybill.")
+        return cleaned
+
+
+class CollectionMonitorForm(forms.ModelForm):
+    class Meta:
+        model = CollectionMonitor
+        fields = (
+            "label",
+            "account_type",
+            "identifier",
+            "account_ref",
+            "auto_refresh",
+            "use_hub_daraja",
+            "daraja_consumer_key",
+            "daraja_consumer_secret",
+            "daraja_passkey",
+            "daraja_shortcode",
+        )
+        widgets = {
+            "label": forms.TextInput(attrs={**FIELD, "placeholder": "e.g. Main shop paybill"}),
+            "account_type": forms.Select(attrs=SELECT),
+            "identifier": forms.TextInput(
+                attrs={
+                    **FIELD,
+                    "inputmode": "numeric",
+                    "autocomplete": "off",
+                    "placeholder": "Paybill, till, or phone",
+                }
+            ),
+            "account_ref": forms.TextInput(
+                attrs={
+                    **FIELD,
+                    "autocomplete": "off",
+                    "placeholder": "Optional paybill account number",
+                }
+            ),
+            "auto_refresh": forms.CheckboxInput(attrs={"class": "check"}),
+            "use_hub_daraja": forms.CheckboxInput(attrs={"class": "check"}),
+            "daraja_consumer_key": forms.TextInput(attrs={**FIELD, "autocomplete": "off"}),
+            "daraja_consumer_secret": forms.PasswordInput(
+                attrs={**FIELD, "autocomplete": "new-password"},
+                render_value=True,
+            ),
+            "daraja_passkey": forms.PasswordInput(
+                attrs={**FIELD, "autocomplete": "new-password"},
+                render_value=True,
+            ),
+            "daraja_shortcode": forms.TextInput(attrs={**FIELD, "inputmode": "numeric"}),
+        }
+        labels = {
+            "label": "Display name",
+            "account_type": "Account type",
+            "identifier": "Number",
+            "account_ref": "Paybill account no.",
+            "auto_refresh": "Auto-refresh live balance",
+            "use_hub_daraja": "Use hub Daraja STK credentials",
+            "daraja_consumer_key": "Consumer key (override)",
+            "daraja_consumer_secret": "Consumer secret (override)",
+            "daraja_passkey": "Lipa passkey (override)",
+            "daraja_shortcode": "Lipa shortcode (override)",
+        }
+        help_texts = {
+            "account_ref": "Optional. Extra paybill account label; collections use the unique collection code.",
+            "auto_refresh": "Poll Safaricom when balance API is configured (same initiator as hub).",
+            "use_hub_daraja": "When checked, STK uses hub Daraja setup but still tags payments with this account's collection code.",
+            "daraja_shortcode": "Required when overriding credentials — the shortcode registered on your Daraja app.",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ("daraja_consumer_secret", "daraja_passkey"):
+            self.fields[name].required = False
+
+    def clean_identifier(self):
+        from paybill.automation import normalize_monitor_identifier
+
+        account_type = self.cleaned_data.get("account_type") or self.data.get("account_type")
+        raw = self.cleaned_data.get("identifier") or ""
+        if not account_type:
+            return raw
+        try:
+            return normalize_monitor_identifier(account_type, raw)
+        except Exception as exc:
+            raise forms.ValidationError(str(exc)) from exc
+
+    def clean_account_ref(self):
+        return (self.cleaned_data.get("account_ref") or "").strip()
+
+    def clean(self):
+        cleaned = super().clean()
+        account_type = cleaned.get("account_type")
+        identifier = cleaned.get("identifier") or ""
+        if not account_type or not identifier:
+            return cleaned
+        if account_type in (
+            CollectionMonitor.AccountType.PAYBILL,
+            CollectionMonitor.AccountType.TILL,
+        ):
+            if identifier.startswith("254") or len(identifier) >= 10:
+                self.add_error(
+                    "identifier",
+                    "That looks like a phone number. Choose Phone number or enter a paybill/till.",
+                )
+            elif len(identifier) < 5 or len(identifier) > 8:
+                label = "till" if account_type == CollectionMonitor.AccountType.TILL else "paybill"
+                self.add_error("identifier", f"Enter a valid {label} number (5–8 digits).")
         return cleaned

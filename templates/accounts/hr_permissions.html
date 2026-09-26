@@ -5,10 +5,8 @@
 {% block content %}
   <section class="perm-intro">
     <p class="muted">
-      Employees are grouped by role. Toggle each activity on or off — changes apply immediately.
-      Grant <strong>Review requests</strong> to staff who should approve payments.
-      Turn on <strong>App on approve</strong> and/or <strong>PIN on approve</strong> for approvers who must pass extra checks before sending (when the matching hub toggle is on in App settings).
-      Grant <strong>App settings</strong> to staff who configure hub-wide options.
+      Use <strong>Your access</strong> below to turn <strong>Automations</strong> on for yourself or others.
+      Approvers need <strong>Review</strong> plus <strong>App approve</strong> / <strong>PIN approve</strong> when hub toggles are on in App settings.
     </p>
     <div class="toolbar">
       <a class="btn btn-ghost btn-small" href="{% url 'accounts:hr-employees' %}">Edit employee details</a>
@@ -18,86 +16,152 @@
     </div>
   </section>
 
-  <section class="integration-banner {% if app_approval_required or stk_pin_approval_required %}is-ok{% else %}is-bad{% endif %}" role="status">
-    <p class="eyebrow">Payment approvals</p>
-    <h2>
-      App approval is {% if app_approval_required %}on{% else %}off{% endif %}
-      · PIN approval is {% if stk_pin_approval_required %}on{% else %}off{% endif %}
-    </h2>
-    <p class="muted">
-      {% if app_approval_required or stk_pin_approval_required %}
-        Hub approval checks are on. Toggle <strong>App on approve</strong> and/or <strong>PIN on approve</strong> below for each person who should be prompted before sending.
-      {% else %}
-        Hub approval checks are off. Turn them on from App settings, then enable the matching toggles per person below.
-      {% endif %}
-    </p>
-    {% if can_manage_app_settings %}
-      <div class="toolbar">
-        <a class="btn btn-ghost btn-small" href="{% url 'core:app-settings' %}">Change in App settings</a>
-      </div>
-    {% endif %}
-  </section>
-
-  <div class="perm-legend panel">
-    <p class="eyebrow">Activities</p>
-    <ul class="perm-legend-list">
-      {% for activity in activities %}
-        <li><strong>{{ activity.label }}</strong> — {{ activity.hint }}</li>
-      {% endfor %}
-    </ul>
-  </div>
-
-  <div class="perm-groups" data-employee-permissions>
-    {% for group in role_groups %}
-      <section class="perm-role-group panel">
-        <div class="panel-head">
-          <div>
-            <h2>{{ group.label }}</h2>
-            <p class="muted">{{ group.employees|length }} employee{{ group.employees|length|pluralize }}</p>
-          </div>
+  <div data-employee-permissions>
+    <section class="panel perm-self-card" aria-labelledby="perm-self-title">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">Signed in as {{ user.staff_code }}</p>
+          <h2 id="perm-self-title">Your access</h2>
+          <p class="muted">These switches control what you can open — including the Automations hub under Paybill.</p>
+          {% if role_switch_active %}
+            <p class="integration-banner integration-banner-compact" role="status">
+              You are previewing as <strong>{{ role_switch_label }}</strong>. Hub tools (Automations, HR, Daraja) still follow the toggles below.
+            </p>
+          {% endif %}
         </div>
-        <div class="table-wrap">
-          <table class="data perm-matrix">
-            <thead>
-              <tr>
-                <th class="perm-sticky">Employee</th>
-                {% for activity in activities %}
-                  <th class="perm-col" title="{{ activity.hint }}">{{ activity.label }}</th>
-                {% endfor %}
-              </tr>
-            </thead>
-            <tbody>
-              {% for person in group.employees %}
-                <tr data-user-id="{{ person.pk }}">
-                  <td class="perm-sticky">
-                    <strong class="mono">{{ person.staff_code }}</strong>
-                    <span class="perm-name">{{ person.get_full_name|default:person.email }}</span>
-                  </td>
-                  {% for row in person.permission_rows %}
-                    <td class="perm-col">
-                      <label class="perm-switch" title="{{ row.hint }}">
-                        <input
-                          type="checkbox"
-                          class="perm-switch-input"
-                          data-toggle-url="{% url 'accounts:hr-permission-toggle' person.pk %}"
-                          data-activity="{{ row.code }}"
-                          {% if row.enabled %}checked{% endif %}
-                          aria-label="{{ row.label }} for {{ person.staff_code }}"
-                        >
-                        <span class="perm-switch-ui" aria-hidden="true"></span>
-                      </label>
-                    </td>
+        <a class="btn btn-ghost btn-small" href="{% url 'paybill:automations' %}">Open Automations</a>
+      </div>
+      <ul class="perm-self-grid">
+        {% for row in self_permission_rows %}
+          <li class="perm-self-item {% if row.code == 'manage_ledger' %}perm-self-item-highlight{% endif %}">
+            <div class="perm-self-copy">
+              <strong>{{ row.label }}</strong>
+              <p class="muted">{{ row.hint }}</p>
+            </div>
+            <label class="perm-switch perm-switch-lg" title="{{ row.hint }}">
+              <input
+                type="checkbox"
+                class="perm-switch-input"
+                data-toggle-url="{{ self_toggle_url }}"
+                data-activity="{{ row.code }}"
+                {% if row.enabled %}checked{% endif %}
+                aria-label="{{ row.label }} for your account"
+              >
+              <span class="perm-switch-ui" aria-hidden="true"></span>
+            </label>
+          </li>
+        {% endfor %}
+      </ul>
+      <p class="field-hint perm-self-jump">
+        <a href="#perm-user-{{ user.pk }}">Jump to your row</a> in the full employee table below.
+      </p>
+    </section>
+
+    <section class="integration-banner {% if app_approval_required or stk_pin_approval_required %}is-ok{% else %}is-bad{% endif %}" role="status">
+      <p class="eyebrow">Payment approvals</p>
+      <h2>
+        App approval is {% if app_approval_required %}on{% else %}off{% endif %}
+        · PIN approval is {% if stk_pin_approval_required %}on{% else %}off{% endif %}
+      </h2>
+      <p class="muted">
+        {% if app_approval_required or stk_pin_approval_required %}
+          Hub approval checks are on. Enable <strong>App approve</strong> and/or <strong>PIN approve</strong> for each approver in the table.
+        {% else %}
+          Hub approval checks are off. Turn them on from App settings, then enable the matching toggles per person below.
+        {% endif %}
+      </p>
+      {% if can_manage_app_settings %}
+        <div class="toolbar">
+          <a class="btn btn-ghost btn-small" href="{% url 'core:app-settings' %}">Change in App settings</a>
+        </div>
+      {% endif %}
+    </section>
+
+    <div class="perm-legend panel">
+      <p class="eyebrow">Activity reference</p>
+      {% for block in activities_by_group %}
+        <div class="perm-legend-block">
+          <h3 class="perm-legend-group-title">{{ block.group.label }}</h3>
+          <ul class="perm-legend-list">
+            {% for activity in block.activities %}
+              <li><strong>{{ activity.label }}</strong> — {{ activity.hint }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endfor %}
+    </div>
+
+    <p class="perm-scroll-hint muted">Tip: the table scrolls horizontally on small screens — <strong>Automations</strong> is the first column after Employee.</p>
+
+    <div class="perm-groups">
+      {% for group in role_groups %}
+        <section class="perm-role-group panel">
+          <div class="panel-head">
+            <div>
+              <h2>{{ group.label }}</h2>
+              <p class="muted">{{ group.employees|length }} employee{{ group.employees|length|pluralize }}</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data perm-matrix">
+              <thead>
+                <tr class="perm-group-row">
+                  <th class="perm-sticky perm-group-corner" scope="col"></th>
+                  {% for block in activities_by_group %}
+                    <th
+                      class="perm-group-head"
+                      scope="colgroup"
+                      colspan="{{ block.activities|length }}"
+                    >{{ block.group.label }}</th>
                   {% endfor %}
                 </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    {% empty %}
-      <section class="panel">
-        <p class="empty">No employees to manage.</p>
-      </section>
-    {% endfor %}
+                <tr>
+                  <th class="perm-sticky" scope="col">Employee</th>
+                  {% for activity in activities %}
+                    <th class="perm-col {% if activity.code == 'manage_ledger' %}perm-col-highlight{% endif %}" scope="col" title="{{ activity.hint }}">
+                      {{ activity.short_label|default:activity.label }}
+                    </th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for person in group.employees %}
+                  <tr
+                    id="perm-user-{{ person.pk }}"
+                    data-user-id="{{ person.pk }}"
+                    class="{% if person.pk == user.pk %}perm-row-self{% endif %}"
+                  >
+                    <td class="perm-sticky">
+                      <strong class="mono">{{ person.staff_code }}</strong>
+                      <span class="perm-name">{{ person.get_full_name|default:person.email }}</span>
+                      {% if person.pk == user.pk %}<span class="chip chip-soft">You</span>{% endif %}
+                    </td>
+                    {% for row in person.permission_rows %}
+                      <td class="perm-col {% if row.code == 'manage_ledger' %}perm-col-highlight{% endif %}">
+                        <label class="perm-switch" title="{{ row.hint }}">
+                          <input
+                            type="checkbox"
+                            class="perm-switch-input"
+                            data-toggle-url="{% url 'accounts:hr-permission-toggle' person.pk %}"
+                            data-activity="{{ row.code }}"
+                            {% if row.enabled %}checked{% endif %}
+                            aria-label="{{ row.label }} for {{ person.staff_code }}"
+                          >
+                          <span class="perm-switch-ui" aria-hidden="true"></span>
+                        </label>
+                      </td>
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {% empty %}
+        <section class="panel">
+          <p class="empty">No employees to manage.</p>
+        </section>
+      {% endfor %}
+    </div>
   </div>
 {% endblock %}

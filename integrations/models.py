@@ -85,6 +85,14 @@ class DarajaOperation(models.Model):
         on_delete=models.SET_NULL,
         related_name="daraja_operations",
     )
+    collection_monitor = models.ForeignKey(
+        "paybill.CollectionMonitor",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="daraja_operations",
+        help_text="Automation account when this STK push collects on a unique reference.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -353,6 +361,15 @@ class DarajaConfig(models.Model):
         blank=True,
         default="AG",
         help_text="Prefix for agent receipt / reference numbers.",
+    )
+    c2b_response_type = models.CharField(
+        max_length=16,
+        default="Completed",
+        help_text="Safaricom C2B ResponseType: Completed accepts after validation; Cancelled can reject on validation URL.",
+    )
+    c2b_registration_log = models.TextField(
+        blank=True,
+        help_text="Last C2B URL registration result from the automations page.",
     )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(

@@ -41,7 +41,7 @@ class RoleSwitchTests(TestCase):
         self.client.force_login(self.it)
         it_people = self._url("accounts:users", "it-support")
         admin_people = self._url("accounts:users", "admin")
-        self.assertEqual(self.client.get(it_people).status_code, 403)
+        self.assertEqual(self.client.get(it_people).status_code, 200)
 
         # Visiting another role's URL switches the session and opens that role's pages.
         response = self.client.get(admin_people)
@@ -52,13 +52,22 @@ class RoleSwitchTests(TestCase):
         self.assertRedirects(
             response, "/as/employee/", fetch_redirect_response=False
         )
-        # Employee role cannot open People; staying on /as/employee/ keeps the switch.
-        self.assertEqual(self.client.get(self._url("accounts:users", "employee")).status_code, 403)
+        # IT Support keeps hub People access from stored permissions while previewing employee.
+        self.assertEqual(self.client.get(self._url("accounts:users", "employee")).status_code, 200)
         dash = self.client.get(self._url("core:dashboard", "employee"))
         self.assertEqual(dash.status_code, 200)
         self.assertContains(dash, "Employee")
         self.assertContains(dash, "Switch role")
         self.assertContains(dash, 'href="/as/manager/"')
+
+    def test_it_support_keeps_automations_while_previewing_employee(self):
+        from accounts.permissions import sync_permissions_from_role
+
+        sync_permissions_from_role(self.it, reset=True)
+        self.client.force_login(self.it)
+        self.client.post(reverse("accounts:switch_role"), {"role": User.Role.EMPLOYEE})
+        url = self._url("paybill:automations", "employee")
+        self.assertEqual(self.client.get(url).status_code, 200)
 
     def test_menu_links_switch_away_from_employee(self):
         self.client.force_login(self.it)

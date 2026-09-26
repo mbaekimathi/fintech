@@ -1,6 +1,10 @@
+from decimal import Decimal
+
 from django.contrib import messages
 from django.db.models import Sum
-from django.shortcuts import get_object_or_404, redirect
+from django.http import JsonResponse
+from django.core.paginator import Paginator
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views import View
 from django.views.generic import ListView
@@ -14,8 +18,29 @@ from core.notifications import (
     reprompt_money_request,
 )
 from integrations.daraja_client import DarajaError
-from integrations.models import DarajaOperation
-from paybill.models import ConnectedSystem, LedgerEntry, MoneyRequest, PaybillAccount
+from integrations.models import DarajaConfig, DarajaOperation
+from integrations.c2b import (
+    c2b_callback_urls,
+    c2b_public_ready,
+    c2b_shortcodes_to_register,
+    register_c2b_urls,
+    simulate_c2b_payment,
+)
+from paybill.automation import (
+    collection_integration_copy,
+    collection_stk_api_url,
+    ensure_paybill_account,
+    hub_company_snapshot,
+    monitor_ledger_queryset,
+    monitor_ledger_totals,
+    request_monitor_balance,
+    serialize_collection_monitor,
+    serialize_collection_monitor_summary,
+)
+from paybill.c2b_forms import C2bSimulateForm
+from paybill.forms import CollectionMonitorForm
+from paybill.collection_stk import initiate_monitor_stk_collection
+from paybill.models import CollectionMonitor, CollectionMonitorCredential, LedgerEntry, MoneyRequest
 from paybill.services import (
     approve_and_transfer,
     flash_money_request_transfer_result,
@@ -69,15 +94,6 @@ def _annotate_ledger_entry(entry: LedgerEntry, lookup: dict[str, MoneyRequest]) 
         entry.destination_account_ref = entry.account_ref or ""
         entry.source_paybill_number = entry.paybill_account.paybill_number
     return entry
-
-
-class PaybillAccountListView(RoleRequiredMixin, ListView):
-    template_name = "paybill/accounts.html"
-    context_object_name = "accounts"
-    required_activity = "manage_ledger"
-
-    def get_queryset(self):
-        return PaybillAccount.objects.select_related("connected_system")
 
 
 class TransactionListView(RoleRequiredMixin, ListView):
@@ -229,10 +245,340 @@ class MoneyRequestRepromptView(RoleRequiredMixin, View):
         return redirect("paybill:transactions")
 
 
-class ConnectedSystemListView(RoleRequiredMixin, ListView):
-    template_name = "paybill/systems.html"
-    context_object_name = "systems"
+class CollectionAutomationMixin:
     required_activity = "manage_ledger"
 
-    def get_queryset(self):
-        return ConnectedSystem.objects.all()
+    def _monitors(self):
+        return CollectionMonitor.objects.filter(is_active=True).select_related("paybill_account")
+
+    def _wants_json(self, request) -> bool:
+        return (
+            request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            or "application/json" in (request.headers.get("Accept") or "")
+        )
+
+    def _pop_api_key_session(self, request):
+        new_api_key = request.session.pop("new_collection_api_key", "")
+        new_api_monitor_id = request.session.pop("new_collection_api_monitor_id", None)
+        new_api_monitor_label = ""
+        new_api_integration_copy = ""
+        if new_api_key and new_api_monitor_id:
+            key_monitor = CollectionMonitor.objects.filter(pk=new_api_monitor_id).first()
+            if key_monitor:
+                new_api_monitor_label = key_monitor.label
+                new_api_integration_copy = collection_integration_copy(
+                    key_monitor,
+                    stk_url=collection_stk_api_url(request),
+                    api_key=new_api_key,
+                )
+        return {
+            "new_collection_api_key": new_api_key,
+            "new_collection_api_monitor_id": new_api_monitor_id,
+            "new_api_monitor_label": new_api_monitor_label,
+            "new_api_integration_copy": new_api_integration_copy,
+        }
+
+    def _hub_c2b_context(self, request, *, config: DarajaConfig):
+        c2b_ready, c2b_detail = c2b_public_ready(request)
+        c2b_urls = c2b_callback_urls(request)
+        return {
+            "c2b_ready": c2b_ready,
+            "c2b_detail": c2b_detail,
+            "c2b_validation_url": c2b_urls.get("validation_url", ""),
+            "c2b_confirmation_url": c2b_urls.get("confirmation_url", ""),
+            "c2b_shortcodes": c2b_shortcodes_to_register(),
+            "c2b_registration_log": config.c2b_registration_log,
+            "c2b_sandbox": str(config.environment) == DarajaConfig.Environment.SANDBOX,
+        }
+
+    def _hub_list_context(self, request, *, form=None):
+        config = DarajaConfig.load()
+        monitors = list(self._monitors())
+        accounts = [serialize_collection_monitor_summary(row, config=config) for row in monitors]
+        total_collected = sum(Decimal(a["collected_total"]) for a in accounts)
+        ctx = {
+            "form": form or CollectionMonitorForm(),
+            "simulate_form": C2bSimulateForm(),
+            "company": hub_company_snapshot(config=config),
+            "accounts": accounts,
+            "accounts_count": len(accounts),
+            "stk_ready_count": sum(1 for a in accounts if a.get("stk_ready")),
+            "total_collected": total_collected,
+            "balance_ready": config.balance_ready,
+            **self._hub_c2b_context(request, config=config),
+        }
+        return ctx
+
+
+class AutomationsView(CollectionAutomationMixin, RoleRequiredMixin, View):
+    """Hub: company Daraja snapshot and list of collection accounts."""
+
+    template_name = "paybill/automations.html"
+
+    def get(self, request, *args, **kwargs):
+        return render(request, self.template_name, self._hub_list_context(request))
+
+    def post(self, request, *args, **kwargs):
+        intent = (request.POST.get("intent") or "").strip().lower()
+        wants_json = self._wants_json(request)
+
+        if intent == "create":
+            form = CollectionMonitorForm(request.POST)
+            if not form.is_valid():
+                if wants_json:
+                    return JsonResponse(
+                        {"ok": False, "errors": form.errors.get_json_data()},
+                        status=400,
+                    )
+                messages.error(request, "Fix the highlighted fields and try again.")
+                ctx = self._hub_list_context(request, form=form)
+                ctx["register_open"] = True
+                return render(request, self.template_name, ctx)
+
+            monitor = form.save(commit=False)
+            monitor.created_by = request.user
+            if monitor.account_type in (
+                CollectionMonitor.AccountType.PAYBILL,
+                CollectionMonitor.AccountType.TILL,
+            ):
+                monitor.paybill_account = ensure_paybill_account(
+                    label=monitor.label,
+                    paybill_number=monitor.identifier,
+                )
+            monitor.save()
+            monitor.ensure_ledger_paybill_account()
+            _cred, raw_key = CollectionMonitorCredential.issue(monitor)
+            request.session["new_collection_api_key"] = raw_key
+            request.session["new_collection_api_monitor_id"] = monitor.pk
+            write_audit(
+                request,
+                "automation.monitor.created",
+                object_type="collection_monitor",
+                object_id=monitor.pk,
+                detail={
+                    "type": monitor.account_type,
+                    "identifier": monitor.identifier,
+                    "collection_code": monitor.collection_code,
+                },
+            )
+            if wants_json:
+                config = DarajaConfig.load()
+                return JsonResponse(
+                    {
+                        "ok": True,
+                        "account": serialize_collection_monitor(monitor, config=config, request=request),
+                    }
+                )
+            messages.success(
+                request,
+                f"Added {monitor.label}. Copy the new API key on the account page.",
+            )
+            return redirect("paybill:automation-account", pk=monitor.pk)
+
+        if intent == "register-c2b":
+            try:
+                lines = register_c2b_urls(request=request)
+            except DarajaError as exc:
+                if wants_json:
+                    return JsonResponse({"ok": False, "detail": str(exc)}, status=400)
+                messages.error(request, str(exc))
+                return redirect("paybill:automations")
+            detail = " ".join(lines)
+            if wants_json:
+                return JsonResponse({"ok": True, "detail": detail, "lines": lines})
+            messages.success(request, f"C2B URLs registered: {detail}")
+            return redirect("paybill:automations")
+
+        if intent == "simulate-c2b":
+            sim_form = C2bSimulateForm(request.POST)
+            if not sim_form.is_valid():
+                messages.error(request, "Fix the sandbox simulation fields.")
+                return redirect("paybill:automations")
+            try:
+                body = simulate_c2b_payment(
+                    shortcode=sim_form.cleaned_data["shortcode"],
+                    amount=sim_form.cleaned_data["amount"],
+                    bill_ref=sim_form.cleaned_data.get("bill_ref") or "NEXUS",
+                    msisdn=sim_form.cleaned_data["msisdn"],
+                    command_id=sim_form.cleaned_data["command_id"],
+                )
+            except DarajaError as exc:
+                messages.error(request, str(exc))
+                return redirect("paybill:automations")
+            desc = body.get("ResponseDescription") or body.get("CustomerMessage") or "Simulated"
+            messages.success(
+                request,
+                f"Sandbox C2B simulated. {desc} Confirmation should hit your ledger shortly.",
+            )
+            return redirect("paybill:automations")
+
+        if wants_json:
+            return JsonResponse({"ok": False, "detail": "Unknown action."}, status=400)
+        messages.error(request, "Unknown action.")
+        return redirect("paybill:automations")
+
+
+class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
+    """Single collection account: STK, API keys, balance, integration."""
+
+    template_name = "paybill/automation_account.html"
+
+    def _monitor(self, pk: int):
+        return get_object_or_404(
+            CollectionMonitor.objects.select_related("paybill_account"),
+            pk=pk,
+            is_active=True,
+        )
+
+    def get(self, request, pk, *args, **kwargs):
+        monitor = self._monitor(pk)
+        config = DarajaConfig.load()
+        if request.GET.get("poll") == "balances":
+            payload = {
+                "ok": True,
+                "balance_ready": bool(config.balance_ready),
+                "accounts": [
+                    serialize_collection_monitor(monitor, config=config, request=request),
+                ],
+            }
+            return JsonResponse(payload)
+
+        row = serialize_collection_monitor(monitor, config=config, request=request)
+        api_ctx = self._pop_api_key_session(request)
+        ledger_qs = monitor_ledger_queryset(monitor)
+        paginator = Paginator(ledger_qs, 30)
+        ledger_page = paginator.get_page(request.GET.get("page"))
+        lookup = money_request_by_ledger_reference()
+        ledger_entries = [_annotate_ledger_entry(entry, lookup) for entry in ledger_page.object_list]
+        ledger_totals = monitor_ledger_totals(monitor)
+        return render(
+            request,
+            self.template_name,
+            {
+                "monitor": monitor,
+                "row": row,
+                "balance_ready": config.balance_ready,
+                "poll_url": reverse("paybill:automation-account", kwargs={"pk": pk}) + "?poll=balances",
+                "post_url": reverse("paybill:automation-account", kwargs={"pk": pk}),
+                "hub_url": reverse("paybill:automations"),
+                "ledger_entries": ledger_entries,
+                "ledger_page": ledger_page,
+                "ledger_totals": ledger_totals,
+                **api_ctx,
+            },
+        )
+
+    def post(self, request, pk, *args, **kwargs):
+        monitor = self._monitor(pk)
+        intent = (request.POST.get("intent") or "").strip().lower()
+        wants_json = self._wants_json(request)
+        account_url = reverse("paybill:automation-account", kwargs={"pk": pk})
+
+        if intent == "issue-credential":
+            _cred, raw_key = CollectionMonitorCredential.issue(monitor)
+            request.session["new_collection_api_key"] = raw_key
+            request.session["new_collection_api_monitor_id"] = monitor.pk
+            messages.success(
+                request,
+                f"New API key for {monitor.collection_code}. Copy it below — shown once.",
+            )
+            return redirect(account_url)
+
+        if intent == "stk-collect":
+            from integrations.daraja_client import kenya_msisdn
+
+            phone_raw = (request.POST.get("phone") or "").strip()
+            amount_raw = (request.POST.get("amount") or "").strip()
+            if not phone_raw:
+                messages.error(request, "Enter the payer's M-Pesa phone number.")
+                return redirect(account_url)
+            try:
+                phone = kenya_msisdn(phone_raw)
+            except DarajaError as exc:
+                messages.error(request, str(exc))
+                return redirect(account_url)
+            try:
+                amount = Decimal(amount_raw)
+            except Exception:
+                messages.error(request, "Enter a valid amount.")
+                return redirect(account_url)
+            if amount < 1:
+                messages.error(request, "Amount must be at least KES 1.")
+                return redirect(account_url)
+            try:
+                operation = initiate_monitor_stk_collection(
+                    monitor=monitor,
+                    phone=phone,
+                    amount=amount,
+                    request=request,
+                    created_by=request.user,
+                )
+            except DarajaError as exc:
+                messages.error(request, str(exc))
+                return redirect(account_url)
+            write_audit(
+                request,
+                "automation.stk.collect",
+                object_type="daraja_operation",
+                object_id=operation.pk,
+                detail={
+                    "monitor": monitor.collection_code,
+                    "amount": str(amount),
+                    "checkout": operation.checkout_request_id,
+                },
+            )
+            messages.success(
+                request,
+                (
+                    f"STK push sent for KES {amount:,.2f} — customer must enter M-Pesa PIN. "
+                    f"After payment, collected total updates for collection ID {monitor.collection_code}."
+                ),
+            )
+            return redirect(account_url)
+
+        if intent == "remove":
+            monitor.is_active = False
+            monitor.save(update_fields=["is_active", "updated_at"])
+            write_audit(
+                request,
+                "automation.monitor.removed",
+                object_type="collection_monitor",
+                object_id=monitor.pk,
+            )
+            if wants_json:
+                return JsonResponse({"ok": True})
+            messages.success(request, "Account removed from automations.")
+            return redirect("paybill:automations")
+
+        if intent == "refresh":
+            config = DarajaConfig.load()
+            if not config.balance_ready:
+                detail = "Configure Daraja live balance (initiator + result URLs) first."
+                if wants_json:
+                    return JsonResponse({"ok": False, "detail": detail}, status=400)
+                messages.error(request, detail)
+                return redirect(account_url)
+            try:
+                request_monitor_balance(monitor=monitor, request=request, created_by=request.user)
+            except DarajaError as exc:
+                if wants_json:
+                    return JsonResponse({"ok": False, "detail": str(exc)}, status=400)
+                messages.error(request, str(exc))
+                return redirect(account_url)
+            config = DarajaConfig.load()
+            payload = {
+                "ok": True,
+                "refreshed": 1,
+                "accounts": [
+                    serialize_collection_monitor(monitor, config=config, request=request),
+                ],
+            }
+            if wants_json:
+                return JsonResponse(payload)
+            messages.success(request, "Live balance requested. Value updates when Safaricom responds.")
+            return redirect(account_url)
+
+        if wants_json:
+            return JsonResponse({"ok": False, "detail": "Unknown action."}, status=400)
+        messages.error(request, "Unknown action.")
+        return redirect(account_url)

@@ -1,0 +1,64 @@
+{% if new_collection_api_key %}
+  <div
+    class="detail-backdrop automation-register-backdrop"
+    x-show="apiKeyOpen"
+    x-cloak
+    @click.self="apiKeyOpen = false"
+    role="presentation"
+  >
+    <div
+      class="detail-dialog automation-register-dialog automation-apikey-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="automation-apikey-title"
+      @click.stop
+      x-show="apiKeyOpen"
+    >
+      <header class="approval-dialog__head approval-dialog__head--compact">
+        <div class="approval-dialog__headline-row">
+          <h2 id="automation-apikey-title">New API key{% if new_api_monitor_label %} · {{ new_api_monitor_label }}{% endif %}</h2>
+          <button type="button" class="approval-dialog__close btn btn-ghost btn-small" @click="apiKeyOpen = false" aria-label="Close">
+            ×
+          </button>
+        </div>
+        <p class="integration-banner is-on integration-banner-compact" role="status">
+          Shown once. Copy the key and integration block before closing — it cannot be retrieved later.
+        </p>
+      </header>
+
+      <div class="automation-apikey-field">
+        <span class="automation-metric-label">X-API-Key</span>
+        <div class="automation-key-row">
+          <input
+            type="text"
+            class="field automation-key-input"
+            id="rotated-collection-api-key"
+            readonly
+            value="{{ new_collection_api_key }}"
+          >
+          <button type="button" class="btn btn-primary btn-small" data-copy-target="rotated-collection-api-key">
+            Copy key
+          </button>
+        </div>
+      </div>
+
+      <div class="automation-apikey-field">
+        <span class="automation-metric-label">Full integration (other apps)</span>
+        <textarea
+          class="automation-api-snippet"
+          id="rotated-integration-copy"
+          readonly
+          rows="12"
+          aria-label="API integration details"
+        >{{ new_api_integration_copy }}</textarea>
+        <button type="button" class="btn btn-ghost btn-small automation-apikey-copy-all" data-copy-target="rotated-integration-copy">
+          Copy all API details
+        </button>
+      </div>
+
+      <footer class="automation-register-foot">
+        <button type="button" class="btn btn-primary" @click="apiKeyOpen = false">Done — I saved my key</button>
+      </footer>
+    </div>
+  </div>
+{% endif %}

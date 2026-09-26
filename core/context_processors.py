@@ -38,13 +38,15 @@ HR_URLS = {
 }
 
 
+AUTOMATIONS_URL = "paybill:automations"
+
+
 def _section_items(user):
     items = [
         {"name": "Transactions", "url": "paybill:transactions", "icon": "flow"},
     ]
     if user.can_manage_ledger():
-        items.append({"name": "Paybills", "url": "paybill:accounts", "icon": "card"})
-        items.append({"name": "Systems", "url": "paybill:systems", "icon": "nodes"})
+        items.append({"name": "Automations", "url": AUTOMATIONS_URL, "icon": "card"})
     if user.can_manage_users():
         items.append({"name": "People", "url": "accounts:users", "icon": "people"})
     if user.can_manage_hr():

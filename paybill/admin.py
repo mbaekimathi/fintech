@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from paybill.models import ConnectedSystem, LedgerEntry, MoneyRequest, PaybillAccount
+from paybill.models import (
+    CollectionMonitor,
+    CollectionMonitorCredential,
+    ConnectedSystem,
+    LedgerEntry,
+    MoneyRequest,
+    PaybillAccount,
+)
 
 
 @admin.register(ConnectedSystem)
@@ -42,6 +49,29 @@ class LedgerEntryAdmin(admin.ModelAdmin):
     )
     readonly_fields = ("posted_at",)
     raw_id_fields = ("money_request",)
+
+
+@admin.register(CollectionMonitor)
+class CollectionMonitorAdmin(admin.ModelAdmin):
+    list_display = (
+        "label",
+        "collection_code",
+        "account_type",
+        "identifier",
+        "use_hub_daraja",
+        "auto_refresh",
+        "is_active",
+        "updated_at",
+    )
+    list_filter = ("account_type", "auto_refresh", "is_active")
+    search_fields = ("label", "identifier", "account_ref", "collection_code")
+
+
+@admin.register(CollectionMonitorCredential)
+class CollectionMonitorCredentialAdmin(admin.ModelAdmin):
+    list_display = ("monitor", "name", "key_prefix", "is_active", "last_used_at", "created_at")
+    list_filter = ("is_active",)
+    search_fields = ("monitor__collection_code", "monitor__label", "key_prefix")
 
 
 @admin.register(MoneyRequest)

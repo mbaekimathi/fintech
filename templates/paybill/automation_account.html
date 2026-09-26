@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+{% block title %}{{ row.label }}{% endblock %}
+{% block eyebrow %}Collections{% endblock %}
+{% block heading %}{{ row.label }}{% endblock %}
+{% block content %}
+  <div
+    class="automations-page"
+    x-data="{ apiKeyOpen: {% if new_collection_api_key %}true{% else %}false{% endif %} }"
+    @keydown.escape.window="apiKeyOpen = false"
+  >
+    <p class="automations-account-back">
+      <a class="text-link" href="{{ hub_url }}">← All collection accounts</a>
+    </p>
+
+    <section
+      class="panel automations-board automations-account-board"
+      data-automations
+      data-poll-url="{{ poll_url }}"
+      data-post-url="{{ post_url }}"
+      data-balance-ready="{% if balance_ready %}1{% else %}0{% endif %}"
+    >
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">{{ row.account_type_label }} · {{ row.identifier }}</p>
+          <h2>Collection account</h2>
+          <p class="muted" data-automations-hint>
+            {% if balance_ready %}
+              Live balance refreshes when you request it or when auto-refresh is on.
+            {% else %}
+              Collected totals come from the ledger; enable Daraja for live Safaricom float.
+            {% endif %}
+          </p>
+        </div>
+        <form method="post" action="{{ post_url }}" class="inline-form">
+          {% csrf_token %}
+          <input type="hidden" name="intent" value="refresh">
+          <button type="submit" class="btn btn-ghost" {% if not balance_ready %}disabled{% endif %}>Refresh balance</button>
+        </form>
+      </div>
+
+      <div class="automation-card-list" data-automations-rows>
+        <article
+          class="automation-card automation-card-single"
+          data-monitor-id="{{ row.id }}"
+          data-watch="{% if row.balance_watch %}1{% endif %}"
+          data-auto-refresh="{% if row.auto_refresh %}1{% endif %}"
+        >
+          <header class="automation-card-head">
+            <div class="automation-card-title">
+              <h3 data-col="label">{{ row.label }}</h3>
+              <span class="chip chip-soft" data-col="type">{{ row.account_type_label }}</span>
+            </div>
+            <div class="automation-card-badges">
+              {% if row.stk_ready %}<span class="chip is-on" title="STK collect ready">STK</span>{% endif %}
+              {% if row.auto_refresh %}<span class="chip" title="Auto balance refresh">Auto</span>{% endif %}
+              {% if row.has_own_daraja %}<span class="chip" title="Own Daraja credentials">Own app</span>{% endif %}
+            </div>
+          </header>
+
+          <dl class="automation-card-dl">
+            <div class="automation-card-dl-row">
+              <dt>Collection ID</dt>
+              <dd class="automation-code-cell">
+                <code class="collection-code" data-col="code">{{ row.collection_code }}</code>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-small"
+                  data-copy-text="{{ row.collection_code }}"
+                  aria-label="Copy collection ID"
+                >Copy</button>
+              </dd>
+            </div>
+            <div class="automation-card-dl-row">
+              <dt>Number</dt>
+              <dd data-col="identifier">
+                {{ row.identifier }}
+                {% if row.account_ref %}<span class="muted"> · {{ row.account_ref }}</span>{% endif %}
+              </dd>
+            </div>
+          </dl>
+
+          <div class="automation-card-metrics">
+            <div class="automation-metric">
+              <span class="automation-metric-label">Collected</span>
+              <strong class="automation-metric-value" data-col="collected">KES {{ row.collected_total|floatformat:2 }}</strong>
+            </div>
+            <div class="automation-metric">
+              <span class="automation-metric-label">Live float</span>
+              <strong class="automation-metric-value" data-col="live">
+                {% if row.live_amount is not None %}
+                  {{ row.live_currency }} {{ row.live_amount|floatformat:2 }}
+                {% else %}
+                  —
+                {% endif %}
+              </strong>
+              <span class="automation-metric-when muted" data-col="when">{{ row.balance_when|default:"Not refreshed" }}</span>
+            </div>
+          </div>
+
+          <details class="automation-api-details">
+            <summary class="automation-api-summary">
+              <span>Integration for other apps</span>
+              {% if row.has_api_key %}
+                <code class="automation-api-summary-key">{{ row.api_key_prefix }}…</code>
+              {% else %}
+                <span class="muted">No key yet</span>
+              {% endif %}
+            </summary>
+            <div class="automation-api-details-body">
+              <button
+                type="button"
+                class="btn btn-ghost btn-small automation-api-copy-btn"
+                data-copy-target="integration-copy-{{ row.id }}"
+              >Copy all details</button>
+              <textarea
+                class="automation-api-snippet"
+                id="integration-copy-{{ row.id }}"
+                readonly
+                rows="8"
+                aria-label="API integration details for {{ row.label }}"
+              >{{ row.integration_copy }}</textarea>
+            </div>
+          </details>
+
+          <footer class="automation-card-foot">
+            <div class="automation-stk-bar">
+              <span class="automation-stk-label">STK collect</span>
+              <p class="automation-stk-hint muted">Real M-Pesa payment — payer enters PIN; funds hit your paybill/till and post to this collection ID.</p>
+              <form method="post" action="{{ post_url }}" class="automation-stk-form">
+                {% csrf_token %}
+                <input type="hidden" name="intent" value="stk-collect">
+                <label class="sr-only" for="stk-phone">Phone</label>
+                <input
+                  id="stk-phone"
+                  class="field field-compact"
+                  name="phone"
+                  placeholder="Phone"
+                  inputmode="tel"
+                  autocomplete="tel"
+                  required
+                  {% if not row.stk_ready %}disabled{% endif %}
+                >
+                <label class="sr-only" for="stk-amount">Amount</label>
+                <input
+                  id="stk-amount"
+                  class="field field-compact"
+                  name="amount"
+                  placeholder="KES"
+                  inputmode="decimal"
+                  required
+                  {% if not row.stk_ready %}disabled{% endif %}
+                >
+                <button type="submit" class="btn btn-primary btn-small" {% if not row.stk_ready %}disabled{% endif %}>
+                  Collect
+                </button>
+              </form>
+            </div>
+            <div class="automation-card-actions" data-col="actions">
+              <form method="post" action="{{ post_url }}" class="inline-form">
+                {% csrf_token %}
+                <input type="hidden" name="intent" value="issue-credential">
+                <button type="submit" class="btn btn-ghost btn-small">Rotate API key…</button>
+              </form>
+              <form method="post" action="{{ post_url }}" class="inline-form" onsubmit="return confirm('Remove this account from automations?');">
+                {% csrf_token %}
+                <input type="hidden" name="intent" value="remove">
+                <button type="submit" class="btn btn-ghost btn-small is-danger-text">Remove</button>
+              </form>
+            </div>
+          </footer>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel automations-account-ledger">
+      <div class="panel-head">
+        <div>
+          <h2>Transactions</h2>
+          <p class="muted">
+            All ledger movements for this account
+            {% if monitor.account_type == 'PAYBILL' or monitor.account_type == 'TILL' %}
+              (paybill/till {{ row.identifier }}).
+            {% else %}
+              tagged with collection ID <code>{{ row.collection_code }}</code>.
+            {% endif %}
+          </p>
+        </div>
+        <div class="automation-ledger-stats" aria-label="Totals">
+          <div class="automation-ledger-stat">
+            <span class="automation-stat-label">In</span>
+            <strong class="automation-ledger-in">KES {{ ledger_totals.inbound|floatformat:2 }}</strong>
+          </div>
+          <div class="automation-ledger-stat">
+            <span class="automation-stat-label">Out</span>
+            <strong class="automation-ledger-out">KES {{ ledger_totals.outbound|floatformat:2 }}</strong>
+          </div>
+          <div class="automation-ledger-stat">
+            <span class="automation-stat-label">Net</span>
+            <strong>KES {{ ledger_totals.net|floatformat:2 }}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-wrap ledger-table-wrap">
+        <table class="data ledger-table ledger-table--cards automation-ledger-table">
+          <thead>
+            <tr>
+              <th scope="col">When</th>
+              <th scope="col">In / out</th>
+              <th scope="col">M-Pesa ref</th>
+              <th scope="col">Party</th>
+              <th scope="col">Collection ref</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Status</th>
+              <th scope="col">Narrative</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in ledger_entries %}
+              <tr>
+                <td data-label="When">{{ entry.posted_at|date:"d M Y H:i" }}</td>
+                <td data-label="Direction">
+                  {% if entry.direction == 'IN' %}
+                    <span class="ledger-dir ledger-dir-in">In</span>
+                  {% else %}
+                    <span class="ledger-dir ledger-dir-out">Out</span>
+                  {% endif %}
+                </td>
+                <td data-label="M-Pesa ref">
+                  {% if entry.mpesa_reference %}
+                    <code class="mono">{{ entry.mpesa_reference }}</code>
+                  {% else %}
+                    <span class="muted">{{ entry.reference|truncatechars:18 }}</span>
+                  {% endif %}
+                </td>
+                <td data-label="Party">
+                  {% if entry.direction == 'IN' %}
+                    {{ entry.payer_phone|default:entry.payer_name|default:"—" }}
+                  {% elif entry.initiator_name %}
+                    {{ entry.initiator_name }}
+                  {% else %}
+                    {{ entry.destination_value|default:"—" }}
+                  {% endif %}
+                </td>
+                <td data-label="Ref"><code>{{ entry.account_ref|default:"—" }}</code></td>
+                <td data-label="Amount" class="automation-ledger-amount">
+                  {% if entry.direction == 'IN' %}
+                    <span class="automation-ledger-in">+ {{ entry.currency }} {{ entry.amount|floatformat:2 }}</span>
+                  {% else %}
+                    <span class="automation-ledger-out">− {{ entry.currency }} {{ entry.amount|floatformat:2 }}</span>
+                  {% endif %}
+                </td>
+                <td data-label="Status">
+                  <span class="badge badge-{{ entry.status|lower }}">{{ entry.get_status_display }}</span>
+                </td>
+                <td data-label="Narrative" class="automation-ledger-narrative">
+                  {{ entry.narrative|default:entry.expense_reason|default:"—" }}
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="8" class="empty">No transactions yet for this account.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if ledger_page.paginator.num_pages > 1 %}
+        <nav class="pagination toolbar" aria-label="Transaction pages">
+          {% if ledger_page.has_previous %}
+            <a class="btn btn-ghost btn-small" href="?page={{ ledger_page.previous_page_number }}">Previous</a>
+          {% endif %}
+          <span class="muted">Page {{ ledger_page.number }} of {{ ledger_page.paginator.num_pages }}</span>
+          {% if ledger_page.has_next %}
+            <a class="btn btn-ghost btn-small" href="?page={{ ledger_page.next_page_number }}">Next</a>
+          {% endif %}
+        </nav>
+      {% endif %}
+    </section>
+
+    {% include "partials/automation_apikey_modal.html" %}
+  </div>
+{% endblock %}

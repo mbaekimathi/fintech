@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Automations{% endblock %}
+{% block eyebrow %}Collections{% endblock %}
+{% block heading %}Automations{% endblock %}
+{% block content %}
+  <div
+    class="automations-page automations-hub"
+    x-data="{
+      registerOpen: {% if register_open or form.errors %}true{% else %}false{% endif %},
+      c2bOpen: false
+    }"
+    @keydown.escape.window="registerOpen = false; c2bOpen = false"
+  >
+    <section class="panel automations-hub-company">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">{{ product_name }} collection hub</p>
+          <h2>Company &amp; Daraja</h2>
+          <p class="muted">Shared M-Pesa app credentials and integration status for all collection accounts.</p>
+        </div>
+        <a class="btn btn-ghost" href="{% url 'core:daraja' %}">Daraja settings</a>
+      </div>
+      <dl class="kv automations-hub-kv">
+        <dt>Environment</dt>
+        <dd>{{ company.environment }}</dd>
+        <dt>Lipa shortcode</dt>
+        <dd>{% if company.shortcode %}{{ company.shortcode }}{% else %}<span class="muted">Not set</span>{% endif %}</dd>
+        <dt>Hub paybill</dt>
+        <dd>
+          {% if company.hub_paybill_name %}
+            {{ company.hub_paybill_name }}
+            {% if company.hub_paybill_number %}<span class="muted"> · {{ company.hub_paybill_number }}</span>{% endif %}
+          {% elif company.hub_paybill_number %}
+            {{ company.hub_paybill_number }}
+          {% else %}
+            <span class="muted">Link on Daraja setup</span>
+          {% endif %}
+        </dd>
+        <dt>Total collected</dt>
+        <dd><strong class="automation-stat-value">KES {{ total_collected|floatformat:2 }}</strong></dd>
+        <dt>Integration</dt>
+        <dd>
+          <span class="status-pill {% if company.stk_ready %}is-ok{% endif %}"><span class="status-pill-dot" aria-hidden="true"></span> STK</span>
+          <span class="status-pill {% if balance_ready %}is-ok{% endif %}"><span class="status-pill-dot" aria-hidden="true"></span> Live balance</span>
+          <span class="status-pill {% if c2b_ready %}is-ok{% endif %}"><span class="status-pill-dot" aria-hidden="true"></span> C2B</span>
+        </dd>
+      </dl>
+    </section>
+
+    <section class="panel automations-hub-accounts">
+      <div class="panel-head">
+        <div>
+          <h2>Collection accounts</h2>
+          <p class="muted">{{ accounts_count }} active · STK ready {{ stk_ready_count }}/{{ accounts_count }}</p>
+        </div>
+        <div class="automations-hub-head-actions">
+          <button type="button" class="btn btn-ghost" @click="c2bOpen = true">C2B URLs</button>
+          <button type="button" class="btn btn-primary" @click="registerOpen = true">Register account</button>
+        </div>
+      </div>
+
+      {% if accounts %}
+        <div class="table-wrap">
+          <table class="data automations-hub-table">
+            <thead>
+              <tr>
+                <th scope="col">Account</th>
+                <th scope="col">Type</th>
+                <th scope="col">Number</th>
+                <th scope="col">Collection ID</th>
+                <th scope="col">Collected</th>
+                <th scope="col">STK</th>
+                <th scope="col"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in accounts %}
+                <tr>
+                  <td><strong>{{ row.label }}</strong></td>
+                  <td>{{ row.account_type_label }}</td>
+                  <td>{{ row.identifier }}</td>
+                  <td><code class="collection-code">{{ row.collection_code }}</code></td>
+                  <td>KES {{ row.collected_total|floatformat:2 }}</td>
+                  <td>{% if row.stk_ready %}<span class="chip is-on">Ready</span>{% else %}<span class="muted">Setup</span>{% endif %}</td>
+                  <td class="automations-hub-open">
+                    <a class="btn btn-primary btn-small" href="{% url 'paybill:automation-account' row.id %}">Open account</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="automation-empty">
+          <p class="automation-empty-title">No collection accounts yet</p>
+          <p class="muted">Register a paybill, till, or phone to get a collection ID and API key.</p>
+          <button type="button" class="btn btn-primary" @click="registerOpen = true">Register account</button>
+        </div>
+      {% endif %}
+    </section>
+
+    {% include "partials/automation_register_modal.html" %}
+    {% include "partials/automation_c2b_modal.html" %}
+  </div>
+{% endblock %}

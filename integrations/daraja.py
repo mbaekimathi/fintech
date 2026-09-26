@@ -23,6 +23,8 @@ SANDBOX_B2C_OCCASION = "Payment"
 SANDBOX_B2B_REMARKS = "Transfer"
 
 STK_CALLBACK_PATH = "/api/v1/daraja/stk/callback/"
+C2B_VALIDATION_PATH = "/api/v1/daraja/c2b/validation/"
+C2B_CONFIRMATION_PATH = "/api/v1/daraja/c2b/confirmation/"
 RESULT_PATH = "/api/v1/daraja/result/"
 TIMEOUT_PATH = "/api/v1/daraja/timeout/"
 AGENT_DEPOSIT_CALLBACK_PATH = "/api/v1/daraja/agent/deposit/callback/"
@@ -146,6 +148,8 @@ def callback_urls(request=None) -> dict:
         return {}
     return {
         "stk_callback_url": base + STK_CALLBACK_PATH,
+        "c2b_validation_url": base + C2B_VALIDATION_PATH,
+        "c2b_confirmation_url": base + C2B_CONFIRMATION_PATH,
         "result_url": base + RESULT_PATH,
         "timeout_url": base + TIMEOUT_PATH,
         "agent_deposit_callback_url": base + AGENT_DEPOSIT_CALLBACK_PATH,
@@ -219,7 +223,28 @@ def serialize_hub_balance(config, operation=None) -> dict:
     }
 
 
-def request_hub_balance(*, config, created_by, result_url: str, timeout_url: str, identifier=None):
+def balance_operation_for_destination(destination: str, *, queued_only: bool = False):
+    """Latest account-balance query for a specific Party A / shortcode."""
+    from integrations.models import DarajaOperation
+
+    dest = str(destination or "").strip()
+    qs = DarajaOperation.objects.filter(kind=DarajaOperation.Kind.BALANCE)
+    if dest:
+        qs = qs.filter(destination=dest)
+    if queued_only:
+        qs = qs.filter(status=DarajaOperation.Status.QUEUED)
+    return qs.order_by("-created_at").first()
+
+
+def request_hub_balance(
+    *,
+    config,
+    created_by,
+    result_url: str,
+    timeout_url: str,
+    identifier=None,
+    party_a: str | None = None,
+):
     """Queue a live account-balance query against Safaricom."""
     from integrations.daraja_client import DarajaClient, DarajaError
     from integrations.models import DarajaOperation
@@ -234,6 +259,7 @@ def request_hub_balance(*, config, created_by, result_url: str, timeout_url: str
         result_url=result_url,
         timeout_url=timeout_url,
         identifier=str(identifier or config.balance_identifier_type or "4"),
+        party_a=party_a,
     )
     return DarajaOperation.objects.create(
         kind=DarajaOperation.Kind.BALANCE,
@@ -263,6 +289,8 @@ def form_callback_urls(request=None) -> dict:
     base = hosted_base_url(request)
     return {
         "stk_callback_url": base + STK_CALLBACK_PATH,
+        "c2b_validation_url": base + C2B_VALIDATION_PATH,
+        "c2b_confirmation_url": base + C2B_CONFIRMATION_PATH,
         "result_url": base + RESULT_PATH,
         "timeout_url": base + TIMEOUT_PATH,
         "agent_deposit_callback_url": base + AGENT_DEPOSIT_CALLBACK_PATH,

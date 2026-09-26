@@ -149,8 +149,14 @@
     set(refs.reason, meta.reason);
     set(refs.amount, meta.amount);
     set(refs.source, meta.source);
+    const reasonRow = refs.wrap?.querySelector("[data-pin-approval-reason-row]");
+    if (reasonRow) reasonRow.hidden = !meta.reason;
     const hasAny = Object.values(meta).some((v) => Boolean(v));
     if (refs.wrap) refs.wrap.hidden = !hasAny;
+    const pinSub = document.querySelector("[data-pin-approval-subtitle]");
+    if (pinSub && refs.wrap?.hasAttribute("data-pin-approval-detail-wrap")) {
+      pinSub.hidden = hasAny;
+    }
   }
 
   function appendInlineApprovalPin(form) {
@@ -1051,7 +1057,9 @@
         });
         const data = await response.json();
         if (response.ok && data.ok && data.summary) {
-          sub.textContent = `${data.summary} Enter your 6-digit approval password to approve and send.`;
+          /* Summary lives in the detail card; keep subtitle short. */
+          sub.textContent =
+            "Enter your 6-digit hub approval password to approve and send.";
         }
       } catch (_err) {
         /* keep default subtitle */
@@ -1087,12 +1095,11 @@
       }
 
       if (dom.appFieldLabel) {
-        dom.appFieldLabel.textContent =
-          "6-digit hub approval password (not M-Pesa PIN)";
+        dom.appFieldLabel.textContent = "Approval password";
       }
       if (dom.appSubtitle && paybillPinAuth(config)) {
         dom.appSubtitle.textContent =
-          "Enter your 6-digit hub approval password. If it is valid, this payment will be sent from the hub paybill.";
+          "Enter your 6-digit hub approval password to approve and send.";
       }
       if (paybillPinAuth(config)) {
         loadPaybillAuthSummary(form);
