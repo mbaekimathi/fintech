@@ -45,6 +45,14 @@ if ! grep -q '^APPROVAL_STK_PHONE_PROMPT=' .env 2>/dev/null; then
   echo 'APPROVAL_STK_PHONE_PROMPT=0' >> .env
   echo "Added APPROVAL_STK_PHONE_PROMPT=0 to .env (approve via app password; no M-Pesa charge on reviewer phone)."
 fi
+if ! grep -q '^APPROVAL_SMS_OTP=' .env 2>/dev/null; then
+  echo 'APPROVAL_SMS_OTP=1' >> .env
+  echo "Added APPROVAL_SMS_OTP=1 to .env (SMS one-time code for PIN-on-approve)."
+fi
+if ! grep -q '^SMS_PROVIDER=' .env 2>/dev/null; then
+  echo 'SMS_PROVIDER=africastalking' >> .env
+  echo "Added SMS_PROVIDER=africastalking — set AFRICASTALKING_USERNAME and AFRICASTALKING_API_KEY in .env."
+fi
 
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput --clear

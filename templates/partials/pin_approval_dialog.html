@@ -34,7 +34,7 @@
         </button>
       </div>
       <h2 id="pin-approval-title" class="approval-dialog__title">Enter your approval password</h2>
-      <p class="approval-dialog__subtitle pin-approval-dialog__subtitle">Enter your 6-digit password to approve and send this payment from the hub paybill.</p>
+      <p class="approval-dialog__subtitle pin-approval-dialog__subtitle" data-pin-approval-subtitle>Enter your 6-digit password to approve and send this payment from the hub paybill.</p>
     </header>
 
     <div class="approval-request-detail" data-pin-approval-detail-wrap hidden>
@@ -86,7 +86,7 @@
     </p>
 
     <label class="approval-pin-field label">
-      <span class="approval-pin-field__label">6-digit app password (hub paybill — not M-Pesa PIN)</span>
+      <span class="approval-pin-field__label" data-pin-approval-field-label>6-digit app password (hub paybill — not M-Pesa PIN)</span>
       <div class="approval-pin-field__wrap">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="7" cy="12" r="1.5" fill="currentColor"/>
@@ -109,6 +109,9 @@
     <p class="approval-alert approval-alert--error" data-pin-approval-error hidden>Enter your 6-digit approval password.</p>
 
     <footer class="approval-dialog__foot">
+      <button type="button" class="btn btn-ghost approval-btn-alt" data-pin-approval-resend-sms hidden>
+        Resend code to my phone
+      </button>
       {% if approval_stk_lipa_charge %}
       <button type="button" class="btn btn-ghost approval-btn-alt" data-pin-approval-use-stk hidden>
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">

@@ -122,3 +122,28 @@ class PushSubscription(models.Model):
         import hashlib
 
         return hashlib.sha256((endpoint or "").encode("utf-8")).hexdigest()
+
+
+class ApprovalSmsChallenge(models.Model):
+    """One-time SMS code for PIN-on-approve payment authorization."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="approval_sms_challenges",
+    )
+    money_request_id = models.PositiveIntegerField(db_index=True)
+    phone = models.CharField(max_length=20)
+    code_hash = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "money_request_id", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"SMS OTP user={self.user_id} mr={self.money_request_id}"

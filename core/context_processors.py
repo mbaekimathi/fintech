@@ -5,6 +5,7 @@ from django.urls import reverse
 from django.conf import settings as django_settings
 
 from core.approval import approval_phone_stk_enabled, approval_stk_lipa_charge_enabled
+from core.approval_sms import approval_sms_otp_enabled
 from core.models import AppSettings
 from core.notifications import unread_notification_count, user_notifications
 from core.webpush import vapid_public_key, webpush_enabled
@@ -72,6 +73,7 @@ def shell(request):
     reviewer_approval_profile_incomplete = False
     approval_stk_lipa_charge = False
     approval_phone_stk = False
+    approval_sms_otp = False
     if user and user.is_authenticated and not user.is_pending:
         current = getattr(getattr(request, "resolver_match", None), "view_name", "")
         sections = _section_items(user)
@@ -98,12 +100,14 @@ def shell(request):
         )
         approval_stk_lipa_charge = approval_stk_lipa_charge_enabled()
         approval_phone_stk = approval_phone_stk_enabled()
+        approval_sms_otp = approval_sms_otp_enabled()
         reviewer_approval_profile_incomplete = (
             (app_approval_required_for_user and not reviewer_has_approval_password)
             or (stk_pin_approval_required_for_user and not reviewer_has_phone)
             or (
                 stk_pin_approval_required_for_user
                 and not approval_phone_stk_enabled()
+                and not approval_sms_otp_enabled()
                 and not reviewer_has_approval_password
             )
         )
@@ -166,6 +170,7 @@ def shell(request):
         "profile_url": profile_url,
         "approval_stk_lipa_charge": approval_stk_lipa_charge,
         "approval_phone_stk": approval_phone_stk,
+        "approval_sms_otp": approval_sms_otp,
         "webpush_enabled": webpush_enabled(),
         "webpush_vapid_public_key": vapid_public_key() if webpush_enabled() else "",
         "asset_version": getattr(django_settings, "ASSET_VERSION", ""),

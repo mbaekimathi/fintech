@@ -204,6 +204,7 @@
         "hubApp": {% if app_approval_required %}true{% else %}false{% endif %},
         "hubStk": {% if stk_pin_approval_required %}true{% else %}false{% endif %},
         "stkInitiateUrl": "{% url 'core:approval-stk-initiate' %}",
+        "smsSendUrl": "{% url 'core:approval-sms-send' %}",
         "stkPollUrl": "{% url 'core:approval-stk-poll' pk=0 %}",
         "pendingPollUrl": "{% url 'core:approval-pending-poll' %}",
         "notificationsReadUrl": "{% url 'core:notifications-read' %}",
@@ -216,7 +217,8 @@
         "dualApproval": {% if dual_approval_required %}true{% else %}false{% endif %},
         "stkLipaCharge": {% if approval_stk_lipa_charge %}true{% else %}false{% endif %},
         "phoneStkPrompt": {% if approval_phone_stk %}true{% else %}false{% endif %},
-        "paybillPinAuth": {% if approval_phone_stk and stk_pin_approval_required_for_user %}false{% elif approval_stk_lipa_charge %}false{% else %}true{% endif %},
+        "smsOtp": {% if approval_sms_otp and stk_pin_approval_required_for_user %}true{% else %}false{% endif %},
+        "paybillPinAuth": {% if approval_sms_otp and stk_pin_approval_required_for_user %}false{% elif approval_phone_stk and stk_pin_approval_required_for_user %}false{% elif approval_stk_lipa_charge %}false{% else %}true{% endif %},
         "profileUrl": "{{ profile_url|escapejs }}"
       }
     </script>

@@ -1106,6 +1106,86 @@ class AppSettingsTests(TestCase):
             stk_before,
         )
 
+    @override_settings(
+        APPROVAL_STK_LIPA_CHARGE=False,
+        APPROVAL_STK_PHONE_PROMPT=False,
+        APPROVAL_SMS_OTP=True,
+        SMS_PROVIDER="console",
+    )
+    def test_sms_otp_send_and_approve_stk_only_reviewer(self):
+        settings = AppSettings.load()
+        settings.stk_pin_approval_required = True
+        settings.save(update_fields=["stk_pin_approval_required"])
+        sync_permissions_from_role(self.it_support, reset=True)
+        perms = EmployeePermissions.objects.get(user=self.it_support)
+        perms.pin_approval_prompt = False
+        perms.stk_pin_approval_prompt = True
+        perms.save(
+            update_fields=["pin_approval_prompt", "stk_pin_approval_prompt", "updated_at"]
+        )
+        self.it_support.phone = "0712345678"
+        self.it_support.approval_password = ""
+        self.it_support.save(update_fields=["phone", "approval_password"])
+
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("650.00"),
+            reason="SMS OTP",
+            status=MoneyRequest.Status.PENDING,
+        )
+        note = Notification.objects.create(
+            recipient=self.it_support,
+            actor=self.employee,
+            kind=Notification.Kind.MONEY_REQUEST,
+            title="Emp Apps requested KES 650.00",
+            body="Phone · 0712345678",
+            money_request=req,
+        )
+        self.client.force_login(self.it_support)
+        send = self.client.post(
+            self._url(User.Role.IT_SUPPORT, "core:approval-sms-send"),
+            {"money_request_id": str(req.pk)},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(send.status_code, 200)
+        self.assertTrue(send.json()["ok"])
+
+        from core.models import ApprovalSmsChallenge
+
+        challenge = ApprovalSmsChallenge.objects.filter(user=self.it_support, money_request_id=req.pk).first()
+        self.assertIsNotNone(challenge)
+
+        from django.contrib.auth.hashers import make_password
+
+        plain = "442211"
+        challenge.code_hash = make_password(plain)
+        challenge.save(update_fields=["code_hash"])
+
+        ack = {
+            "ResponseCode": "0",
+            "ResponseDescription": "Accept the service request successfully.",
+            "ConversationID": "AG_SMS_1",
+            "OriginatorConversationID": "ORIG_SMS_1",
+        }
+        with patch("integrations.daraja_client.DarajaClient.access_token", return_value="token"):
+            with patch("integrations.daraja_client._json_request") as mock_req:
+                mock_req.return_value = (200, ack)
+                approved = self.client.post(
+                    self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
+                    {"intent": "approve", "approval_pin": plain, "next": "/"},
+                )
+        self.assertRedirects(
+            approved,
+            self._url(User.Role.IT_SUPPORT, "paybill:transactions"),
+            fetch_redirect_response=False,
+        )
+        req.refresh_from_db()
+        self.assertEqual(req.status, MoneyRequest.Status.APPROVED)
+
     @override_settings(APPROVAL_STK_LIPA_CHARGE=False, APPROVAL_STK_PHONE_PROMPT=True)
     def test_stk_initiate_sends_phone_stk_when_hub_pin_approval_on(self):
         settings = AppSettings.load()

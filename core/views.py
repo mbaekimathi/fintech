@@ -25,6 +25,7 @@ from core.approval import (
     stk_approval_poll_payload,
     user_requires_stk_on_approval,
 )
+from core.approval_sms import approval_sms_otp_enabled, send_approval_sms_otp
 from core.approval_poll import pending_approval_queue_for_user
 from core.models import AppSettings, Notification, PushSubscription
 from core.notifications import (
@@ -750,6 +751,42 @@ class PendingApprovalPollView(RoleRequiredMixin, View):
                 "pending": pending,
                 "notifications": notifications,
                 "unread_count": unread_notification_count(request.user),
+            }
+        )
+
+
+class ApprovalSmsSendView(RoleRequiredMixin, View):
+    required_activity = "review_requests"
+
+    def post(self, request, *args, **kwargs):
+        from integrations.daraja_client import DarajaError
+        from paybill.models import MoneyRequest
+
+        if not user_requires_stk_on_approval(request.user):
+            return JsonResponse({"ok": False, "detail": "PIN-on-approve is not enabled for you."}, status=400)
+        if not approval_sms_otp_enabled():
+            return JsonResponse({"ok": False, "detail": "SMS approval codes are not enabled."}, status=400)
+
+        raw_id = (request.POST.get("money_request_id") or "").strip()
+        if not raw_id.isdigit():
+            return JsonResponse({"ok": False, "detail": "Missing money request."}, status=400)
+
+        money_request = get_object_or_404(MoneyRequest, pk=int(raw_id))
+        if money_request.status != MoneyRequest.Status.PENDING:
+            return JsonResponse({"ok": False, "detail": "That request is no longer pending."}, status=409)
+
+        try:
+            meta = send_approval_sms_otp(request.user, money_request.pk)
+        except DarajaError as exc:
+            return JsonResponse({"ok": False, "detail": str(exc)}, status=400)
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "mode": "sms_otp",
+                "masked_phone": meta["masked_phone"],
+                "expires_in_seconds": meta["expires_in_seconds"],
+                "summary": f"We sent a 6-digit code to {meta['masked_phone']}. Enter it below to approve and send.",
             }
         )
 

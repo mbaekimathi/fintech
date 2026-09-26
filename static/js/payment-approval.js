@@ -29,11 +29,13 @@
     const paybill =
       raw.paybillPinAuth === true || raw.paybillPinAuth === "true" || !lipa;
     const phoneStk = raw.phoneStkPrompt === true || raw.phoneStkPrompt === "true";
+    const smsOtp = raw.smsOtp === true || raw.smsOtp === "true";
     return {
       ...raw,
       stkLipaCharge: lipa,
       paybillPinAuth: paybill,
       phoneStkPrompt: phoneStk,
+      smsOtp,
     };
   }
 
@@ -53,6 +55,10 @@
 
   function phoneStkPrompt(config) {
     return Boolean(config?.phoneStkPrompt && channels(config).stk);
+  }
+
+  function smsOtpForReviewer(config) {
+    return Boolean(config?.smsOtp && channels(config).stk);
   }
 
   function paybillPinAuth(config) {
@@ -569,14 +575,20 @@
     if (!approvalRequired(config)) return false;
     const needs = [];
     const stkAuthorizesPaybill = ch.stk && paybillPinAuth(config);
-    if (
-      (ch.app || stkAuthorizesPaybill) &&
-      config?.hasApprovalPassword === false
-    ) {
-      needs.push("a 6-digit approval password on Profile");
-    }
-    if (ch.stk && config?.hasPhone === false) {
-      needs.push("your phone number on Profile");
+    if (smsOtpForReviewer(config)) {
+      if (config?.hasPhone === false) {
+        needs.push("your phone number on Profile");
+      }
+    } else {
+      if (
+        (ch.app || stkAuthorizesPaybill) &&
+        config?.hasApprovalPassword === false
+      ) {
+        needs.push("a 6-digit approval password on Profile");
+      }
+      if (ch.stk && config?.hasPhone === false) {
+        needs.push("your phone number on Profile");
+      }
     }
     if (needs.length) {
       window.alert(`Before you can approve, set ${needs.join(" and ")}.`);
@@ -600,6 +612,9 @@
       appUseStk: document.querySelector("[data-pin-approval-use-stk]"),
       appSubmit: document.querySelector("[data-pin-approval-submit]"),
       appCancel: document.querySelector("[data-pin-approval-cancel]"),
+      appSubtitle: document.querySelector("[data-pin-approval-subtitle]"),
+      appFieldLabel: document.querySelector("[data-pin-approval-field-label]"),
+      appResendSms: document.querySelector("[data-pin-approval-resend-sms]"),
       appDetailRefs: queryApprovalDetailRefs("pin"),
       stkBackdrop: document.querySelector("[data-stk-approval-backdrop]"),
       stkDialog: document.querySelector("[data-stk-approval-dialog]"),
@@ -967,8 +982,55 @@
         stkPollTimer = window.setInterval(tick, STK_POLL_MS);
       });
 
+    const sendApprovalSms = async (form) => {
+      const moneyRequestId = form.getAttribute("data-money-request-id");
+      if (!moneyRequestId || !config.smsSendUrl) {
+        window.alert("SMS approval is not configured on this page.");
+        return false;
+      }
+      if (dom.appSubmit) dom.appSubmit.disabled = true;
+      try {
+        const body = new URLSearchParams({ money_request_id: moneyRequestId });
+        const response = await fetch(config.smsSendUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Requested-With": "XMLHttpRequest",
+            "X-CSRFToken": csrf,
+          },
+          body,
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.detail || "Could not send SMS code.");
+        }
+        if (dom.appSubtitle) {
+          dom.appSubtitle.textContent =
+            data.summary || "Enter the 6-digit code we sent to your phone.";
+        }
+        if (dom.appFieldLabel) dom.appFieldLabel.textContent = "6-digit code from SMS";
+        if (dom.appInput) {
+          dom.appInput.setAttribute("aria-label", "6-digit SMS approval code");
+          dom.appInput.disabled = false;
+        }
+        if (dom.appResendSms) showEl(dom.appResendSms);
+        if (dom.appError) dom.appError.hidden = true;
+        return true;
+      } catch (err) {
+        const msg = err.message || "Could not send SMS code.";
+        if (dom.appError) {
+          dom.appError.textContent = msg;
+          dom.appError.hidden = false;
+        }
+        window.alert(msg);
+        return false;
+      } finally {
+        if (dom.appSubmit) dom.appSubmit.disabled = false;
+      }
+    };
+
     const loadPaybillAuthSummary = async (form) => {
-      const sub = document.querySelector(".pin-approval-dialog__subtitle");
+      const sub = dom.appSubtitle || document.querySelector(".pin-approval-dialog__subtitle");
       const moneyRequestId = form.getAttribute("data-money-request-id");
       if (!sub || !moneyRequestId || !config.stkInitiateUrl) return;
       try {
@@ -991,7 +1053,7 @@
       }
     };
 
-    const openApp = (form) => {
+    const openApp = (form, { useSmsOtp = false } = {}) => {
       if (!dom.appBackdrop || !dom.appInput) {
         window.alert("Approval password prompt is not available on this page.");
         reset();
@@ -1000,6 +1062,29 @@
       pendingForm = form;
       setContext(form);
       dom.appInput.value = "";
+      const smsMode = useSmsOtp || smsOtpForReviewer(config);
+      if (dom.appResendSms) hideEl(dom.appResendSms);
+
+      if (smsMode) {
+        if (dom.appSetup) dom.appSetup.hidden = true;
+        if (dom.appPhoneSetup) dom.appPhoneSetup.hidden = config.hasPhone !== false;
+        if (dom.appUseStk) dom.appUseStk.hidden = true;
+        if (dom.appFieldLabel) dom.appFieldLabel.textContent = "6-digit code from SMS";
+        if (dom.appSubtitle) {
+          dom.appSubtitle.textContent = "Sending a one-time code to your phone…";
+        }
+        dom.appInput.disabled = true;
+        showEl(dom.appBackdrop);
+        sendApprovalSms(form).then((ok) => {
+          if (ok) window.requestAnimationFrame(() => dom.appInput?.focus());
+        });
+        return;
+      }
+
+      if (dom.appFieldLabel) {
+        dom.appFieldLabel.textContent =
+          "6-digit app password (hub paybill — not M-Pesa PIN)";
+      }
       if (paybillPinAuth(config)) {
         loadPaybillAuthSummary(form);
       }
@@ -1150,6 +1235,7 @@
 
     const pickChannel = () => {
       if (!ch.app && !ch.stk) return "none";
+      if (smsOtpForReviewer(config) && ch.stk && config?.hasPhone !== false) return "sms";
       if (paybillPinAuth(config)) return "app";
       if (ch.app && appReady(config, ch)) return "app";
       if (phoneStkPrompt(config) && ch.stk && stkReady(config, ch)) return "stk";
@@ -1181,6 +1267,11 @@
       approvalPin = "";
 
       const channel = pickChannel();
+
+      if (channel === "sms") {
+        openApp(form, { useSmsOtp: true });
+        return;
+      }
 
       if (channel === "app") {
         if (paybillPinAuth(config)) {
@@ -1283,6 +1374,9 @@
     );
 
     dom.appSubmit?.addEventListener("click", submitAppPin);
+    dom.appResendSms?.addEventListener("click", () => {
+      if (pendingForm) sendApprovalSms(pendingForm);
+    });
     dom.appUseStk?.addEventListener("click", () => {
       if (paybillPinAuth(config)) {
         dom.appInput?.focus();

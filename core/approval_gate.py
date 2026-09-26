@@ -10,12 +10,12 @@ from paybill.models import MoneyRequest
 
 from core.approval import (
     approval_phone_stk_enabled,
-    approval_stk_lipa_charge_enabled,
     user_requires_app_on_approval,
     user_requires_stk_on_approval,
     verify_approval_pin,
     verify_stk_approval,
 )
+from core.approval_sms import approval_sms_otp_enabled, verify_approval_sms_otp
 
 
 @dataclass(frozen=True)
@@ -41,6 +41,13 @@ def channels_for(user) -> ApprovalChannels:
     )
 
 
+def _sms_otp_verified(request, money_request: MoneyRequest) -> bool:
+    if not approval_sms_otp_enabled() or not user_requires_stk_on_approval(request.user):
+        return False
+    pin = (request.POST.get("approval_pin") or request.POST.get("approval_sms_code") or "").strip()
+    return verify_approval_sms_otp(request.user, money_request.pk, pin)
+
+
 def _stk_verified_on_request(request, money_request: MoneyRequest) -> bool:
     raw_id = (request.POST.get("stk_approval_operation_id") or "").strip()
     if not raw_id.isdigit():
@@ -59,7 +66,8 @@ def _dual_channel_ok(request, money_request: MoneyRequest) -> bool:
     user = request.user
     pin_ok = _app_pin_verified(request)
     stk_ok = _stk_verified_on_request(request, money_request)
-    if pin_ok or stk_ok:
+    sms_ok = _sms_otp_verified(request, money_request)
+    if pin_ok or stk_ok or sms_ok:
         return True
 
     if not user.has_approval_password and not (user.phone or "").strip():
@@ -77,10 +85,16 @@ def _dual_channel_ok(request, money_request: MoneyRequest) -> bool:
             "Add your phone number on Profile, or enter your approval password in the app.",
         )
     else:
-        messages.error(
-            request,
-            "Enter your approval password in the app or complete the M-Pesa PIN prompt on your phone.",
-        )
+        if approval_sms_otp_enabled() and user_requires_stk_on_approval(user):
+            messages.error(
+                request,
+                "Enter the 6-digit code we sent to your phone, or use your approval password in the app.",
+            )
+        else:
+            messages.error(
+                request,
+                "Enter your approval password in the app or complete the M-Pesa PIN prompt on your phone.",
+            )
     return False
 
 
@@ -107,9 +121,18 @@ def _stk_only_ok(request, money_request: MoneyRequest) -> bool:
             return True
         messages.error(request, "Complete the M-Pesa PIN prompt on your phone to approve this payment.")
         return False
-    # Hub PIN approval off phone STK: registered phone + app approval password.
     if not (request.user.phone or "").strip():
         messages.error(request, "Add your phone number on Profile before approving payments.")
+        return False
+    if approval_sms_otp_enabled():
+        if _sms_otp_verified(request, money_request):
+            return True
+        if _app_pin_verified(request):
+            return True
+        messages.error(
+            request,
+            "Enter the 6-digit code we sent to your phone, or your approval password if you have one set.",
+        )
         return False
     return _app_only_ok(request)
 
