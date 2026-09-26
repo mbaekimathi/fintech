@@ -850,6 +850,30 @@
         stkPollTimer = window.setInterval(tick, STK_POLL_MS);
       });
 
+    const loadPaybillAuthSummary = async (form) => {
+      const sub = document.querySelector(".pin-approval-dialog__subtitle");
+      const moneyRequestId = form.getAttribute("data-money-request-id");
+      if (!sub || !moneyRequestId || !config.stkInitiateUrl) return;
+      try {
+        const body = new URLSearchParams({ money_request_id: moneyRequestId });
+        const response = await fetch(config.stkInitiateUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Requested-With": "XMLHttpRequest",
+            "X-CSRFToken": csrf,
+          },
+          body,
+        });
+        const data = await response.json();
+        if (response.ok && data.ok && data.summary) {
+          sub.textContent = `${data.summary} Enter your 6-digit approval password to approve and send.`;
+        }
+      } catch (_err) {
+        /* keep default subtitle */
+      }
+    };
+
     const openApp = (form) => {
       if (!dom.appBackdrop || !dom.appInput) {
         window.alert("Approval password prompt is not available on this page.");
@@ -859,6 +883,9 @@
       pendingForm = form;
       setContext(form);
       dom.appInput.value = "";
+      if (config.stkLipaCharge === false) {
+        loadPaybillAuthSummary(form);
+      }
 
       const needsPassword = config.hasApprovalPassword === false;
       const needsPhone = config.hasPhone === false;
@@ -1006,25 +1033,12 @@
       }
     };
 
-    const pickChannel = ({ manual = false } = {}) => {
-      const onlyApp = ch.app && !ch.stk;
-      const onlyStk = ch.stk && !ch.app;
-      const both = ch.app && ch.stk;
-
-      if (onlyApp) return "app";
-      if (onlyStk) return config.stkLipaCharge === false ? "app" : "stk";
-
-      if (both) {
-        if (manual || tabVisible()) {
-          if (appReady(config, ch)) return "app";
-          if (stkReady(config, ch)) return "stk";
-          return ch.app ? "app" : "stk";
-        }
-        if (stkReady(config, ch)) return "stk";
-        if (appReady(config, ch)) return "app";
-        return ch.stk ? "stk" : "app";
-      }
-      return "none";
+    const pickChannel = () => {
+      if (!ch.app && !ch.stk) return "none";
+      if (config.stkLipaCharge === false) return "app";
+      if (appReady(config, ch)) return "app";
+      if (ch.stk && stkReady(config, ch)) return "stk";
+      return ch.app ? "app" : "stk";
     };
 
     const deferUntilVisible = (form) => {
@@ -1047,11 +1061,15 @@
       pendingForm = form;
       approvalPin = "";
 
-      const channel = pickChannel({ manual });
+      const channel = pickChannel();
 
       if (channel === "app") {
+        if (config.stkLipaCharge === false) {
+          openApp(form);
+          return;
+        }
         if (!manual && !tabVisible()) {
-          if (stkReady(config, ch) && config.stkLipaCharge !== false) {
+          if (stkReady(config, ch)) {
             runStk(form, { visible: false });
             return;
           }

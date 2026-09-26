@@ -169,11 +169,13 @@
     {% include "partials/footer.html" %}
   </div>
   <div class="nav-backdrop" @click="navOpen = false" x-cloak x-show="navOpen"></div>
-  {% if can_review_money_requests and app_approval_required_for_user %}
-    {% include "partials/pin_approval_dialog.html" %}
-  {% endif %}
-  {% if can_review_money_requests and stk_pin_approval_required_for_user %}
-    {% include "partials/stk_approval_dialog.html" %}
+  {% if can_review_money_requests %}
+    {% if app_approval_required_for_user or stk_pin_approval_required_for_user and not approval_stk_lipa_charge %}
+      {% include "partials/pin_approval_dialog.html" %}
+    {% endif %}
+    {% if stk_pin_approval_required_for_user and approval_stk_lipa_charge %}
+      {% include "partials/stk_approval_dialog.html" %}
+    {% endif %}
   {% endif %}
   {% if can_review_money_requests %}
     <script type="application/json" id="approval-config">
