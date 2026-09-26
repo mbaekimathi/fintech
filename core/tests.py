@@ -1072,7 +1072,7 @@ class AppSettingsTests(TestCase):
         self.assertEqual(req.status, MoneyRequest.Status.APPROVED)
         self.assertIsNotNone(req.daraja_operation_id)
 
-    @override_settings(APPROVAL_STK_LIPA_CHARGE=False)
+    @override_settings(APPROVAL_STK_LIPA_CHARGE=False, APPROVAL_STK_PHONE_PROMPT=False)
     def test_stk_initiate_returns_paybill_payout_not_lipa_stk(self):
         settings = AppSettings.load()
         settings.stk_pin_approval_required = True
@@ -1104,6 +1104,49 @@ class AppSettingsTests(TestCase):
         self.assertEqual(
             DarajaOperation.objects.filter(kind=DarajaOperation.Kind.STK).count(),
             stk_before,
+        )
+
+    @override_settings(APPROVAL_STK_LIPA_CHARGE=False, APPROVAL_STK_PHONE_PROMPT=True)
+    def test_stk_initiate_sends_phone_stk_when_hub_pin_approval_on(self):
+        settings = AppSettings.load()
+        settings.stk_pin_approval_required = True
+        settings.save(update_fields=["stk_pin_approval_required"])
+        self._enable_stk_only_approval(self.it_support)
+
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("900.00"),
+            reason="STK phone test",
+            status=MoneyRequest.Status.PENDING,
+        )
+        stk_before = DarajaOperation.objects.filter(kind=DarajaOperation.Kind.STK).count()
+        self.client.force_login(self.it_support)
+        ack = {
+            "ResponseCode": "0",
+            "ResponseDescription": "Success",
+            "MerchantRequestID": "mr",
+            "CheckoutRequestID": "ws_CO_phone_stk",
+            "CustomerMessage": "Check your phone",
+        }
+        with patch("integrations.daraja_client.DarajaClient.access_token", return_value="token"):
+            with patch("integrations.daraja_client._json_request") as mock_req:
+                mock_req.return_value = (200, ack)
+                response = self.client.post(
+                    self._url(User.Role.IT_SUPPORT, "core:approval-stk-initiate"),
+                    {"money_request_id": str(req.pk)},
+                    HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+                )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["mode"], "lipa_stk")
+        self.assertEqual(
+            DarajaOperation.objects.filter(kind=DarajaOperation.Kind.STK).count(),
+            stk_before + 1,
         )
 
     @override_settings(APPROVAL_STK_LIPA_CHARGE=True)
@@ -1147,7 +1190,7 @@ class AppSettingsTests(TestCase):
         self.assertIn("Invalid Access Token", payload.get("query_error", ""))
         self.assertFalse(payload["complete"])
 
-    @override_settings(APPROVAL_STK_LIPA_CHARGE=False)
+    @override_settings(APPROVAL_STK_LIPA_CHARGE=False, APPROVAL_STK_PHONE_PROMPT=False)
     def test_stk_only_reviewer_approves_with_app_pin_not_stk_operation(self):
         settings = AppSettings.load()
         settings.stk_pin_approval_required = True

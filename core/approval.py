@@ -26,6 +26,18 @@ def approval_stk_lipa_charge_enabled() -> bool:
     return bool(getattr(django_settings, "APPROVAL_STK_LIPA_CHARGE", False))
 
 
+def approval_phone_stk_enabled() -> bool:
+    """
+    When True and hub PIN approval is on, send an M-Pesa STK push to the reviewer's phone
+    so they enter their M-Pesa PIN (Safaricom verify; small auth charge via Lipa STK).
+    """
+    if not stk_pin_approval_required():
+        return False
+    if approval_stk_lipa_charge_enabled():
+        return True
+    return bool(getattr(django_settings, "APPROVAL_STK_PHONE_PROMPT", True))
+
+
 def app_approval_required() -> bool:
     return AppSettings.load().app_approval_required
 
@@ -93,11 +105,11 @@ def payout_authorization_message(money_request: MoneyRequest) -> str:
 
 
 def initiate_stk_approval(request, money_request: MoneyRequest) -> DarajaOperation:
-    """Optional Lipa STK (KES 1) to verify PIN; default is paybill payout auth via app password."""
-    if not approval_stk_lipa_charge_enabled():
+    """Lipa STK (KES 1) on the reviewer's phone to verify M-Pesa PIN before hub payout."""
+    if not approval_phone_stk_enabled():
         raise DarajaError(
             "Approval uses your app password to authorize the paybill payout. "
-            "Enter it in the app — your phone is not charged via M-Pesa for this step."
+            "Enter it in the app — your phone is not prompted via M-Pesa for this step."
         )
 
     phone = (request.user.phone or "").strip()

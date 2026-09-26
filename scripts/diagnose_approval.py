@@ -23,7 +23,9 @@ from django.urls import reverse
 
 from accounts.models import User
 from accounts.role_urls import reset_current_role_slug, role_to_slug, set_current_role_slug
+from core.approval import approval_phone_stk_enabled
 from core.models import AppSettings, Notification
+from integrations.models import DarajaConfig
 from paybill.models import MoneyRequest
 
 UserModel = get_user_model()
@@ -43,12 +45,34 @@ def main() -> int:
         "stk=", app_settings.stk_pin_approval_required,
     )
     print(
+        "Env STK:",
+        "APPROVAL_STK_LIPA_CHARGE=", getattr(settings, "APPROVAL_STK_LIPA_CHARGE", False),
+        "| APPROVAL_STK_PHONE_PROMPT=", getattr(settings, "APPROVAL_STK_PHONE_PROMPT", True),
+        "| phone_stk_enabled=", approval_phone_stk_enabled(),
+    )
+    daraja = DarajaConfig.load()
+    print("Daraja STK ready:", daraja.stk_ready)
+    perms = getattr(it, "permissions", None)
+    if perms:
+        print(
+            "Employee perms:",
+            "review=", perms.review_requests,
+            "pin_on_approve=", perms.pin_approval_prompt,
+            "stk_on_approve=", perms.stk_pin_approval_prompt,
+        )
+    print(
         "Reviewer gates:",
         "requires_app=", it.requires_app_on_approval(),
         "requires_stk=", it.requires_stk_on_approval(),
         "has_password=", it.has_approval_password,
         "phone=", it.phone or "(empty)",
     )
+    if it.requires_stk_on_approval() and approval_phone_stk_enabled() and not it.phone:
+        print("BLOCKER: PIN-on-approve STK needs a phone number on Profile.")
+    if it.requires_stk_on_approval() and approval_phone_stk_enabled() and not daraja.stk_ready:
+        print("BLOCKER: Daraja STK is not ready — finish STK setup in Daraja settings.")
+    if it.requires_stk_on_approval() and not approval_phone_stk_enabled():
+        print("NOTE: Phone STK is off (APPROVAL_STK_PHONE_PROMPT=0); reviewers use app password only.")
 
     pending = MoneyRequest.objects.filter(status=MoneyRequest.Status.PENDING).count()
     notes = Notification.objects.filter(

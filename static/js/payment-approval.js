@@ -28,10 +28,12 @@
     const lipa = raw.stkLipaCharge === true;
     const paybill =
       raw.paybillPinAuth === true || raw.paybillPinAuth === "true" || !lipa;
+    const phoneStk = raw.phoneStkPrompt === true || raw.phoneStkPrompt === "true";
     return {
       ...raw,
       stkLipaCharge: lipa,
       paybillPinAuth: paybill,
+      phoneStkPrompt: phoneStk,
     };
   }
 
@@ -49,7 +51,12 @@
     return config?.stkLipaCharge === true;
   }
 
+  function phoneStkPrompt(config) {
+    return Boolean(config?.phoneStkPrompt && channels(config).stk);
+  }
+
   function paybillPinAuth(config) {
+    if (phoneStkPrompt(config)) return false;
     return config?.paybillPinAuth !== false && !lipaStkChargeEnabled(config);
   }
 
@@ -1141,8 +1148,11 @@
       }
     };
 
-    const pickChannel = () => {
+    const pickChannel = (manual = false) => {
       if (!ch.app && !ch.stk) return "none";
+      if (phoneStkPrompt(config) && ch.stk && stkReady(config, ch)) {
+        if (!ch.app || !appReady(config, ch) || manual) return "stk";
+      }
       if (paybillPinAuth(config)) return "app";
       if (appReady(config, ch)) return "app";
       if (ch.stk && stkReady(config, ch)) return "stk";
@@ -1171,7 +1181,7 @@
       pendingForm = form;
       approvalPin = "";
 
-      const channel = pickChannel();
+      const channel = pickChannel(manual);
 
       if (channel === "app") {
         if (paybillPinAuth(config)) {

@@ -17,6 +17,7 @@ from accounts.models import User
 from accounts.utils import write_audit
 from core.approval import (
     approval_ok,
+    approval_phone_stk_enabled,
     approval_stk_lipa_charge_enabled,
     initiate_stk_approval,
     payout_authorization_message,
@@ -770,7 +771,7 @@ class StkApprovalInitiateView(RoleRequiredMixin, View):
         if money_request.status != MoneyRequest.Status.PENDING:
             return JsonResponse({"ok": False, "detail": "That request is no longer pending."}, status=409)
 
-        if not approval_stk_lipa_charge_enabled():
+        if not approval_phone_stk_enabled():
             return JsonResponse(
                 {
                     "ok": True,

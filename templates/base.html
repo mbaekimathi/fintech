@@ -192,7 +192,7 @@
     {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}
       {% include "partials/pin_approval_dialog.html" %}
     {% endif %}
-    {% if stk_pin_approval_required_for_user and approval_stk_lipa_charge %}
+    {% if stk_pin_approval_required_for_user and approval_phone_stk %}
       {% include "partials/stk_approval_dialog.html" %}
     {% endif %}
   {% endif %}
@@ -215,7 +215,8 @@
         "hasPhone": {% if reviewer_has_phone %}true{% else %}false{% endif %},
         "dualApproval": {% if dual_approval_required %}true{% else %}false{% endif %},
         "stkLipaCharge": {% if approval_stk_lipa_charge %}true{% else %}false{% endif %},
-        "paybillPinAuth": {% if approval_stk_lipa_charge %}false{% else %}true{% endif %},
+        "phoneStkPrompt": {% if approval_phone_stk %}true{% else %}false{% endif %},
+        "paybillPinAuth": {% if approval_phone_stk and stk_pin_approval_required_for_user %}false{% elif approval_stk_lipa_charge %}false{% else %}true{% endif %},
         "profileUrl": "{{ profile_url|escapejs }}"
       }
     </script>
