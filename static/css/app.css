@@ -2336,6 +2336,30 @@ a:hover {
   opacity: 0.45;
 }
 
+.approval-inline-pin {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.approval-pin-inline {
+  width: 7.5rem;
+  max-width: 100%;
+  font-family: var(--mono);
+  letter-spacing: 0.2em;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--raised);
+}
+
+.ledger-toolbar .inline-form[data-approval-form] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .readiness-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -3677,6 +3701,30 @@ a:hover {
 
   .ledger-table--cards td.ledger-table-empty::before {
     display: none;
+  }
+
+  .approval-inline-pin {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .approval-pin-inline {
+    width: 7.5rem;
+    max-width: 100%;
+    font-family: var(--mono);
+    letter-spacing: 0.2em;
+    padding: 0.35rem 0.5rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line-strong);
+    background: var(--raised);
+  }
+
+  .ledger-toolbar .inline-form[data-approval-form] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
   }
 
   .ledger-toolbar {

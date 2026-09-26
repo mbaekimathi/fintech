@@ -44,6 +44,11 @@ fi
 
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput --clear
+# cPanel: ensure approval JS/CSS exist even if collectstatic mapping fails
+mkdir -p staticfiles/js staticfiles/css
+cp -f static/js/payment-approval.js staticfiles/js/payment-approval.js
+cp -f static/js/app.js staticfiles/js/app.js
+cp -f static/css/app.css staticfiles/css/app.css
 python manage.py verify_static
 
 mkdir -p tmp

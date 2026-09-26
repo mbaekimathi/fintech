@@ -95,11 +95,23 @@
                         {% csrf_token %}
                         <input type="hidden" name="intent" value="approve">
                         <input type="hidden" name="next" value="{{ request.path }}">
-                        <button
-                          type="{% if app_approval_required_for_user or stk_pin_approval_required_for_user %}button{% else %}submit{% endif %}"
-                          class="btn btn-primary btn-small"
-                          {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}data-approval-trigger{% endif %}
-                        >Approve &amp; send</button>
+                        {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}
+                          <div class="approval-inline-pin" data-approval-inline>
+                            <label class="sr-only" for="approval-pin-note-{{ note.pk }}">Approval password</label>
+                            <input
+                              id="approval-pin-note-{{ note.pk }}"
+                              type="password"
+                              name="approval_pin"
+                              class="pin-field approval-pin-inline"
+                              inputmode="numeric"
+                              maxlength="6"
+                              autocomplete="current-password"
+                              placeholder="6-digit PIN"
+                              aria-label="6-digit approval password"
+                            >
+                          </div>
+                        {% endif %}
+                        <button type="submit" class="btn btn-primary btn-small">Approve &amp; send</button>
                       </form>
                       <form method="post" action="{% url 'core:notification-review' note.pk %}" class="inline-form">
                         {% csrf_token %}

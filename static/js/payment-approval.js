@@ -67,6 +67,28 @@
     return Boolean(ch.stk && config?.hasPhone !== false);
   }
 
+  function appendInlineApprovalPin(form) {
+    if (!form || form.querySelector("[data-approval-inline]")) return;
+    const wrap = document.createElement("div");
+    wrap.className = "approval-inline-pin";
+    wrap.setAttribute("data-approval-inline", "");
+    const input = document.createElement("input");
+    input.type = "password";
+    input.name = "approval_pin";
+    input.className = "pin-field approval-pin-inline";
+    input.inputMode = "numeric";
+    input.maxLength = 6;
+    input.autocomplete = "current-password";
+    input.placeholder = "6-digit PIN";
+    input.setAttribute("aria-label", "6-digit approval password");
+    wrap.appendChild(input);
+    form.appendChild(wrap);
+  }
+
+  function hideInlineApprovalFields() {
+    document.querySelectorAll("[data-approval-inline]").forEach((el) => hideEl(el));
+  }
+
   function showEl(el) {
     if (!el) return;
     el.hidden = false;
@@ -304,11 +326,11 @@
         nextInput.value = next;
         approveForm.appendChild(nextInput);
 
+        if (needsApproval) appendInlineApprovalPin(approveForm);
         const approveBtn = document.createElement("button");
-        approveBtn.type = needsApproval ? "button" : "submit";
+        approveBtn.type = "submit";
         approveBtn.className = "btn btn-primary btn-small";
         approveBtn.textContent = "Approve & send";
-        if (needsApproval) approveBtn.setAttribute("data-approval-trigger", "");
         approveForm.appendChild(approveBtn);
         toolbar.appendChild(approveForm);
 
@@ -406,11 +428,11 @@
           <input type="hidden" name="intent" value="approve">
           <input type="hidden" name="next" value="${next}">
         `;
+        appendInlineApprovalPin(approveForm);
         const approveBtn = document.createElement("button");
-        approveBtn.type = "button";
+        approveBtn.type = "submit";
         approveBtn.className = "btn btn-primary btn-small";
         approveBtn.textContent = "Approve & send";
-        approveBtn.setAttribute("data-approval-trigger", "");
         approveForm.appendChild(approveBtn);
         actions.appendChild(approveForm);
 
@@ -1149,6 +1171,22 @@
           return;
         }
         if (!approvalRequired(config)) return;
+        const inlinePin = form.querySelector('input[name="approval_pin"]');
+        const inlineVal = (inlinePin?.value || "").replace(/\D/g, "");
+        if (!flowReady || !runtime) {
+          if (inlineVal.length === 6) return;
+          event.preventDefault();
+          event.stopPropagation();
+          window.alert(
+            "Enter your 6-digit approval password in the PIN field, or run deploy.sh on the server and hard-refresh (Ctrl+F5).",
+          );
+          inlinePin?.focus();
+          return;
+        }
+        if (paybillPinAuth(config) && inlineVal.length === 6) {
+          approvalPin = inlineVal;
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         beginApprovalFlow(form, { force: true, manual: true });
@@ -1388,6 +1426,8 @@
     if (!runtime) return;
 
     initLivePoll(config, runtime);
+
+    hideInlineApprovalFields();
 
     window.nexusApproval = {
       ready: true,

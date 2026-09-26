@@ -996,7 +996,8 @@ class AppSettingsTests(TestCase):
         self.assertContains(page, "data-pin-approval-input")
         self.assertContains(page, '"hubApp": true')
         self.assertContains(page, '"autoPrompt": true')
-        self.assertContains(page, "data-approval-trigger")
+        self.assertContains(page, "name=\"approval_pin\"")
+        self.assertContains(page, "data-approval-form")
         self.assertContains(page, f'data-money-request-id="{req.pk}"')
 
     def test_approval_config_json_is_valid(self):
