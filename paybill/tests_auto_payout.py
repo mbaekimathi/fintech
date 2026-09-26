@@ -8,6 +8,7 @@ from paybill.auto_payout import (
     auto_payout_is_enabled,
     continue_auto_payout_chain,
     maybe_auto_payout_inbound,
+    payout_destination_requires_utility,
     should_move_utility_first,
 )
 from paybill.forms import CollectionMonitorPayoutForm
@@ -68,6 +69,20 @@ class CollectionMonitorPayoutFormTests(TestCase):
             instance=self.monitor,
         )
         self.assertFalse(form.is_valid())
+
+    def test_paybill_collection_phone_payout_can_save_without_utility_flag(self):
+        form = CollectionMonitorPayoutForm(
+            data={
+                "auto_payout_enabled": True,
+                "auto_payout_destination_type": MoneyRequest.DestinationType.PHONE,
+                "auto_payout_destination": "0712345678",
+                "auto_payout_account_ref": "",
+            },
+            instance=self.monitor,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        saved = form.save()
+        self.assertFalse(saved.auto_payout_utility_first)
 
 
 class AutoPayoutTriggerTests(TestCase):
@@ -223,3 +238,36 @@ class AutoPayoutTriggerTests(TestCase):
         self.monitor.save(update_fields=["auto_payout_enabled"])
         self.assertFalse(auto_payout_is_enabled(self.monitor))
         self.assertIsNone(maybe_auto_payout_inbound(self.monitor, self.entry))
+
+    def test_paybill_payout_destination_always_needs_utility_move(self):
+        self.monitor.auto_payout_utility_first = False
+        self.monitor.auto_payout_destination_type = MoneyRequest.DestinationType.PAYBILL
+        self.monitor.auto_payout_destination = "400200"
+        self.monitor.auto_payout_account_ref = "ACC1"
+        self.monitor.save()
+        self.assertTrue(payout_destination_requires_utility(self.monitor))
+        self.assertTrue(should_move_utility_first(self.monitor))
+
+    @patch("paybill.auto_payout.callback_urls")
+    @patch("paybill.auto_payout.DarajaClient")
+    @patch("paybill.auto_payout.DarajaConfig.load")
+    def test_paybill_payout_starts_utility_even_when_flag_off(self, mock_load, mock_client_cls, mock_urls):
+        mock_urls.return_value = {"result_url": "https://hub.test/daraja/result/", "timeout_url": "https://hub.test/daraja/timeout/"}
+        self.monitor.auto_payout_utility_first = False
+        self.monitor.auto_payout_destination_type = MoneyRequest.DestinationType.PAYBILL
+        self.monitor.auto_payout_destination = "400200"
+        self.monitor.auto_payout_account_ref = "ACC1"
+        self.monitor.save()
+        config = mock_load.return_value
+        config.b2b_ready = True
+        client = mock_client_cls.return_value
+        client.utility_to_working.return_value = (
+            {"ResponseDescription": "Accepted"},
+            {"Amount": "100"},
+            "600996",
+        )
+
+        op = maybe_auto_payout_inbound(self.monitor, self.entry)
+        self.assertIsNotNone(op)
+        client.utility_to_working.assert_called_once()
+        client.b2b_send.assert_not_called()

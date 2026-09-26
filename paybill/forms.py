@@ -262,6 +262,14 @@ class CollectionMonitorPayoutForm(forms.ModelForm):
             "auto_payout_account_ref": "Paybill account no.",
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.data and self.instance.account_type in (
+            CollectionMonitor.AccountType.PAYBILL,
+            CollectionMonitor.AccountType.TILL,
+        ):
+            self.fields["auto_payout_utility_first"].initial = True
+
     def clean(self):
         from paybill.auto_payout import normalize_client_phone
         from paybill.models import MoneyRequest
@@ -269,13 +277,6 @@ class CollectionMonitorPayoutForm(forms.ModelForm):
         cleaned = super().clean()
         if not cleaned.get("auto_payout_enabled"):
             return cleaned
-
-        account_type = getattr(self.instance, "account_type", None)
-        if account_type in (
-            CollectionMonitor.AccountType.PAYBILL,
-            CollectionMonitor.AccountType.TILL,
-        ):
-            cleaned["auto_payout_utility_first"] = True
 
         dest_type = cleaned.get("auto_payout_destination_type") or MoneyRequest.DestinationType.PHONE
         if dest_type in (
@@ -330,11 +331,6 @@ class CollectionMonitorPayoutForm(forms.ModelForm):
         instance = super().save(commit=False)
         if instance.auto_payout_destination_type == MR.DestinationType.PHONE:
             instance.auto_payout_phone = instance.auto_payout_destination
-        if instance.auto_payout_enabled and instance.account_type in (
-            CollectionMonitor.AccountType.PAYBILL,
-            CollectionMonitor.AccountType.TILL,
-        ):
-            instance.auto_payout_utility_first = True
         if commit:
             instance.save()
         return instance

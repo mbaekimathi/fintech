@@ -221,9 +221,9 @@
                   Move <strong>utility</strong> to <strong>working</strong> before sending.
                   <span class="automations-account-payout-utility-note muted">
                     {% if row.account_type == 'PAYBILL' or row.account_type == 'TILL' %}
-                      Required — collections on this paybill/till land in utility float first.
+                      Recommended for B2C to a phone — each collection usually lands in utility float. Leave off only if working float already covers payouts.
                     {% else %}
-                      Required when paying out to another paybill or till.
+                      Required when send-to is another paybill or till.
                     {% endif %}
                   </span>
                 </span>

@@ -43,9 +43,25 @@ def collection_credits_utility_float(monitor: CollectionMonitor) -> bool:
     )
 
 
+def payout_destination_requires_utility(monitor: CollectionMonitor) -> bool:
+    """Paybill/till payouts need utility→working before B2B can send."""
+    dest_type = monitor.auto_payout_destination_type or MoneyRequest.DestinationType.PHONE
+    return dest_type in (
+        MoneyRequest.DestinationType.PAYBILL,
+        MoneyRequest.DestinationType.TILL,
+    )
+
+
 def should_move_utility_first(monitor: CollectionMonitor) -> bool:
-    """When True, queue utility→working before B2B/B2C (saved on the collection account)."""
-    return bool(monitor.auto_payout_utility_first)
+    """
+    Queue utility→working before the client payout when:
+    - the account flag is on, or
+    - sending to another paybill/till (always requires float move + B2B).
+    Phone (B2C) on a paybill/till collection account respects the flag only.
+    """
+    if monitor.auto_payout_utility_first:
+        return True
+    return payout_destination_requires_utility(monitor)
 
 
 def auto_payout_is_enabled(monitor: CollectionMonitor) -> bool:
