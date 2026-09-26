@@ -37,6 +37,11 @@ if [ ! -f .env ]; then
   exit 0
 fi
 
+if ! grep -q '^APPROVAL_STK_LIPA_CHARGE=' .env 2>/dev/null; then
+  echo 'APPROVAL_STK_LIPA_CHARGE=0' >> .env
+  echo "Added APPROVAL_STK_LIPA_CHARGE=0 to .env (hub paybill approval via app PIN)."
+fi
+
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput --clear
 python manage.py verify_static
