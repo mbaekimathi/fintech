@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from django.contrib import messages
@@ -48,6 +49,8 @@ from paybill.services import (
     redirect_after_transfer,
     reject_money_request,
 )
+
+logger = logging.getLogger(__name__)
 
 PENDING_REVIEW_ROLES = (
     User.Role.ADMIN,
@@ -278,6 +281,27 @@ class CollectionAutomationMixin:
             "new_api_integration_copy": new_api_integration_copy,
         }
 
+    def _api_key_display_context(self, request, monitor: CollectionMonitor, raw_key: str) -> dict:
+        return {
+            "new_collection_api_key": raw_key,
+            "new_collection_api_monitor_id": monitor.pk,
+            "new_api_monitor_label": monitor.label,
+            "new_api_integration_copy": collection_integration_copy(
+                monitor,
+                stk_url=collection_stk_api_url(request),
+                api_key=raw_key,
+            ),
+        }
+
+    def _stash_api_key_session(self, request, monitor: CollectionMonitor, raw_key: str) -> None:
+        request.session["new_collection_api_key"] = raw_key
+        request.session["new_collection_api_monitor_id"] = monitor.pk
+        request.session.modified = True
+        try:
+            request.session.save()
+        except Exception:
+            logger.exception("Could not persist session for new collection API key")
+
     def _hub_c2b_context(self, request, *, config: DarajaConfig):
         c2b_ready, c2b_detail = c2b_public_ready(request)
         c2b_urls = c2b_callback_urls(request)
@@ -348,8 +372,7 @@ class AutomationsView(CollectionAutomationMixin, RoleRequiredMixin, View):
             monitor.save()
             monitor.ensure_ledger_paybill_account()
             _cred, raw_key = CollectionMonitorCredential.issue(monitor)
-            request.session["new_collection_api_key"] = raw_key
-            request.session["new_collection_api_monitor_id"] = monitor.pk
+            self._stash_api_key_session(request, monitor, raw_key)
             write_audit(
                 request,
                 "automation.monitor.created",
@@ -452,21 +475,17 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
             is_active=True,
         )
 
-    def get(self, request, pk, *args, **kwargs):
-        monitor = self._monitor(pk)
+    def _render_automation_account(
+        self,
+        request,
+        monitor: CollectionMonitor,
+        *,
+        api_key_context: dict | None = None,
+    ):
         config = DarajaConfig.load()
-        if request.GET.get("poll") == "balances":
-            payload = {
-                "ok": True,
-                "balance_ready": bool(config.balance_ready),
-                "accounts": [
-                    serialize_collection_monitor(monitor, config=config, request=request),
-                ],
-            }
-            return JsonResponse(payload)
-
+        pk = monitor.pk
         row = serialize_collection_monitor(monitor, config=config, request=request)
-        api_ctx = self._pop_api_key_session(request)
+        api_ctx = api_key_context or self._pop_api_key_session(request)
         ledger_qs = monitor_ledger_queryset(monitor)
         paginator = Paginator(ledger_qs, 30)
         ledger_page = paginator.get_page(request.GET.get("page"))
@@ -492,6 +511,21 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
                 **api_ctx,
             },
         )
+
+    def get(self, request, pk, *args, **kwargs):
+        monitor = self._monitor(pk)
+        config = DarajaConfig.load()
+        if request.GET.get("poll") == "balances":
+            payload = {
+                "ok": True,
+                "balance_ready": bool(config.balance_ready),
+                "accounts": [
+                    serialize_collection_monitor(monitor, config=config, request=request),
+                ],
+            }
+            return JsonResponse(payload)
+
+        return self._render_automation_account(request, monitor)
 
     def post(self, request, pk, *args, **kwargs):
         monitor = self._monitor(pk)
@@ -524,13 +558,15 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
 
         if intent == "issue-credential":
             _cred, raw_key = CollectionMonitorCredential.issue(monitor)
-            request.session["new_collection_api_key"] = raw_key
-            request.session["new_collection_api_monitor_id"] = monitor.pk
             messages.success(
                 request,
                 f"New API key for {monitor.collection_code}. Copy it below — shown once.",
             )
-            return redirect(account_url)
+            return self._render_automation_account(
+                request,
+                monitor,
+                api_key_context=self._api_key_display_context(request, monitor, raw_key),
+            )
 
         if intent == "stk-collect":
             from integrations.daraja_client import kenya_msisdn

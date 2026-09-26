@@ -761,3 +761,41 @@ class DestinationLookupTests(TestCase):
         self.assertRedirects(response, dash, fetch_redirect_response=False)
         req = MoneyRequest.objects.get(requester=self.employee)
         self.assertEqual(req.recipient_name, "Acme Supplies Ltd")
+
+
+class CollectionApiKeyRotateTests(TestCase):
+    def setUp(self):
+        self.paybill = PaybillAccount.objects.create(
+            paybill_number="888333",
+            account_name="Hub Paybill",
+            is_active=True,
+        )
+        self.admin = UserModel.objects.create_user(
+            staff_code="300099",
+            password="test-pass-123",
+            email="admin.apikey@example.com",
+            role=User.Role.ADMIN,
+            is_approved=True,
+        )
+        from paybill.models import CollectionMonitor
+
+        self.monitor = CollectionMonitor.objects.create(
+            label="Rotate test",
+            account_type=CollectionMonitor.AccountType.PAYBILL,
+            identifier="123456",
+            paybill_account=self.paybill,
+        )
+        token = set_current_role_slug(role_to_slug(User.Role.ADMIN))
+        try:
+            self.url = reverse("paybill:automation-account", kwargs={"pk": self.monitor.pk})
+        finally:
+            reset_current_role_slug(token)
+
+    def test_rotate_key_renders_copy_dialog_on_same_response(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(self.url, {"intent": "issue-credential"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "automation-apikey-dialog")
+        self.assertContains(response, 'id="rotated-collection-api-key"')
+        self.assertContains(response, "cm_")
+        self.assertContains(response, self.monitor.collection_code)

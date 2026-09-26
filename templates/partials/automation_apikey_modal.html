@@ -1,8 +1,7 @@
 {% if new_collection_api_key %}
   <div
-    class="detail-backdrop automation-register-backdrop"
+    class="detail-backdrop automation-register-backdrop automation-apikey-backdrop-open"
     x-show="apiKeyOpen"
-    x-cloak
     @click.self="apiKeyOpen = false"
     role="presentation"
   >
