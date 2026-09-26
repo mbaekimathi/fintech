@@ -44,7 +44,11 @@
                 {% if can_review_requests %}<th></th>{% elif can_reprompt_pending %}<th></th>{% endif %}
               </tr>
             </thead>
-            <tbody>
+            <tbody
+              data-pending-requests-tbody
+              data-can-review="{% if can_review_requests %}1{% else %}0{% endif %}"
+              data-approval-required="{% if app_approval_required_for_user or stk_pin_approval_required_for_user %}1{% else %}0{% endif %}"
+            >
               {% for row in pending_requests %}
                 <tr>
                   <td>{{ row.created_at|date:"d M H:i" }}</td>

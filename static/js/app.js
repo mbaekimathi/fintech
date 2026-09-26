@@ -856,6 +856,7 @@ function initAppSettings() {
 }
 
 const APPROVAL_DISMISS_KEY = "nexus-approval-dismissed";
+const AUTO_PROMPT_STARTED_KEY = "nexus-approval-auto-started";
 
 let paymentApprovalApi = {
   isActive: () => false,
@@ -871,11 +872,57 @@ function getApprovalDismissed() {
   }
 }
 
-function dismissApprovalNotification(notificationId) {
-  if (!notificationId) return;
+function dismissApprovalNotification(notificationId, moneyRequestId = "") {
   const dismissed = getApprovalDismissed();
-  dismissed.add(String(notificationId));
+  if (notificationId) dismissed.add(String(notificationId));
+  if (moneyRequestId) dismissed.add(`mr-${moneyRequestId}`);
   sessionStorage.setItem(APPROVAL_DISMISS_KEY, JSON.stringify([...dismissed]));
+}
+
+function getAutoPromptStarted() {
+  try {
+    return new Set(JSON.parse(sessionStorage.getItem(AUTO_PROMPT_STARTED_KEY) || "[]"));
+  } catch (_err) {
+    return new Set();
+  }
+}
+
+function saveAutoPromptStarted(set) {
+  sessionStorage.setItem(AUTO_PROMPT_STARTED_KEY, JSON.stringify([...set]));
+}
+
+function syncAutoPromptStarted(activeMoneyRequestIds) {
+  const active = activeMoneyRequestIds instanceof Set ? activeMoneyRequestIds : new Set();
+  const started = getAutoPromptStarted();
+  let changed = false;
+  for (const id of [...started]) {
+    if (!active.has(String(id))) {
+      started.delete(id);
+      changed = true;
+    }
+  }
+  if (changed) saveAutoPromptStarted(started);
+}
+
+function isPendingDismissed(row, dismissed) {
+  if (!row) return true;
+  const noteId = String(row.notification_id ?? "");
+  const mrKey = `mr-${row.money_request_id}`;
+  if (noteId && dismissed.has(noteId)) return true;
+  if (row.money_request_id != null && dismissed.has(mrKey)) return true;
+  return false;
+}
+
+function formatPendingWhen(iso) {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function isUserInApp() {
@@ -911,8 +958,8 @@ function parseApprovalConfig() {
 
 function approvalChannels(config) {
   return {
-    app: Boolean(config?.app || config?.hubApp),
-    stk: Boolean(config?.stk || config?.hubStk),
+    app: Boolean(config?.app),
+    stk: Boolean(config?.stk),
   };
 }
 
@@ -950,6 +997,131 @@ function formatRelativeTime(isoOrLabel) {
   if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
   const days = Math.floor(hours / 24);
   return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function renderPendingRequestsTable(config, pendingRows, csrf) {
+  const tbody = document.querySelector("[data-pending-requests-tbody]");
+  if (!tbody) return;
+
+  const canReview = tbody.getAttribute("data-can-review") === "1";
+  const needsApproval =
+    tbody.getAttribute("data-approval-required") === "1" || approvalRequired(config);
+  const rows = Array.isArray(pendingRows) ? pendingRows : [];
+  const colSpan = canReview ? 9 : 8;
+
+  tbody.replaceChildren();
+
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.setAttribute("data-pending-empty", "");
+    const td = document.createElement("td");
+    td.colSpan = colSpan;
+    td.className = "muted";
+    td.textContent = "No pending money requests.";
+    tr.append(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.setAttribute("data-pending-row", String(row.money_request_id));
+
+    const destParts = [row.destination_type, row.destination].filter(Boolean).join(" · ");
+    const destText = row.account_ref ? `${destParts} / ${row.account_ref}` : destParts;
+    const title = row.title || `${row.requester_name} requested KES ${row.amount_label}`;
+    const body = row.body || destText;
+
+    const cells = [
+      formatPendingWhen(row.created_at),
+      `${row.requester_name || ""} · ${row.requester_code || ""}`.trim(),
+      row.category || "—",
+      destText,
+      row.source_paybill || "—",
+      `KES ${row.amount_label || row.amount || ""}`,
+    ];
+
+    cells.forEach((text) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      tr.appendChild(td);
+    });
+
+    const statusTd = document.createElement("td");
+    const badge = document.createElement("span");
+    badge.className = "badge badge-pending";
+    badge.textContent = "Pending";
+    statusTd.appendChild(badge);
+    tr.appendChild(statusTd);
+
+    const viewTd = document.createElement("td");
+    viewTd.textContent = "—";
+    tr.appendChild(viewTd);
+
+    if (canReview) {
+      const actionsTd = document.createElement("td");
+      const toolbar = document.createElement("div");
+      toolbar.className = "toolbar";
+
+      const approveForm = document.createElement("form");
+      approveForm.method = "post";
+      approveForm.action = row.review_url;
+      approveForm.className = "inline-form";
+      approveForm.setAttribute("data-approval-form", "");
+      approveForm.setAttribute("data-money-request-id", String(row.money_request_id));
+      if (row.notification_id != null) {
+        approveForm.setAttribute("data-notification-id", String(row.notification_id));
+      }
+      approveForm.setAttribute("data-approval-title", title);
+      approveForm.setAttribute("data-approval-body", body);
+
+      const next = `${window.location.pathname}${window.location.search}`;
+      approveForm.innerHTML = `
+        <input type="hidden" name="csrfmiddlewaretoken" value="${csrf}">
+        <input type="hidden" name="intent" value="approve">
+      `;
+      const nextInput = document.createElement("input");
+      nextInput.type = "hidden";
+      nextInput.name = "next";
+      nextInput.value = next;
+      approveForm.appendChild(nextInput);
+
+      const approveBtn = document.createElement("button");
+      approveBtn.type = needsApproval ? "button" : "submit";
+      approveBtn.className = "btn btn-primary btn-small";
+      approveBtn.textContent = "Approve & send";
+      if (needsApproval) {
+        approveBtn.setAttribute("data-approval-trigger", "");
+      }
+      approveForm.appendChild(approveBtn);
+      toolbar.appendChild(approveForm);
+
+      const rejectForm = document.createElement("form");
+      rejectForm.method = "post";
+      rejectForm.action = row.review_url;
+      rejectForm.className = "inline-form";
+      rejectForm.innerHTML = `
+        <input type="hidden" name="csrfmiddlewaretoken" value="${csrf}">
+        <input type="hidden" name="intent" value="reject">
+      `;
+      const rejectNext = document.createElement("input");
+      rejectNext.type = "hidden";
+      rejectNext.name = "next";
+      rejectNext.value = next;
+      rejectForm.appendChild(rejectNext);
+      const rejectBtn = document.createElement("button");
+      rejectBtn.type = "submit";
+      rejectBtn.className = "btn btn-ghost btn-small";
+      rejectBtn.textContent = "Reject";
+      rejectForm.appendChild(rejectBtn);
+      toolbar.appendChild(rejectForm);
+
+      actionsTd.appendChild(toolbar);
+      tr.appendChild(actionsTd);
+    }
+
+    tbody.appendChild(tr);
+  });
 }
 
 function renderNotificationList(config, notifications, csrf) {
@@ -1074,6 +1246,30 @@ function initPaymentApproval(config) {
   let approvalPin = "";
   let pollTimer = null;
   let approvalActive = false;
+  let deferredApprovalForm = null;
+  let deferredVisibilityHandler = null;
+
+  const clearDeferredApproval = () => {
+    deferredApprovalForm = null;
+    if (deferredVisibilityHandler) {
+      document.removeEventListener("visibilitychange", deferredVisibilityHandler);
+      deferredVisibilityHandler = null;
+    }
+  };
+
+  const deferApprovalUntilVisible = (form) => {
+    pendingForm = form;
+    approvalActive = false;
+    deferredApprovalForm = form;
+    if (deferredVisibilityHandler) return;
+    deferredVisibilityHandler = () => {
+      if (document.visibilityState !== "visible" || !deferredApprovalForm) return;
+      const formToRun = deferredApprovalForm;
+      clearDeferredApproval();
+      beginApprovalFlow(formToRun, { force: true, manual: false });
+    };
+    document.addEventListener("visibilitychange", deferredVisibilityHandler);
+  };
 
   const setApprovalContext = (form) => {
     const title = form.getAttribute("data-approval-title") || "";
@@ -1121,13 +1317,15 @@ function initPaymentApproval(config) {
     approvalActive = false;
     pendingForm = null;
     approvalPin = "";
+    clearDeferredApproval();
     closeAppDialog();
     closeStkDialog();
   };
 
   const cancelFlow = () => {
     const notificationId = pendingForm?.getAttribute("data-notification-id");
-    if (notificationId) dismissApprovalNotification(notificationId);
+    const moneyRequestId = pendingForm?.getAttribute("data-money-request-id");
+    dismissApprovalNotification(notificationId, moneyRequestId);
     resetFlow();
   };
 
@@ -1211,9 +1409,19 @@ function initPaymentApproval(config) {
           if (!response.ok) throw new Error("Could not check STK status.");
           const data = await response.json();
           if (stkStatusEl) stkStatusEl.textContent = data.summary || "Waiting for M-Pesa…";
-          if (data.complete) finish(Boolean(data.success), data.summary);
+          if (data.complete) {
+            if (!data.success) {
+              finish(
+                false,
+                data.summary ||
+                  "M-Pesa did not confirm this approval. Check your phone or try again.",
+              );
+              return;
+            }
+            finish(true, data.summary);
+          }
         } catch (err) {
-          finish(false, err.message);
+          finish(false, err.message || "Could not check STK status.");
         }
       };
 
@@ -1224,20 +1432,29 @@ function initPaymentApproval(config) {
   const chooseApprovalChannel = ({ manual = false } = {}) => {
     const appReady = appChannelReady(config, channels);
     const stkReady = stkChannelReady(config, channels);
+    const inApp = manual || isUserInApp();
+    const onlyApp = channels.app && !channels.stk;
+    const onlyStk = channels.stk && !channels.app;
+    const both = channels.app && channels.stk;
 
-    if (manual || isUserInApp()) {
-      if (appReady) return "app";
-      if (stkReady) return "stk";
-      if (channels.app && !appReady && stkReady) return "stk";
-      if (channels.stk && !stkReady && appReady) return "app";
-      if (channels.stk) return "stk";
-      if (channels.app) return "app";
+    if (onlyApp) {
+      if (appReady || channels.app) return "app";
       return "none";
     }
-    if (stkReady) return "stk";
-    if (appReady) return "app";
-    if (channels.stk) return "stk";
-    if (channels.app) return "app";
+    if (onlyStk) {
+      if (stkReady || channels.stk) return "stk";
+      return "none";
+    }
+    if (both) {
+      if (inApp) {
+        if (appReady) return "app";
+        if (stkReady) return "stk";
+        return channels.app ? "app" : "stk";
+      }
+      if (stkReady) return "stk";
+      if (appReady) return "app";
+      return channels.stk ? "stk" : "app";
+    }
     return "none";
   };
 
@@ -1275,7 +1492,12 @@ function initPaymentApproval(config) {
         body,
       });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.detail || "Could not send STK prompt.");
+      if (!response.ok || !data.ok) {
+        throw new Error(
+          data.detail ||
+            "Could not send STK prompt. Check Daraja STK setup and your phone number on Profile.",
+        );
+      }
       if (stkMessageEl) {
         stkMessageEl.textContent =
           data.summary || "Check your phone and enter your M-Pesa PIN to approve this payment.";
@@ -1284,12 +1506,20 @@ function initPaymentApproval(config) {
       const operationId = await pollStkApproval(form, data.operation_id);
       submitForm(form, operationId);
     } catch (err) {
+      if (pollTimer) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
+      }
       if (stkErrorEl) {
         stkErrorEl.textContent = err.message || "PIN approval failed.";
         stkErrorEl.hidden = false;
       }
-      if (stkStatusEl) stkStatusEl.textContent = "STK prompt not completed.";
-      resetFlow();
+      if (stkStatusEl) {
+        stkStatusEl.textContent = "STK prompt not completed. Fix the issue below or cancel.";
+      }
+      approvalActive = false;
+      pendingForm = form;
+      if (!silent) showDialog(stkBackdrop);
     }
   };
 
@@ -1340,8 +1570,7 @@ function initPaymentApproval(config) {
           runStkApproval(form, { silent: true });
           return;
         }
-        approvalActive = false;
-        pendingForm = null;
+        deferApprovalUntilVisible(form);
         return;
       }
       if (!appChannelReady(config, channels) && stkChannelReady(config, channels)) {
@@ -1506,19 +1735,34 @@ function initApprovalLiveCheck(config, approvalRuntime = null) {
 
       updateNotifyCount(data.unread_count || 0);
       renderNotificationList(config, data.notifications, csrf);
+      renderPendingRequestsTable(config, data.pending, csrf);
+
+      const pending = Array.isArray(data.pending) ? data.pending : [];
+      const activeIds = new Set(pending.map((row) => String(row.money_request_id)));
+      syncAutoPromptStarted(activeIds);
 
       if (!config.autoPrompt || !approvalRequired(config)) return;
 
       const dismissed = getApprovalDismissed();
-      const pending = Array.isArray(data.pending) ? data.pending : [];
+      const autoStarted = getAutoPromptStarted();
       const item =
         pending.find(
-          (row) => row.is_unread !== false && !dismissed.has(String(row.notification_id)),
-        ) || pending.find((row) => !dismissed.has(String(row.notification_id)));
+          (row) =>
+            row.is_unread !== false &&
+            !isPendingDismissed(row, dismissed) &&
+            !autoStarted.has(String(row.money_request_id)),
+        ) ||
+        pending.find(
+          (row) =>
+            !isPendingDismissed(row, dismissed) &&
+            !autoStarted.has(String(row.money_request_id)),
+        );
       if (!item) return;
 
       const form = buildApprovalForm(item);
-      beginApprovalFlow(form);
+      autoStarted.add(String(item.money_request_id));
+      saveAutoPromptStarted(autoStarted);
+      beginApprovalFlow(form, { manual: false });
     } catch (_err) {
       // Ignore transient network errors during background polling.
     }

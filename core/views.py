@@ -21,6 +21,7 @@ from core.approval import (
     poll_stk_approval,
     user_requires_stk_on_approval,
 )
+from core.approval_poll import pending_approval_queue_for_user
 from core.models import AppSettings, Notification, PushSubscription
 from core.notifications import (
     mark_money_request_notifications_read,
@@ -699,33 +700,7 @@ class PendingApprovalPollView(RoleRequiredMixin, View):
     required_activity = "review_requests"
 
     def get(self, request, *args, **kwargs):
-        from paybill.models import MoneyRequest
-
-        qs = (
-            notifications_for_session_user(request.user)
-            .filter(
-                kind=Notification.Kind.MONEY_REQUEST,
-                money_request__status=MoneyRequest.Status.PENDING,
-            )
-            .select_related("money_request", "money_request__requester")
-            .order_by("-created_at")[:15]
-        )
-        pending = []
-        for note in qs:
-            if not note.can_review:
-                continue
-            money_request = note.money_request
-            pending.append(
-                {
-                    "notification_id": note.pk,
-                    "money_request_id": money_request.pk,
-                    "title": note.title,
-                    "body": note.body,
-                    "amount": str(money_request.amount),
-                    "is_unread": not note.is_read,
-                    "review_url": reverse("core:notification-review", kwargs={"pk": note.pk}),
-                }
-            )
+        pending = pending_approval_queue_for_user(request.user)
         notifications = []
         for note in user_notifications(request.user):
             notifications.append(

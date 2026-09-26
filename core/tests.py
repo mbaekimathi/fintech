@@ -722,6 +722,32 @@ class AppSettingsTests(TestCase):
         self.assertIn("notifications", payload)
         self.assertEqual(len(payload["notifications"]), 1)
 
+    def test_pending_approval_poll_includes_orphan_pending_request(self):
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("120.00"),
+            reason="Courier",
+            status=MoneyRequest.Status.PENDING,
+        )
+        self.client.force_login(self.it_support)
+        response = self.client.get(
+            self._url(User.Role.IT_SUPPORT, "core:approval-pending-poll"),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        ids = [row["money_request_id"] for row in payload["pending"]]
+        self.assertIn(req.pk, ids)
+        row = next(r for r in payload["pending"] if r["money_request_id"] == req.pk)
+        self.assertEqual(row["notification_id"], f"req-{req.pk}")
+        self.assertIn("review_url", row)
+        self.assertIn("amount_label", row)
+
     def test_toggle_stk_pin_approval_via_ajax(self):
         self.client.force_login(self.it_support)
         response = self.client.post(
@@ -868,7 +894,7 @@ class AppSettingsTests(TestCase):
         req.refresh_from_db()
         self.assertEqual(req.status, MoneyRequest.Status.APPROVED)
 
-    def test_approve_requires_pin_when_hub_on_without_person_toggle(self):
+    def test_approve_skips_app_pin_when_person_toggle_off(self):
         settings = AppSettings.load()
         settings.app_approval_required = True
         settings.save(update_fields=["app_approval_required"])
@@ -878,7 +904,11 @@ class AppSettingsTests(TestCase):
         perms.save(update_fields=["pin_approval_prompt", "updated_at"])
         self.it_support.set_approval_password("778899")
         self.it_support.save(update_fields=["approval_password"])
-        self.assertTrue(self.it_support.requires_app_on_approval())
+        self.it_support = UserModel.objects.get(pk=self.it_support.pk)
+        perms.refresh_from_db()
+        self.assertFalse(perms.pin_approval_prompt)
+        self.assertFalse(self.it_support.can_pin_approval_prompt())
+        self.assertFalse(self.it_support.requires_app_on_approval())
 
         req = MoneyRequest.objects.create(
             requester=self.employee,
@@ -900,14 +930,6 @@ class AppSettingsTests(TestCase):
         )
         self.client.force_login(self.it_support)
 
-        blocked = self.client.post(
-            self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
-            {"intent": "approve", "next": "/"},
-        )
-        self.assertEqual(blocked.status_code, 302)
-        req.refresh_from_db()
-        self.assertEqual(req.status, MoneyRequest.Status.PENDING)
-
         ack = {
             "ResponseCode": "0",
             "ResponseDescription": "Accept the service request successfully.",
@@ -919,7 +941,7 @@ class AppSettingsTests(TestCase):
                 mock_req.return_value = (200, ack)
                 response = self.client.post(
                     self._url(User.Role.IT_SUPPORT, "core:notification-review", pk=note.pk),
-                    {"intent": "approve", "approval_pin": "778899", "next": "/"},
+                    {"intent": "approve", "next": "/"},
                 )
         self.assertRedirects(
             response,

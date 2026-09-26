@@ -82,7 +82,9 @@ def shell(request):
         reviewer_has_approval_password = user.has_approval_password
         reviewer_has_phone = bool((user.phone or "").strip())
         profile_url = reverse("accounts:profile")
-        dual_approval_required = app_approval_required and stk_pin_approval_required
+        dual_approval_required = (
+            app_approval_required_for_user and stk_pin_approval_required_for_user
+        )
         # Dashboard is the hub: show every section the role can open.
         # Other pages keep only their own section link. System settings and
         # log out stay in the sidebar footer on every page. Daraja setup expands

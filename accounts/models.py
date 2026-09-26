@@ -198,6 +198,7 @@ class User(AbstractUser):
         return (
             AppSettings.load().app_approval_required
             and self.can_review_requests()
+            and self.can_pin_approval_prompt()
         )
 
     def requires_stk_on_approval(self) -> bool:
@@ -206,6 +207,7 @@ class User(AbstractUser):
         return (
             AppSettings.load().stk_pin_approval_required
             and self.can_review_requests()
+            and self.can_stk_pin_approval_prompt()
         )
 
     def requires_pin_on_approval(self) -> bool:
