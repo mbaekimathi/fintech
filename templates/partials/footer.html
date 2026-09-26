@@ -1,4 +1,4 @@
 <footer class="app-footer">
   <p class="muted">{{ product_name }} · {{ product_tag }}</p>
-  <p class="muted">Controlled staff workspace</p>
+  <p class="muted">Controlled staff workspace{% if user.is_authenticated and asset_version %} · build {{ asset_version }}{% endif %}</p>
 </footer>

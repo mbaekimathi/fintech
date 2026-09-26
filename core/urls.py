@@ -2,6 +2,7 @@ from django.urls import path
 
 from core.views import (
     AppSettingsView,
+    DeployHealthView,
     PendingApprovalPollView,
     StkApprovalInitiateView,
     StkApprovalPollView,
@@ -26,6 +27,7 @@ from core.views import (
 app_name = "core"
 
 urlpatterns = [
+    path("health/deploy/", DeployHealthView.as_view(), name="deploy-health"),
     path("", DashboardView.as_view(), name="dashboard"),
     path(
         "money-requests/lookup/",

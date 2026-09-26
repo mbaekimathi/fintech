@@ -84,9 +84,12 @@ fi
 
 pip install -r requirements.txt
 python manage.py migrate
-python manage.py collectstatic --noinput
+python manage.py collectstatic --noinput --clear
+python manage.py verify_static
 mkdir -p tmp && touch tmp/restart.txt
 ```
+
+After deploy, open `https://your-domain/health/deploy/` — `"ok": true` means the server is serving the current `app.js` (payment approval). If `"ok": false`, run `collectstatic` again and restart Passenger (`touch tmp/restart.txt`).
 
 `.env` is kept if you already created it. Later runs only fetch and reset to `main`.
 

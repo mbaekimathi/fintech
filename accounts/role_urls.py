@@ -37,6 +37,7 @@ UNPREFIXED_URL_NAMES = {
     "accounts:pending",
     "core:service-worker",
     "core:web-manifest",
+    "core:deploy-health",
 }
 
 UNPREFIXED_PATH_PREFIXES = (
@@ -50,6 +51,7 @@ UNPREFIXED_PATH_PREFIXES = (
     "/switch-role/",
     "/sw.js",
     "/manifest.webmanifest",
+    "/health/",
 )
 
 

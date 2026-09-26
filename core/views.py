@@ -68,6 +68,16 @@ from paybill.services import (
     redirect_after_transfer,
     reject_money_request,
 )
+from core.static_health import deploy_static_report
+
+
+class DeployHealthView(View):
+    """Public probe: confirms hosted static files include the payment approval JS."""
+
+    def get(self, request, *args, **kwargs):
+        report = deploy_static_report()
+        status = 200 if report["ok"] else 503
+        return JsonResponse(report, status=status)
 
 
 def _hub_paybill_account():

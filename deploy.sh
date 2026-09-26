@@ -38,7 +38,8 @@ if [ ! -f .env ]; then
 fi
 
 python manage.py migrate --noinput
-python manage.py collectstatic --noinput
+python manage.py collectstatic --noinput --clear
+python manage.py verify_static
 
 mkdir -p tmp
 touch tmp/restart.txt

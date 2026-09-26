@@ -155,7 +155,7 @@ def _asset_version() -> str:
 
 
 ASSET_VERSION = _asset_version()
-WHITENOISE_MAX_AGE = 31536000 if not DEBUG else 0
+WHITENOISE_MAX_AGE = int(os.getenv("WHITENOISE_MAX_AGE", "86400" if not DEBUG else "0"))
 WHITENOISE_USE_FINDERS = DEBUG
 STORAGES = {
     "default": {
