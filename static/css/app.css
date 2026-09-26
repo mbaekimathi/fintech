@@ -3527,12 +3527,29 @@ a:hover {
   white-space: nowrap;
 }
 
+.automations-page-account {
+  gap: 1rem;
+}
+
 .automations-account-back {
   margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 1rem;
+}
+
+.automations-account-back-meta {
+  font-size: 0.82rem;
 }
 
 .automations-account-board {
-  padding: 1.15rem 1.25rem;
+  padding: 0.65rem 0.75rem;
+  box-shadow: none;
+}
+
+.automations-account-board .automation-card-list {
+  gap: 0;
 }
 
 .automation-card-single {
@@ -3546,8 +3563,270 @@ a:hover {
   box-shadow: none;
 }
 
+.automations-account-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.automations-account-card[data-watch="1"] {
+  box-shadow: inset 2px 0 0 var(--mpesa);
+  padding-left: 0.45rem;
+  margin-left: -0.45rem;
+}
+
+.automations-account-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.65rem;
+}
+
+.automations-account-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 0 1 auto;
+}
+
+.chip-tight {
+  padding: 0.12rem 0.42rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.automations-account-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.85rem;
+  margin: 0;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+.automations-account-card__stat {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.automations-account-card__stat dt {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.automations-account-card__stat dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.automations-account-card__stat-when {
+  display: inline;
+  font-family: var(--font-sans, inherit);
+  font-size: 0.68rem;
+  font-weight: 400;
+  margin-left: 0.25rem;
+}
+
+.automations-account-card__stat-when:empty {
+  display: none;
+}
+
+.automations-account-card__refresh {
+  flex-shrink: 0;
+}
+
+.automations-account-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.4rem;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.automations-account-card__id {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.35rem;
+}
+
+.automations-account-card__meta-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.automations-account-card__sep {
+  opacity: 0.45;
+  user-select: none;
+}
+
+.collection-code-tight {
+  font-size: 0.78rem;
+  padding: 0.05rem 0.35rem;
+}
+
+.text-link,
+button.text-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--accent-deep, var(--mpesa-deep));
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.text-link:hover,
+button.text-link:hover {
+  text-decoration: underline;
+}
+
+.text-link-small {
+  font-size: 0.78rem;
+}
+
+.automations-account-card__api {
+  margin: 0;
+  border: none;
+  background: transparent;
+}
+
+.automations-account-card__api .automation-api-summary {
+  padding: 0.2rem 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.automations-account-card__api .automation-api-summary:hover {
+  color: var(--ink);
+}
+
+.automations-account-card__api .automation-api-details-body {
+  padding: 0.35rem 0 0;
+  border-top: none;
+}
+
+.automations-account-card__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 0.5rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 6%, var(--line));
+}
+
+.automations-account-card__stk {
+  flex: 1 1 12rem;
+  min-width: 0;
+  gap: 0.3rem;
+}
+
+.automations-account-card__stk .automation-stk-label {
+  font-size: 0.65rem;
+}
+
+.field-compact-tight {
+  padding: 0.32rem 0.45rem;
+  font-size: 0.82rem;
+  flex: 0 1 5.5rem;
+  max-width: 7.5rem;
+}
+
+.automations-account-card__manage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.panel-head-compact h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.panel-head-compact .automations-ledger-lead {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+}
+
 .automations-account-ledger {
-  margin-top: 0.25rem;
+  margin-top: 0;
+}
+
+.automations-account-ledger .panel-head-compact {
+  margin-bottom: 0.65rem;
+}
+
+.automations-config-page {
+  gap: 1rem;
+  max-width: 56rem;
+}
+
+.automations-config-lead {
+  margin: 0.2rem 0 0;
+  font-size: 0.86rem;
+  max-width: 36rem;
+}
+
+.automations-config-banner {
+  margin: 0 0 0.75rem;
+  font-size: 0.86rem;
+}
+
+.automations-config-meta {
+  display: block;
+  font-size: 0.78rem;
+  margin-top: 0.1rem;
+}
+
+.automations-config-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+}
+
+.automations-config-check {
+  margin: 0;
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+
+.automations-config-phone {
+  margin: 0;
+  flex: 1 1 9rem;
+  min-width: 0;
+}
+
+.automations-config-phone .field {
+  width: 100%;
+  max-width: 14rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.84rem;
+}
+
+.automations-config-empty {
+  margin: 0;
+  font-size: 0.88rem;
 }
 
 .automation-ledger-stats {
@@ -4319,6 +4598,25 @@ a:hover {
   .automation-stk-bar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .automations-account-card__stats {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .automations-account-card__tools {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .automations-account-card__stk {
+    width: 100%;
+  }
+
+  .field-compact-tight {
+    flex: 1 1 5rem;
+    max-width: none;
   }
 }
 

@@ -38,7 +38,15 @@ HR_URLS = {
 }
 
 
-AUTOMATIONS_URL = "paybill:automations"
+COLLECTIONS_NAV = [
+    {"name": "Automations", "url": "paybill:automations", "icon": "card"},
+    {"name": "Account configuration", "url": "paybill:account-configuration", "icon": "gear"},
+]
+COLLECTIONS_URLS = {
+    "paybill:automations",
+    "paybill:automation-account",
+    "paybill:account-configuration",
+}
 
 
 def _section_items(user):
@@ -46,7 +54,7 @@ def _section_items(user):
         {"name": "Transactions", "url": "paybill:transactions", "icon": "flow"},
     ]
     if user.can_manage_ledger():
-        items.append({"name": "Automations", "url": AUTOMATIONS_URL, "icon": "card"})
+        items.extend(COLLECTIONS_NAV)
     if user.can_manage_users():
         items.append({"name": "People", "url": "accounts:users", "icon": "people"})
     if user.can_manage_hr():
@@ -127,6 +135,9 @@ def shell(request):
         elif current in HR_URLS and user.can_manage_hr():
             nav.append({"name": "HR", "url": "accounts:hr", "icon": "people"})
             nav.extend(HR_NAV)
+        elif current in COLLECTIONS_URLS and user.can_manage_ledger():
+            nav.append({"name": "Transactions", "url": "paybill:transactions", "icon": "flow"})
+            nav.extend(COLLECTIONS_NAV)
         elif current == GLOBAL_NAV["url"]:
             nav.extend(sections)
         else:

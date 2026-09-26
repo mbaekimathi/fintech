@@ -291,6 +291,15 @@ class CollectionMonitor(models.Model):
         blank=True,
         help_text="Lipa shortcode for STK password when this account uses its own Daraja app.",
     )
+    auto_payout_enabled = models.BooleanField(
+        default=False,
+        help_text="When on, each completed inbound collection is sent to the client phone via B2C.",
+    )
+    auto_payout_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Client M-Pesa number (07… or 254…) to receive automated transfers.",
+    )
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

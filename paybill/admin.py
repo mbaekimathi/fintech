@@ -58,13 +58,14 @@ class CollectionMonitorAdmin(admin.ModelAdmin):
         "collection_code",
         "account_type",
         "identifier",
+        "auto_payout_enabled",
         "use_hub_daraja",
         "auto_refresh",
         "is_active",
         "updated_at",
     )
-    list_filter = ("account_type", "auto_refresh", "is_active")
-    search_fields = ("label", "identifier", "account_ref", "collection_code")
+    list_filter = ("account_type", "auto_payout_enabled", "auto_refresh", "is_active")
+    search_fields = ("label", "identifier", "account_ref", "collection_code", "auto_payout_phone")
 
 
 @admin.register(CollectionMonitorCredential)

@@ -11,6 +11,11 @@ urlpatterns = [
         views.AutomationAccountView.as_view(),
         name="automation-account",
     ),
+    path(
+        "automations/account-configuration/",
+        views.AccountConfigurationView.as_view(),
+        name="account-configuration",
+    ),
     path("transactions/", views.TransactionListView.as_view(), name="transactions"),
     path(
         "transactions/requests/<int:pk>/",

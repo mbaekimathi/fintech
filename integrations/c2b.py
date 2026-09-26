@@ -226,9 +226,13 @@ def post_c2b_ledger(payload: dict) -> LedgerEntry | None:
                 "raw_payload",
             ]
         )
+        if monitor is not None:
+            from paybill.auto_payout import schedule_auto_payout_inbound
+
+            schedule_auto_payout_inbound(monitor, existing)
         return existing
 
-    return LedgerEntry.objects.create(
+    entry = LedgerEntry.objects.create(
         reference=trans_id,
         mpesa_reference=trans_id,
         paybill_account=account,
@@ -242,6 +246,11 @@ def post_c2b_ledger(payload: dict) -> LedgerEntry | None:
         narrative=f"{tx_type} · {shortcode}"[:255],
         raw_payload=raw_payload,
     )
+    if monitor is not None:
+        from paybill.auto_payout import schedule_auto_payout_inbound
+
+        schedule_auto_payout_inbound(monitor, entry)
+    return entry
 
 
 def register_c2b_urls(*, request, shortcodes: list[str] | None = None) -> list[str]:

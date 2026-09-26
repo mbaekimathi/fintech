@@ -363,9 +363,13 @@ def _post_ledger(operation: DarajaOperation, *, amount, phone: str, receipt: str
         for field, value in updates.items():
             setattr(existing, field, value)
         existing.save(update_fields=[*updates.keys()])
+        if inbound and monitor is not None:
+            from paybill.auto_payout import schedule_auto_payout_inbound
+
+            schedule_auto_payout_inbound(monitor, existing)
         return
 
-    LedgerEntry.objects.create(
+    entry = LedgerEntry.objects.create(
         reference=reference,
         mpesa_reference=mpesa_reference,
         money_request=money_request,
@@ -382,3 +386,7 @@ def _post_ledger(operation: DarajaOperation, *, amount, phone: str, receipt: str
         narrative=narrative,
         raw_payload=raw_payload,
     )
+    if inbound and monitor is not None:
+        from paybill.auto_payout import schedule_auto_payout_inbound
+
+        schedule_auto_payout_inbound(monitor, entry)

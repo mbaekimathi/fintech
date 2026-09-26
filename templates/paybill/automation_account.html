@@ -4,12 +4,13 @@
 {% block heading %}{{ row.label }}{% endblock %}
 {% block content %}
   <div
-    class="automations-page"
+    class="automations-page automations-page-account"
     x-data="{ apiKeyOpen: {% if new_collection_api_key %}true{% else %}false{% endif %} }"
     @keydown.escape.window="apiKeyOpen = false"
   >
     <p class="automations-account-back">
       <a class="text-link" href="{{ hub_url }}">← All collection accounts</a>
+      <span class="muted automations-account-back-meta">{{ row.account_type_label }} · {{ row.identifier }}</span>
     </p>
 
     <section
@@ -19,91 +20,81 @@
       data-post-url="{{ post_url }}"
       data-balance-ready="{% if balance_ready %}1{% else %}0{% endif %}"
     >
-      <div class="panel-head">
-        <div>
-          <p class="eyebrow">{{ row.account_type_label }} · {{ row.identifier }}</p>
-          <h2>Collection account</h2>
-          <p class="muted" data-automations-hint>
-            {% if balance_ready %}
-              Live balance refreshes when you request it or when auto-refresh is on.
-            {% else %}
-              Collected totals come from the ledger; enable Daraja for live Safaricom float.
-            {% endif %}
-          </p>
-        </div>
-        <form method="post" action="{{ post_url }}" class="inline-form">
-          {% csrf_token %}
-          <input type="hidden" name="intent" value="refresh">
-          <button type="submit" class="btn btn-ghost" {% if not balance_ready %}disabled{% endif %}>Refresh balance</button>
-        </form>
-      </div>
-
       <div class="automation-card-list" data-automations-rows>
         <article
-          class="automation-card automation-card-single"
+          class="automations-account-card"
           data-monitor-id="{{ row.id }}"
           data-watch="{% if row.balance_watch %}1{% endif %}"
           data-auto-refresh="{% if row.auto_refresh %}1{% endif %}"
         >
-          <header class="automation-card-head">
-            <div class="automation-card-title">
-              <h3 data-col="label">{{ row.label }}</h3>
-              <span class="chip chip-soft" data-col="type">{{ row.account_type_label }}</span>
-            </div>
-            <div class="automation-card-badges">
-              {% if row.stk_ready %}<span class="chip is-on" title="STK collect ready">STK</span>{% endif %}
-              {% if row.auto_refresh %}<span class="chip" title="Auto balance refresh">Auto</span>{% endif %}
-              {% if row.has_own_daraja %}<span class="chip" title="Own Daraja credentials">Own app</span>{% endif %}
-            </div>
-          </header>
+          <span class="sr-only" data-col="label">{{ row.label }}</span>
+          <span class="sr-only" data-automations-hint aria-live="polite">
+            {% if balance_ready %}Live balance on refresh{% else %}Ledger totals only{% endif %}
+          </span>
 
-          <dl class="automation-card-dl">
-            <div class="automation-card-dl-row">
-              <dt>Collection ID</dt>
-              <dd class="automation-code-cell">
-                <code class="collection-code" data-col="code">{{ row.collection_code }}</code>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-small"
-                  data-copy-text="{{ row.collection_code }}"
-                  aria-label="Copy collection ID"
-                >Copy</button>
-              </dd>
+          <div class="automations-account-card__head">
+            <div class="automations-account-card__chips">
+              <span class="chip chip-soft chip-tight" data-col="type">{{ row.account_type_label }}</span>
+              {% if row.stk_ready %}<span class="chip chip-tight is-on" title="STK ready">STK</span>{% endif %}
+              {% if row.auto_refresh %}<span class="chip chip-tight" title="Auto refresh">Auto</span>{% endif %}
+              {% if row.has_own_daraja %}<span class="chip chip-tight" title="Own Daraja">Own</span>{% endif %}
             </div>
-            <div class="automation-card-dl-row">
-              <dt>Number</dt>
-              <dd data-col="identifier">
-                {{ row.identifier }}
-                {% if row.account_ref %}<span class="muted"> · {{ row.account_ref }}</span>{% endif %}
-              </dd>
-            </div>
-          </dl>
 
-          <div class="automation-card-metrics">
-            <div class="automation-metric">
-              <span class="automation-metric-label">Collected</span>
-              <strong class="automation-metric-value" data-col="collected">KES {{ row.collected_total|floatformat:2 }}</strong>
-            </div>
-            <div class="automation-metric">
-              <span class="automation-metric-label">Live float</span>
-              <strong class="automation-metric-value" data-col="live">
-                {% if row.live_amount is not None %}
-                  {{ row.live_currency }} {{ row.live_amount|floatformat:2 }}
-                {% else %}
-                  —
-                {% endif %}
-              </strong>
-              <span class="automation-metric-when muted" data-col="when">{{ row.balance_when|default:"Not refreshed" }}</span>
-            </div>
+            <dl class="automations-account-card__stats">
+              <div class="automations-account-card__stat">
+                <dt>Collected</dt>
+                <dd data-col="collected">KES {{ row.collected_total|floatformat:2 }}</dd>
+              </div>
+              <div class="automations-account-card__stat">
+                <dt>Live</dt>
+                <dd>
+                  <span data-col="live">
+                    {% if row.live_amount is not None %}
+                      {{ row.live_currency }} {{ row.live_amount|floatformat:2 }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </span>
+                  <span class="automations-account-card__stat-when muted" data-col="when">{{ row.balance_when|default:"" }}</span>
+                </dd>
+              </div>
+            </dl>
+
+            <form method="post" action="{{ post_url }}" class="inline-form automations-account-card__refresh">
+              {% csrf_token %}
+              <input type="hidden" name="intent" value="refresh">
+              <button
+                type="submit"
+                class="btn btn-ghost btn-small"
+                {% if not balance_ready %}disabled{% endif %}
+                title="{% if balance_ready %}Refresh Safaricom float{% else %}Configure Daraja for live balance{% endif %}"
+              >Refresh</button>
+            </form>
           </div>
 
-          <details class="automation-api-details">
+          <p class="automations-account-card__meta muted">
+            <span class="automations-account-card__id">
+              <span class="automations-account-card__meta-label">ID</span>
+              <code class="collection-code collection-code-tight" data-col="code">{{ row.collection_code }}</code>
+              <button
+                type="button"
+                class="text-link text-link-small"
+                data-copy-text="{{ row.collection_code }}"
+              >Copy</button>
+            </span>
+            <span class="automations-account-card__sep" aria-hidden="true">·</span>
+            <span data-col="identifier">
+              {{ row.identifier }}{% if row.account_ref %} <span class="muted">/ {{ row.account_ref }}</span>{% endif %}
+            </span>
+          </p>
+
+          <details class="automation-api-details automations-account-card__api">
             <summary class="automation-api-summary">
-              <span>Integration for other apps</span>
+              <span>Partner API</span>
               {% if row.has_api_key %}
                 <code class="automation-api-summary-key">{{ row.api_key_prefix }}…</code>
               {% else %}
-                <span class="muted">No key yet</span>
+                <span class="muted">No key</span>
               {% endif %}
             </summary>
             <div class="automation-api-details-body">
@@ -116,50 +107,50 @@
                 class="automation-api-snippet"
                 id="integration-copy-{{ row.id }}"
                 readonly
-                rows="8"
+                rows="5"
                 aria-label="API integration details for {{ row.label }}"
               >{{ row.integration_copy }}</textarea>
             </div>
           </details>
 
-          <footer class="automation-card-foot">
-            <div class="automation-stk-bar">
-              <span class="automation-stk-label">STK collect</span>
-              <p class="automation-stk-hint muted">Real M-Pesa payment — payer enters PIN; funds hit your paybill/till and post to this collection ID.</p>
-              <form method="post" action="{{ post_url }}" class="automation-stk-form">
-                {% csrf_token %}
-                <input type="hidden" name="intent" value="stk-collect">
-                <label class="sr-only" for="stk-phone">Phone</label>
-                <input
-                  id="stk-phone"
-                  class="field field-compact"
-                  name="phone"
-                  placeholder="Phone"
-                  inputmode="tel"
-                  autocomplete="tel"
-                  required
-                  {% if not row.stk_ready %}disabled{% endif %}
-                >
-                <label class="sr-only" for="stk-amount">Amount</label>
-                <input
-                  id="stk-amount"
-                  class="field field-compact"
-                  name="amount"
-                  placeholder="KES"
-                  inputmode="decimal"
-                  required
-                  {% if not row.stk_ready %}disabled{% endif %}
-                >
-                <button type="submit" class="btn btn-primary btn-small" {% if not row.stk_ready %}disabled{% endif %}>
-                  Collect
-                </button>
-              </form>
-            </div>
-            <div class="automation-card-actions" data-col="actions">
+          <div class="automations-account-card__tools">
+            <form
+              method="post"
+              action="{{ post_url }}"
+              class="automation-stk-form automations-account-card__stk"
+              title="M-Pesa STK — payer enters PIN; posts to this collection ID."
+            >
+              {% csrf_token %}
+              <input type="hidden" name="intent" value="stk-collect">
+              <span class="automation-stk-label">STK</span>
+              <label class="sr-only" for="stk-phone">Phone</label>
+              <input
+                id="stk-phone"
+                class="field field-compact field-compact-tight"
+                name="phone"
+                placeholder="Phone"
+                inputmode="tel"
+                autocomplete="tel"
+                required
+                {% if not row.stk_ready %}disabled{% endif %}
+              >
+              <label class="sr-only" for="stk-amount">Amount</label>
+              <input
+                id="stk-amount"
+                class="field field-compact field-compact-tight"
+                name="amount"
+                placeholder="KES"
+                inputmode="decimal"
+                required
+                {% if not row.stk_ready %}disabled{% endif %}
+              >
+              <button type="submit" class="btn btn-primary btn-small" {% if not row.stk_ready %}disabled{% endif %}>Collect</button>
+            </form>
+            <div class="automations-account-card__manage" data-col="actions">
               <form method="post" action="{{ post_url }}" class="inline-form">
                 {% csrf_token %}
                 <input type="hidden" name="intent" value="issue-credential">
-                <button type="submit" class="btn btn-ghost btn-small">Rotate API key…</button>
+                <button type="submit" class="btn btn-ghost btn-small">Rotate key</button>
               </form>
               <form method="post" action="{{ post_url }}" class="inline-form" onsubmit="return confirm('Remove this account from automations?');">
                 {% csrf_token %}
@@ -167,21 +158,20 @@
                 <button type="submit" class="btn btn-ghost btn-small is-danger-text">Remove</button>
               </form>
             </div>
-          </footer>
+          </div>
         </article>
       </div>
     </section>
 
     <section class="panel automations-account-ledger">
-      <div class="panel-head">
+      <div class="panel-head panel-head-compact">
         <div>
           <h2>Transactions</h2>
-          <p class="muted">
-            All ledger movements for this account
+          <p class="muted automations-ledger-lead">
             {% if monitor.account_type == 'PAYBILL' or monitor.account_type == 'TILL' %}
-              (paybill/till {{ row.identifier }}).
+              Ledger for {{ row.identifier }}
             {% else %}
-              tagged with collection ID <code>{{ row.collection_code }}</code>.
+              Tagged <code>{{ row.collection_code }}</code>
             {% endif %}
           </p>
         </div>

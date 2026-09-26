@@ -16,7 +16,7 @@ ACTIVITIES: tuple[dict[str, str], ...] = (
         "group": "paybill",
         "label": "Automations & ledger",
         "short_label": "Automations",
-        "hint": "Automations hub (collection accounts, STK collect, C2B, partner API), transactions, and ledger.",
+        "hint": "Automations hub, account configuration (client auto-payout), STK/C2B, partner API, transactions, and ledger.",
     },
     {
         "code": "manage_daraja",

@@ -223,3 +223,48 @@ class CollectionMonitorForm(forms.ModelForm):
         elif account_type == CollectionMonitor.AccountType.PHONE:
             cleaned["account_ref"] = ""
         return cleaned
+
+
+class CollectionMonitorPayoutForm(forms.ModelForm):
+    class Meta:
+        model = CollectionMonitor
+        fields = ("auto_payout_enabled", "auto_payout_phone")
+        widgets = {
+            "auto_payout_enabled": forms.CheckboxInput(attrs={"class": "check"}),
+            "auto_payout_phone": forms.TextInput(
+                attrs={
+                    **FIELD,
+                    "inputmode": "tel",
+                    "autocomplete": "tel",
+                    "placeholder": "07XX XXX XXX or 2547…",
+                }
+            ),
+        }
+        labels = {
+            "auto_payout_enabled": "Auto-send to client",
+            "auto_payout_phone": "Client phone",
+        }
+        help_texts = {
+            "auto_payout_enabled": "After each inbound collection, queue a B2C payout to the client phone.",
+            "auto_payout_phone": "Kenyan mobile number that receives the collected amount.",
+        }
+
+    def clean_auto_payout_phone(self):
+        from paybill.auto_payout import normalize_client_phone
+
+        raw = (self.cleaned_data.get("auto_payout_phone") or "").strip()
+        enabled = self.cleaned_data.get("auto_payout_enabled")
+        if not enabled:
+            return raw
+        if not raw:
+            raise forms.ValidationError("Enter the client phone when auto-send is enabled.")
+        try:
+            return normalize_client_phone(raw)
+        except Exception as exc:
+            raise forms.ValidationError(str(exc)) from exc
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("auto_payout_enabled") and not (cleaned.get("auto_payout_phone") or "").strip():
+            self.add_error("auto_payout_phone", "Enter the client phone when auto-send is enabled.")
+        return cleaned

@@ -38,7 +38,7 @@ from paybill.automation import (
     serialize_collection_monitor_summary,
 )
 from paybill.c2b_forms import C2bSimulateForm
-from paybill.forms import CollectionMonitorForm
+from paybill.forms import CollectionMonitorForm, CollectionMonitorPayoutForm
 from paybill.collection_stk import initiate_monitor_stk_collection
 from paybill.models import CollectionMonitor, CollectionMonitorCredential, LedgerEntry, MoneyRequest
 from paybill.services import (
@@ -582,3 +582,67 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
             return JsonResponse({"ok": False, "detail": "Unknown action."}, status=400)
         messages.error(request, "Unknown action.")
         return redirect(account_url)
+
+
+class AccountConfigurationView(CollectionAutomationMixin, RoleRequiredMixin, View):
+    """Configure automatic B2C transfer of collected funds to each client's phone."""
+
+    template_name = "paybill/account_configuration.html"
+
+    def get(self, request, *args, **kwargs):
+        config = DarajaConfig.load()
+        monitors = list(self._monitors())
+        rows = []
+        for monitor in monitors:
+            phone_display = monitor.auto_payout_phone
+            if phone_display.startswith("254") and len(phone_display) == 12:
+                phone_display = "0" + phone_display[3:]
+            rows.append(
+                {
+                    "monitor": monitor,
+                    "form": CollectionMonitorPayoutForm(
+                        instance=monitor,
+                        initial={"auto_payout_phone": phone_display or monitor.auto_payout_phone},
+                    ),
+                }
+            )
+        return render(
+            request,
+            self.template_name,
+            {
+                "rows": rows,
+                "b2c_ready": config.b2c_ready,
+                "hub_url": reverse("paybill:automations"),
+            },
+        )
+
+    def post(self, request, *args, **kwargs):
+        monitor = get_object_or_404(
+            CollectionMonitor,
+            pk=request.POST.get("monitor_id"),
+            is_active=True,
+        )
+        form = CollectionMonitorPayoutForm(request.POST, instance=monitor)
+        if not form.is_valid():
+            messages.error(request, f"{monitor.label}: fix the highlighted fields.")
+            return redirect("paybill:account-configuration")
+
+        form.save()
+        write_audit(
+            request,
+            "collection_monitor.payout_config",
+            object_type="collection_monitor",
+            object_id=monitor.pk,
+            detail={
+                "auto_payout_enabled": monitor.auto_payout_enabled,
+                "auto_payout_phone": monitor.auto_payout_phone[-4:] if monitor.auto_payout_phone else "",
+            },
+        )
+        if monitor.auto_payout_enabled:
+            messages.success(
+                request,
+                f"{monitor.label}: collections will auto-send to the client phone via B2C.",
+            )
+        else:
+            messages.success(request, f"{monitor.label}: auto-send to client is off.")
+        return redirect("paybill:account-configuration")
