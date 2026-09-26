@@ -91,6 +91,13 @@
                         data-approval-title="{{ note.title|escape }}"
                         data-approval-body="{{ note.body|escape }}"
                         {% if note.money_request_id %}data-money-request-id="{{ note.money_request_id }}"{% endif %}
+                        {% if note.money_request %}
+                        data-approval-requester="{{ note.money_request.requester.get_full_name|default:note.money_request.requester.staff_code }} · {{ note.money_request.requester.staff_code }}"
+                        data-approval-destination="{{ note.money_request.get_destination_type_display }} · {{ note.money_request.destination }}{% if note.money_request.account_ref %} / {{ note.money_request.account_ref }}{% endif %}"
+                        data-approval-reason="{{ note.money_request.reason|escape }}"
+                        data-approval-amount="KES {{ note.money_request.amount|floatformat:2 }}"
+                        data-approval-source="{{ note.money_request.source_paybill.paybill_number }}"
+                        {% endif %}
                       >
                         {% csrf_token %}
                         <input type="hidden" name="intent" value="approve">

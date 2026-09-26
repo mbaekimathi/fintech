@@ -132,6 +132,7 @@ def user_notifications(user, *, limit: int = 12):
         "actor",
         "money_request",
         "money_request__requester",
+        "money_request__source_paybill",
     )[:limit]
 
 

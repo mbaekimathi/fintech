@@ -37,6 +37,33 @@
       <p class="approval-dialog__subtitle pin-approval-dialog__subtitle">Enter your 6-digit password to approve and send this payment from the hub paybill.</p>
     </header>
 
+    <div class="approval-request-detail" data-pin-approval-detail-wrap hidden>
+      <dl class="approval-request-detail__grid">
+        <div class="approval-request-detail__row">
+          <dt>Requested by</dt>
+          <dd data-pin-approval-requester>—</dd>
+        </div>
+        <div class="approval-request-detail__row">
+          <dt>Destination</dt>
+          <dd data-pin-approval-destination>—</dd>
+        </div>
+        <div class="approval-request-detail__row">
+          <dt>Reason</dt>
+          <dd data-pin-approval-reason>—</dd>
+        </div>
+        <div class="approval-request-detail__row approval-request-detail__row--split">
+          <div>
+            <dt>Amount</dt>
+            <dd data-pin-approval-amount class="approval-request-detail__amount">—</dd>
+          </div>
+          <div>
+            <dt>From paybill</dt>
+            <dd data-pin-approval-source>—</dd>
+          </div>
+        </div>
+      </dl>
+    </div>
+
     <div class="approval-dialog__hero approval-dialog__hero--lock" aria-hidden="true">
       <div class="approval-hero-ring approval-hero-ring--outer approval-hero-ring--violet"></div>
       <div class="approval-hero-icon approval-hero-icon--lock">
@@ -45,13 +72,6 @@
           <path d="M18 22v-6a6 6 0 0 1 12 0v6"/>
         </svg>
       </div>
-    </div>
-
-    <div class="approval-summary-card" data-pin-approval-detail-wrap hidden>
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8">
-        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/>
-      </svg>
-      <p class="approval-summary-card__text" data-pin-approval-detail></p>
     </div>
 
     <p class="approval-alert approval-alert--warn" data-pin-approval-setup hidden>

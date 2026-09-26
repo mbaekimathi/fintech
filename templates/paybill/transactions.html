@@ -127,6 +127,11 @@
                           data-money-request-id="{{ row.pk }}"
                           data-approval-title="{{ row.requester.get_full_name|default:row.requester.staff_code }} requested KES {{ row.amount|floatformat:2 }}"
                           data-approval-body="{{ row.get_destination_type_display }} · {{ row.destination }}{% if row.account_ref %} / {{ row.account_ref }}{% endif %}"
+                          data-approval-requester="{{ row.requester.get_full_name|default:row.requester.staff_code }} · {{ row.requester.staff_code }}"
+                          data-approval-destination="{{ row.get_destination_type_display }} · {{ row.destination }}{% if row.account_ref %} / {{ row.account_ref }}{% endif %}"
+                          data-approval-reason="{{ row.reason|escape }}"
+                          data-approval-amount="KES {{ row.amount|floatformat:2 }}"
+                          data-approval-source="{{ row.source_paybill.paybill_number }}"
                         >
                           {% csrf_token %}
                           <input type="hidden" name="intent" value="approve">

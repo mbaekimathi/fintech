@@ -716,19 +716,33 @@ class PendingApprovalPollView(RoleRequiredMixin, View):
         pending = pending_approval_queue_for_user(request.user)
         notifications = []
         for note in user_notifications(request.user):
-            notifications.append(
-                {
-                    "id": note.pk,
-                    "title": note.title,
-                    "body": note.body,
-                    "is_read": note.is_read,
-                    "can_review": note.can_review,
-                    "money_request_id": note.money_request_id,
-                    "created_ago": f"{timesince(note.created_at)} ago",
-                    "open_url": reverse("core:notification-open", kwargs={"pk": note.pk}),
-                    "review_url": reverse("core:notification-review", kwargs={"pk": note.pk}),
-                }
-            )
+            item = {
+                "id": note.pk,
+                "title": note.title,
+                "body": note.body,
+                "is_read": note.is_read,
+                "can_review": note.can_review,
+                "money_request_id": note.money_request_id,
+                "created_ago": f"{timesince(note.created_at)} ago",
+                "open_url": reverse("core:notification-open", kwargs={"pk": note.pk}),
+                "review_url": reverse("core:notification-review", kwargs={"pk": note.pk}),
+            }
+            money_request = note.money_request
+            if money_request is not None:
+                requester = money_request.requester
+                name = requester.get_full_name() or requester.staff_code
+                item.update(
+                    requester_name=name,
+                    requester_code=requester.staff_code,
+                    category=money_request.get_category_display(),
+                    destination_type=money_request.get_destination_type_display(),
+                    destination=money_request.destination,
+                    account_ref=money_request.account_ref or "",
+                    source_paybill=money_request.source_paybill.paybill_number,
+                    amount_label=f"{money_request.amount:,.2f}",
+                    reason=(money_request.reason or "").strip(),
+                )
+            notifications.append(item)
         return JsonResponse(
             {
                 "ok": True,

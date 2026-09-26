@@ -41,6 +41,33 @@
       </p>
     </header>
 
+    <div class="approval-request-detail" data-stk-approval-detail-wrap hidden>
+      <dl class="approval-request-detail__grid">
+        <div class="approval-request-detail__row">
+          <dt>Requested by</dt>
+          <dd data-stk-approval-requester>—</dd>
+        </div>
+        <div class="approval-request-detail__row">
+          <dt>Destination</dt>
+          <dd data-stk-approval-destination>—</dd>
+        </div>
+        <div class="approval-request-detail__row">
+          <dt>Reason</dt>
+          <dd data-stk-approval-reason>—</dd>
+        </div>
+        <div class="approval-request-detail__row approval-request-detail__row--split">
+          <div>
+            <dt>Amount</dt>
+            <dd data-stk-approval-amount class="approval-request-detail__amount">—</dd>
+          </div>
+          <div>
+            <dt>From paybill</dt>
+            <dd data-stk-approval-source>—</dd>
+          </div>
+        </div>
+      </dl>
+    </div>
+
     <div class="approval-dialog__hero" aria-hidden="true">
       <div class="approval-hero-ring approval-hero-ring--outer"></div>
       <div class="approval-hero-ring approval-hero-ring--inner"></div>
@@ -51,13 +78,6 @@
           <path class="approval-icon-signal" d="M24 14v8M24 26h.01"/>
         </svg>
       </div>
-    </div>
-
-    <div class="approval-summary-card" data-stk-approval-detail-wrap hidden>
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8">
-        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-      </svg>
-      <p class="approval-summary-card__text" data-stk-approval-detail></p>
     </div>
 
     <div class="approval-status" role="status" aria-live="polite" aria-atomic="true">

@@ -71,6 +71,75 @@
     return Boolean(ch.stk && config?.hasPhone !== false);
   }
 
+  function approvalAttr(form, name) {
+    return (form.getAttribute(name) || "").trim();
+  }
+
+  function approvalMetaFromForm(form) {
+    return {
+      requester:
+        approvalAttr(form, "data-approval-requester") ||
+        approvalAttr(form, "data-approval-title"),
+      destination:
+        approvalAttr(form, "data-approval-destination") ||
+        approvalAttr(form, "data-approval-body"),
+      reason: approvalAttr(form, "data-approval-reason"),
+      amount: approvalAttr(form, "data-approval-amount"),
+      source: approvalAttr(form, "data-approval-source"),
+    };
+  }
+
+  function approvalMetaFromPollRow(row) {
+    const destParts = [row.destination_type, row.destination].filter(Boolean).join(" · ");
+    const destination = row.account_ref ? `${destParts} / ${row.account_ref}` : destParts;
+    const requester = [row.requester_name, row.requester_code].filter(Boolean).join(" · ");
+    return {
+      requester,
+      destination: destination || (row.body || "").trim(),
+      reason: (row.reason || "").trim(),
+      amount: row.amount_label ? `KES ${row.amount_label}` : row.amount ? `KES ${row.amount}` : "",
+      source: (row.source_paybill || "").trim(),
+    };
+  }
+
+  function applyApprovalMetaToForm(form, meta) {
+    if (!form || !meta) return;
+    const set = (attr, val) => {
+      if (val) form.setAttribute(attr, val);
+      else form.removeAttribute(attr);
+    };
+    set("data-approval-requester", meta.requester);
+    set("data-approval-destination", meta.destination);
+    set("data-approval-reason", meta.reason);
+    set("data-approval-amount", meta.amount);
+    set("data-approval-source", meta.source);
+  }
+
+  function queryApprovalDetailRefs(prefix) {
+    return {
+      wrap: document.querySelector(`[data-${prefix}-approval-detail-wrap]`),
+      requester: document.querySelector(`[data-${prefix}-approval-requester]`),
+      destination: document.querySelector(`[data-${prefix}-approval-destination]`),
+      reason: document.querySelector(`[data-${prefix}-approval-reason]`),
+      amount: document.querySelector(`[data-${prefix}-approval-amount]`),
+      source: document.querySelector(`[data-${prefix}-approval-source]`),
+    };
+  }
+
+  function renderApprovalDetail(refs, meta) {
+    const dash = "—";
+    const set = (el, val) => {
+      if (el) el.textContent = val || dash;
+    };
+    set(refs.requester, meta.requester);
+    set(refs.destination, meta.destination);
+    set(refs.reason, meta.reason);
+    set(refs.amount, meta.amount);
+    set(refs.source, meta.source);
+    const hasAny = Object.values(meta).some((v) => Boolean(v));
+    if (refs.wrap) refs.wrap.hidden = !hasAny;
+  }
+
   function appendInlineApprovalPin(form) {
     if (!form || form.querySelector("[data-approval-inline]")) return;
     const wrap = document.createElement("div");
@@ -318,6 +387,7 @@
         }
         approveForm.setAttribute("data-approval-title", title);
         approveForm.setAttribute("data-approval-body", body);
+        applyApprovalMetaToForm(approveForm, approvalMetaFromPollRow(row));
 
         const next = `${window.location.pathname}${window.location.search}`;
         approveForm.innerHTML = `
@@ -427,6 +497,9 @@
         }
         approveForm.setAttribute("data-approval-title", note.title || "");
         approveForm.setAttribute("data-approval-body", note.body || "");
+        if (note.requester_name) {
+          applyApprovalMetaToForm(approveForm, approvalMetaFromPollRow(note));
+        }
         approveForm.innerHTML = `
           <input type="hidden" name="csrfmiddlewaretoken" value="${csrf}">
           <input type="hidden" name="intent" value="approve">
@@ -520,8 +593,7 @@
       appUseStk: document.querySelector("[data-pin-approval-use-stk]"),
       appSubmit: document.querySelector("[data-pin-approval-submit]"),
       appCancel: document.querySelector("[data-pin-approval-cancel]"),
-      appDetail: document.querySelector("[data-pin-approval-detail]"),
-      appDetailWrap: document.querySelector("[data-pin-approval-detail-wrap]"),
+      appDetailRefs: queryApprovalDetailRefs("pin"),
       stkBackdrop: document.querySelector("[data-stk-approval-backdrop]"),
       stkDialog: document.querySelector("[data-stk-approval-dialog]"),
       stkMessage: document.querySelector("[data-stk-approval-message]"),
@@ -529,8 +601,7 @@
       stkError: document.querySelector("[data-stk-approval-error]"),
       stkUseApp: document.querySelector("[data-stk-approval-use-app]"),
       stkCancel: document.querySelectorAll("[data-stk-approval-cancel]"),
-      stkDetail: document.querySelector("[data-stk-approval-detail]"),
-      stkDetailWrap: document.querySelector("[data-stk-approval-detail-wrap]"),
+      stkDetailRefs: queryApprovalDetailRefs("stk"),
       stkHeadline: document.querySelector("[data-stk-approval-headline]"),
       stkLive: document.querySelector("[data-stk-approval-live]"),
       stkOutcomeSuccess: document.querySelector("[data-stk-approval-outcome-success]"),
@@ -669,13 +740,9 @@
     let deferredHandler = null;
 
     const setContext = (form) => {
-      const detail = [form.getAttribute("data-approval-title"), form.getAttribute("data-approval-body")]
-        .filter(Boolean)
-        .join(" · ");
-      if (dom.appDetail) dom.appDetail.textContent = detail;
-      if (dom.appDetailWrap) dom.appDetailWrap.hidden = !detail;
-      if (dom.stkDetail) dom.stkDetail.textContent = detail;
-      if (dom.stkDetailWrap) dom.stkDetailWrap.hidden = !detail;
+      const meta = approvalMetaFromForm(form);
+      renderApprovalDetail(dom.appDetailRefs, meta);
+      renderApprovalDetail(dom.stkDetailRefs, meta);
     };
 
     const clearDeferred = () => {
@@ -1295,6 +1362,7 @@
       form.setAttribute("data-notification-id", String(item.notification_id));
       form.setAttribute("data-approval-title", item.title || "");
       form.setAttribute("data-approval-body", item.body || "");
+      applyApprovalMetaToForm(form, approvalMetaFromPollRow(item));
       form.setAttribute("data-auto-approval-id", String(item.notification_id));
 
       const next = `${window.location.pathname}${window.location.search}`;
