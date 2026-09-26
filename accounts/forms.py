@@ -199,6 +199,50 @@ class ProfileForm(forms.ModelForm):
         return email
 
 
+class ProfileRevealPasswordForm(forms.Form):
+    password = forms.CharField(
+        label="Current password",
+        min_length=6,
+        max_length=6,
+        widget=PIN_WIDGET,
+    )
+
+    def __init__(self, user, *args, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean_password(self):
+        password = (self.cleaned_data.get("password") or "").strip()
+        if not password.isdigit() or len(password) != 6:
+            raise ValidationError("Enter your 6-digit password.")
+        if not self.user.check_password(password):
+            raise ValidationError("That password is incorrect.")
+        return password
+
+
+class ProfileRevealApprovalPasswordForm(forms.Form):
+    password = forms.CharField(
+        label="Current approval password",
+        min_length=6,
+        max_length=6,
+        widget=PIN_WIDGET,
+    )
+
+    def __init__(self, user, *args, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean_password(self):
+        password = (self.cleaned_data.get("password") or "").strip()
+        if not password.isdigit() or len(password) != 6:
+            raise ValidationError("Enter your 6-digit approval password.")
+        if not self.user.has_approval_password:
+            raise ValidationError("You have not set an approval password yet.")
+        if not self.user.check_approval_password(password):
+            raise ValidationError("That approval password is incorrect.")
+        return password
+
+
 class ProfilePasswordForm(forms.Form):
     current_password = forms.CharField(label="Current password", min_length=6, max_length=6, widget=PIN_WIDGET)
     new_password1 = forms.CharField(label="New password", widget=NEW_PIN_WIDGET)

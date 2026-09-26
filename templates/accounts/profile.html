@@ -100,7 +100,13 @@
           <dt>Status</dt>
           <dd>{% if has_approval_password %}Configured{% else %}Not set{% endif %}</dd>
           <dt>Password</dt>
-          <dd class="mono">{% if has_approval_password %}••••••{% else %}—{% endif %}</dd>
+          <dd>
+            {% if has_approval_password %}
+              {% include "partials/password_reveal.html" with reveal_action="reveal_approval_password" %}
+            {% else %}
+              <span class="mono muted">—</span>
+            {% endif %}
+          </dd>
         </dl>
       </div>
 
@@ -140,7 +146,9 @@
     <div x-show="!editing">
       <dl class="kv">
         <dt>Password</dt>
-        <dd class="mono">••••••</dd>
+        <dd>
+          {% include "partials/password_reveal.html" with reveal_action="reveal_login_password" %}
+        </dd>
       </dl>
     </div>
 

@@ -3164,6 +3164,25 @@ a:hover {
   display: block;
 }
 
+.password-reveal .password-reveal-entry,
+.password-reveal .password-reveal-shown {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.35rem;
+}
+
+.password-reveal .password-field {
+  flex: 1 1 8rem;
+  min-width: 8rem;
+  max-width: 12rem;
+}
+
+.password-reveal .field-hint {
+  margin-top: 0.35rem;
+}
+
 .password-field .pin-field,
 .password-field .field {
   padding-right: 2.6rem;

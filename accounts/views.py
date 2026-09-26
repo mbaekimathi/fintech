@@ -2,7 +2,7 @@ from django.contrib import messages
 from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views.decorators.http import require_POST
@@ -16,6 +16,8 @@ from accounts.forms import (
     ProfileApprovalPasswordForm,
     ProfileForm,
     ProfilePasswordForm,
+    ProfileRevealApprovalPasswordForm,
+    ProfileRevealPasswordForm,
 )
 from accounts.mixins import ApprovedRequiredMixin, RoleRequiredMixin
 from accounts.models import EmployeeSalary, User
@@ -185,6 +187,25 @@ class ProfileView(ApprovedRequiredMixin, TemplateView):
                 messages.success(request, "Profile updated.")
                 return redirect("accounts:profile")
             return self.render_to_response(self.get_context_data(profile_form=form))
+
+        if action in {"reveal_login_password", "reveal_approval_password"}:
+            if action == "reveal_login_password":
+                form = ProfileRevealPasswordForm(user=user, data=request.POST)
+            else:
+                if not user.can_review_requests():
+                    return JsonResponse(
+                        {"ok": False, "detail": "You do not have permission to view an approval password."},
+                        status=403,
+                    )
+                form = ProfileRevealApprovalPasswordForm(user=user, data=request.POST)
+            if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+                return redirect("accounts:profile")
+            if form.is_valid():
+                return JsonResponse({"ok": True, "password": form.cleaned_data["password"]})
+            detail = " ".join(
+                error for errors in form.errors.values() for error in errors
+            ) or "Could not verify password."
+            return JsonResponse({"ok": False, "detail": detail}, status=400)
 
         if action == "password":
             form = ProfilePasswordForm(user=user, data=request.POST)

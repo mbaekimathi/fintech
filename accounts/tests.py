@@ -310,3 +310,33 @@ class ProfileApprovalPasswordTests(TestCase):
         self.assertRedirects(changed, self._url("accounts:profile"))
         self.reviewer.refresh_from_db()
         self.assertTrue(self.reviewer.check_approval_password("990011"))
+
+    def test_reveal_login_password_after_verification(self):
+        self.client.force_login(self.reviewer)
+        bad = self.client.post(
+            self._url("accounts:profile"),
+            {"action": "reveal_login_password", "password": "000000"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(bad.status_code, 400)
+        self.assertFalse(bad.json()["ok"])
+
+        good = self.client.post(
+            self._url("accounts:profile"),
+            {"action": "reveal_login_password", "password": "112233"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(good.status_code, 200)
+        self.assertEqual(good.json(), {"ok": True, "password": "112233"})
+
+    def test_reveal_approval_password_after_set(self):
+        self.reviewer.set_approval_password("778899")
+        self.reviewer.save(update_fields=["approval_password"])
+        self.client.force_login(self.reviewer)
+        good = self.client.post(
+            self._url("accounts:profile"),
+            {"action": "reveal_approval_password", "password": "778899"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(good.status_code, 200)
+        self.assertEqual(good.json(), {"ok": True, "password": "778899"})
