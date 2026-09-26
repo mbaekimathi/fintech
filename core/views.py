@@ -72,7 +72,7 @@ from core.static_health import deploy_static_report
 
 
 class DeployHealthView(View):
-    """Public probe: confirms hosted static files include the payment approval JS."""
+    """Public probe: confirms hosted staticfiles include payment-approval.js (and app.js)."""
 
     def get(self, request, *args, **kwargs):
         report = deploy_static_report()

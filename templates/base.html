@@ -206,6 +206,9 @@
       }
     </script>
   {% endif %}
+  {% if can_review_money_requests %}
+    <script src="{% static 'js/payment-approval.js' %}?v={{ asset_version }}"></script>
+  {% endif %}
   <script src="{% static 'js/app.js' %}?v={{ asset_version }}"></script>
 </body>
 </html>

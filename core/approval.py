@@ -173,39 +173,6 @@ def _stk_verified_on_request(request, money_request: MoneyRequest) -> bool:
 
 def approval_ok(request, *, money_request: MoneyRequest, next_url: str) -> bool:
     """Return True when the active approval channel passes (app password or STK PIN)."""
-    user = request.user
-    app_required = user_requires_app_on_approval(user)
-    stk_required = user_requires_stk_on_approval(user)
-    if not app_required and not stk_required:
-        return True
+    from core.approval_gate import authorize_payout_approval
 
-    if app_required and stk_required:
-        pin_ok = user.has_approval_password and verify_approval_pin(
-            user, request.POST.get("approval_pin", "")
-        )
-        stk_ok = _stk_verified_on_request(request, money_request)
-        if pin_ok or stk_ok:
-            return True
-        if not user.has_approval_password and not (user.phone or "").strip():
-            messages.error(
-                request,
-                "Set your approval password and phone number on Profile before approving payments.",
-            )
-            return False
-        if (request.POST.get("approval_pin") or "").strip():
-            messages.error(request, "Enter your 6-digit approval password to approve this payment.")
-        elif not (user.phone or "").strip():
-            messages.error(
-                request,
-                "Add your phone number on Profile, or enter your approval password in the app.",
-            )
-        else:
-            messages.error(
-                request,
-                "Enter your approval password in the app or complete the M-Pesa PIN prompt on your phone.",
-            )
-        return False
-
-    if app_required:
-        return approval_pin_ok(request, next_url=next_url)
-    return stk_approval_ok(request, money_request=money_request, next_url=next_url)
+    return authorize_payout_approval(request, money_request=money_request, next_url=next_url)
