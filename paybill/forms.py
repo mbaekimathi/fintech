@@ -220,4 +220,6 @@ class CollectionMonitorForm(forms.ModelForm):
             elif len(identifier) < 5 or len(identifier) > 8:
                 label = "till" if account_type == CollectionMonitor.AccountType.TILL else "paybill"
                 self.add_error("identifier", f"Enter a valid {label} number (5–8 digits).")
+        elif account_type == CollectionMonitor.AccountType.PHONE:
+            cleaned["account_ref"] = ""
         return cleaned

@@ -3927,8 +3927,13 @@ a:hover {
 }
 
 .automation-register-intro {
-  margin: 0.35rem 0 0;
+  margin: 0 0 0.15rem;
   font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.automations-register-form .automation-register-intro span {
+  display: block;
 }
 
 .automation-register-foot {

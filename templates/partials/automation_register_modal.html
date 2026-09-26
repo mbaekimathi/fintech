@@ -20,18 +20,82 @@
           ×
         </button>
       </div>
-      <p class="muted automation-register-intro">Linked to the ledger. Hub Daraja STK is used unless you add your own credentials below.</p>
     </header>
-    <form method="post" action="{% url 'paybill:automations' %}" class="form-grid automations-form" novalidate>
+    <form
+      method="post"
+      action="{% url 'paybill:automations' %}"
+      class="form-grid automations-form automations-register-form"
+      novalidate
+      x-data="{
+        accountType: '{{ form.account_type.value|default:'PAYBILL'|escapejs }}',
+        init() {
+          const sel = document.getElementById('id_account_type');
+          if (sel && sel.value) this.accountType = sel.value;
+        }
+      }"
+      @change="if ($event.target.id === 'id_account_type') accountType = $event.target.value"
+    >
       {% csrf_token %}
       <input type="hidden" name="intent" value="create">
       {% if form.non_field_errors %}
         <div class="flash flash-error span-2">{{ form.non_field_errors|join:" " }}</div>
       {% endif %}
+
+      <p class="muted automation-register-intro span-2">
+        <span x-show="accountType === 'PAYBILL'" x-cloak>
+          Lipa na M-Pesa paybill — C2B and STK collect to this number; each account gets a unique collection ID.
+        </span>
+        <span x-show="accountType === 'TILL'" x-cloak>
+          Buy Goods till — STK uses till (CustomerBuyGoodsOnline); collections tagged with your collection ID.
+        </span>
+        <span x-show="accountType === 'PHONE'" x-cloak>
+          Track a phone-linked collection — STK pay-ins use hub paybill; ledger posts use the auto collection ID.
+        </span>
+      </p>
+
       {% include "partials/labeled_field.html" with field=form.label span="2" %}
-      {% include "partials/labeled_field.html" with field=form.account_type %}
-      {% include "partials/labeled_field.html" with field=form.identifier %}
-      {% include "partials/labeled_field.html" with field=form.account_ref span="2" %}
+
+      <label class="label">
+        {{ form.account_type.label }}
+        {{ form.account_type }}
+        {% if form.account_type.errors %}<span class="field-error">{{ form.account_type.errors|join:", " }}</span>{% endif %}
+      </label>
+
+      <label class="label" :class="accountType === 'PHONE' ? 'span-2' : ''">
+        <span x-text="accountType === 'PAYBILL' ? 'Paybill number' : (accountType === 'TILL' ? 'Till number' : 'Phone number')">{{ form.identifier.label }}</span>
+        <input
+          type="text"
+          name="identifier"
+          id="id_identifier"
+          class="field"
+          value="{{ form.identifier.value|default_if_none:'' }}"
+          :inputmode="accountType === 'PHONE' ? 'tel' : 'numeric'"
+          :autocomplete="accountType === 'PHONE' ? 'tel' : 'off'"
+          :placeholder="accountType === 'PAYBILL' ? 'e.g. 400200' : (accountType === 'TILL' ? 'e.g. 123456' : '07XX XXX XXX or 2547…')"
+          required
+        >
+        <span class="field-hint" x-show="accountType === 'PAYBILL'" x-cloak>5–8 digits — the public paybill customers pay to.</span>
+        <span class="field-hint" x-show="accountType === 'TILL'" x-cloak>5–8 digits — your Buy Goods till number.</span>
+        <span class="field-hint" x-show="accountType === 'PHONE'" x-cloak>Kenyan mobile — normalized to 254… for M-Pesa.</span>
+        {% if form.identifier.errors %}<span class="field-error">{{ form.identifier.errors|join:", " }}</span>{% endif %}
+      </label>
+
+      <label class="label span-2" x-show="accountType === 'PAYBILL'" x-cloak>
+        Paybill account number
+        <input
+          type="text"
+          name="account_ref"
+          id="id_account_ref"
+          class="field"
+          value="{{ form.account_ref.value|default_if_none:'' }}"
+          autocomplete="off"
+          placeholder="Optional — account no. shown on Lipa na M-Pesa"
+          :disabled="accountType !== 'PAYBILL'"
+        >
+        <span class="field-hint">Optional label on the paybill; collections still use the unique collection code.</span>
+        {% if form.account_ref.errors %}<span class="field-error">{{ form.account_ref.errors|join:", " }}</span>{% endif %}
+      </label>
+
       <div class="field span-2">
         <label class="check-row">
           {{ form.auto_refresh }}
@@ -39,9 +103,15 @@
         </label>
         {% if form.auto_refresh.help_text %}<p class="field-hint">{{ form.auto_refresh.help_text }}</p>{% endif %}
       </div>
+
       <details class="daraja-advanced span-2">
         <summary>Own Daraja STK credentials</summary>
-        <p class="field-hint">Default: hub Daraja. Each account still gets a unique collection ID.</p>
+        <p class="field-hint" x-show="accountType === 'PAYBILL' || accountType === 'TILL'" x-cloak>
+          Default: hub Daraja. Override only if this paybill/till uses a different Daraja app.
+        </p>
+        <p class="field-hint" x-show="accountType === 'PHONE'" x-cloak>
+          Default: hub Daraja STK (paybill shortcode). Each account still gets a unique collection ID.
+        </p>
         <div class="form-grid">
           <div class="field span-2">
             <label class="check-row">
