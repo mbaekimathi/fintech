@@ -23,14 +23,30 @@
     );
   }
 
+  function normalizeConfig(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    return {
+      ...raw,
+      stkLipaCharge: raw.stkLipaCharge === true,
+    };
+  }
+
   function parseConfig() {
     const el = document.getElementById("approval-config");
     if (!el) return null;
     try {
-      return JSON.parse(el.textContent || "{}");
+      return normalizeConfig(JSON.parse(el.textContent || "{}"));
     } catch (_err) {
       return null;
     }
+  }
+
+  function lipaStkChargeEnabled(config) {
+    return config?.stkLipaCharge === true;
+  }
+
+  function paybillPinAuth(config) {
+    return !lipaStkChargeEnabled(config);
   }
 
   function channels(config) {
@@ -43,7 +59,8 @@
   }
 
   function appReady(config, ch) {
-    return Boolean(ch.app && config?.hasApprovalPassword !== false);
+    const needsAppPin = ch.app || (ch.stk && paybillPinAuth(config));
+    return Boolean(needsAppPin && config?.hasApprovalPassword !== false);
   }
 
   function stkReady(config, ch) {
@@ -445,7 +462,7 @@
     const ch = channels(config);
     if (!approvalRequired(config)) return false;
     const needs = [];
-    const stkAuthorizesPaybill = ch.stk && config?.stkLipaCharge === false;
+    const stkAuthorizesPaybill = ch.stk && paybillPinAuth(config);
     if (
       (ch.app || stkAuthorizesPaybill) &&
       config?.hasApprovalPassword === false
@@ -547,7 +564,7 @@
       }
       if (dom.stkPinPanel) showEl(dom.stkPinPanel);
       if (dom.stkPinSubmit) showEl(dom.stkPinSubmit);
-      if (dom.stkBackStk && config.stkLipaCharge !== false) showEl(dom.stkBackStk);
+      if (dom.stkBackStk && lipaStkChargeEnabled(config)) showEl(dom.stkBackStk);
       if (dom.stkUseApp) {
         dom.stkUseApp.hidden = true;
         dom.stkUseApp.setAttribute("aria-expanded", "true");
@@ -883,7 +900,7 @@
       pendingForm = form;
       setContext(form);
       dom.appInput.value = "";
-      if (config.stkLipaCharge === false) {
+      if (paybillPinAuth(config)) {
         loadPaybillAuthSummary(form);
       }
 
@@ -895,7 +912,7 @@
       }
       const showStkAlt = Boolean(
         ch.stk &&
-          config.stkLipaCharge !== false &&
+          lipaStkChargeEnabled(config) &&
           config.hasPhone !== false &&
           (config.dualApproval || needsPassword),
       );
@@ -923,17 +940,7 @@
         return;
       }
 
-      if (config.stkLipaCharge === false) {
-        pendingForm = form;
-        active = true;
-        setContext(form);
-        const pinSubtitle = document.querySelector(
-          ".pin-approval-dialog .approval-dialog__subtitle",
-        );
-        if (pinSubtitle) {
-          pinSubtitle.textContent =
-            "Enter your approval password. The hub paybill will send the full amount to the destination — your M-Pesa is not charged for this step.";
-        }
+      if (paybillPinAuth(config)) {
         openApp(form);
         return;
       }
@@ -1035,7 +1042,7 @@
 
     const pickChannel = () => {
       if (!ch.app && !ch.stk) return "none";
-      if (config.stkLipaCharge === false) return "app";
+      if (paybillPinAuth(config)) return "app";
       if (appReady(config, ch)) return "app";
       if (ch.stk && stkReady(config, ch)) return "stk";
       return ch.app ? "app" : "stk";
@@ -1057,6 +1064,8 @@
 
     const beginApprovalFlow = (form, { force = false, manual = false } = {}) => {
       if (active && !force) return;
+      if (misconfigAlert(config)) return;
+      if (profileIncompleteAlert(config)) return;
       active = true;
       pendingForm = form;
       approvalPin = "";
@@ -1064,7 +1073,7 @@
       const channel = pickChannel();
 
       if (channel === "app") {
-        if (config.stkLipaCharge === false) {
+        if (paybillPinAuth(config)) {
           openApp(form);
           return;
         }
@@ -1092,8 +1101,6 @@
 
       active = false;
       pendingForm = null;
-      if (misconfigAlert(config)) return;
-      if (profileIncompleteAlert(config)) return;
       postApprove(form);
     };
 
@@ -1114,7 +1121,7 @@
     const submitAppPin = () => {
       if (!pendingForm || !dom.appInput) return;
       if (config.hasApprovalPassword === false) {
-        if (stkReady(config, ch) && config.stkLipaCharge !== false) {
+        if (stkReady(config, ch) && lipaStkChargeEnabled(config)) {
           closeApp();
           runStk(pendingForm, { visible: true });
           return;
@@ -1364,8 +1371,8 @@
         if (!btn) return;
         const form = btn.closest("form[data-approval-form]");
         if (!form) return;
-        if (window.nexusApproval?.ready) return;
-        triggerFromForm(form, event, runtime);
+        const flow = runtime || window.__nexusApprovalRuntime;
+        triggerFromForm(form, event, flow);
       },
       true,
     );
@@ -1381,20 +1388,6 @@
     if (!runtime) return;
 
     initLivePoll(config, runtime);
-
-    document.addEventListener(
-      "click",
-      (event) => {
-        const btn = event.target.closest(
-          "[data-approval-trigger], form[data-approval-form] .btn-primary.btn-small",
-        );
-        if (!btn) return;
-        const form = btn.closest("form[data-approval-form]");
-        if (!form) return;
-        triggerFromForm(form, event, runtime);
-      },
-      true,
-    );
 
     window.nexusApproval = {
       ready: true,

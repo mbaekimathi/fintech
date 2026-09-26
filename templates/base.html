@@ -170,7 +170,7 @@
   </div>
   <div class="nav-backdrop" @click="navOpen = false" x-cloak x-show="navOpen"></div>
   {% if can_review_money_requests %}
-    {% if app_approval_required_for_user or stk_pin_approval_required_for_user and not approval_stk_lipa_charge %}
+    {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}
       {% include "partials/pin_approval_dialog.html" %}
     {% endif %}
     {% if stk_pin_approval_required_for_user and approval_stk_lipa_charge %}
@@ -211,6 +211,24 @@
   {% endif %}
   {% if can_review_money_requests %}
     <script src="{% static 'js/payment-approval.js' %}?v={{ asset_version }}"></script>
+    <script>
+      (function () {
+        if (window.__approvalFlowReady) return;
+        document.addEventListener(
+          "click",
+          function (ev) {
+            if (window.__approvalFlowReady || window.nexusApproval?.ready) return;
+            var btn = ev.target.closest("[data-approval-trigger]");
+            if (!btn) return;
+            ev.preventDefault();
+            window.alert(
+              "Approval could not start (payment-approval.js missing or outdated). On the server run: bash deploy.sh — then hard-refresh (Ctrl+F5).",
+            );
+          },
+          true,
+        );
+      })();
+    </script>
   {% endif %}
   <script src="{% static 'js/app.js' %}?v={{ asset_version }}"></script>
 </body>
