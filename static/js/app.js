@@ -1092,6 +1092,293 @@ function initAutomations() {
   poll();
 }
 
+function initAutomationAccountPage() {
+  const page = document.querySelector(".automations-page-account");
+  if (!page) return;
+
+  const csrf =
+    document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") ||
+    document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
+    document.cookie.match(/csrftoken=([^;]+)/)?.[1] ||
+    "";
+
+  const ledgerSection = page.querySelector("[data-automation-ledger]");
+  const ledgerApiUrl = ledgerSection?.getAttribute("data-ledger-api-url") || "";
+  const ledgerSearch = ledgerSection?.querySelector("[data-ledger-search]");
+  const ledgerTbody = ledgerSection?.querySelector("[data-ledger-tbody]");
+  const ledgerHint = ledgerSection?.querySelector("[data-ledger-hint]");
+  const ledgerPagination = ledgerSection?.querySelector("[data-ledger-pagination]");
+  const ledgerPrev = ledgerSection?.querySelector("[data-ledger-prev]");
+  const ledgerNext = ledgerSection?.querySelector("[data-ledger-next]");
+  const ledgerPageLabel = ledgerSection?.querySelector("[data-ledger-page-label]");
+  const totalIn = ledgerSection?.querySelector("[data-ledger-total-in]");
+  const totalOut = ledgerSection?.querySelector("[data-ledger-total-out]");
+  const totalNet = ledgerSection?.querySelector("[data-ledger-total-net]");
+
+  const waitBackdrop = page.querySelector("[data-daraja-wait-backdrop]");
+  const waitStatus = page.querySelector("[data-daraja-wait-status]");
+  const waitDetail = page.querySelector("[data-daraja-wait-detail]");
+  const waitClose = page.querySelector("[data-daraja-wait-close]");
+
+  const escapeHtml = (value) =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+  const formatKes = (raw) => {
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return "—";
+    return value.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const badge = (status, label) =>
+    `<span class="badge badge-${escapeHtml(String(status || "").toLowerCase())}">${escapeHtml(label || status)}</span>`;
+
+  const renderLedgerRow = (row) => {
+    const dirClass = row.direction === "IN" ? "ledger-dir-in" : "ledger-dir-out";
+    const mpesaCell = row.mpesa_reference
+      ? `<code class="mono">${escapeHtml(row.mpesa_reference)}</code>`
+      : `<span class="muted">${escapeHtml(row.reference.slice(0, 18))}${row.reference.length > 18 ? "…" : ""}</span>`;
+    const amountSign = row.direction === "IN" ? "+" : "−";
+    return `<tr>
+      <td data-label="When">${escapeHtml(row.when)}</td>
+      <td data-label="Direction"><span class="ledger-dir ${dirClass}">${escapeHtml(row.direction_label)}</span></td>
+      <td data-label="M-Pesa ref">${mpesaCell}</td>
+      <td data-label="Party">${escapeHtml(row.party)}</td>
+      <td data-label="Ref"><code>${escapeHtml(row.account_ref)}</code></td>
+      <td data-label="Amount" class="automation-ledger-amount">
+        <span class="${escapeHtml(row.amount_class)}">${amountSign} ${escapeHtml(row.currency)} ${escapeHtml(row.amount)}</span>
+      </td>
+      <td data-label="Status">${badge(row.status, row.status_label)}</td>
+      <td data-label="Narrative" class="automation-ledger-narrative">${escapeHtml(row.narrative)}</td>
+    </tr>`;
+  };
+
+  let ledgerQuery = "";
+  let ledgerPage = 1;
+  let ledgerPollTimer = null;
+  let ledgerFetchInFlight = false;
+
+  const applyLedgerPayload = (data) => {
+    if (!ledgerTbody || !data) return;
+    const rows = data.entries || [];
+    ledgerTbody.innerHTML = rows.length
+      ? rows.map(renderLedgerRow).join("")
+      : `<tr><td colspan="8" class="empty">No matching transactions.</td></tr>`;
+    if (totalIn && data.totals) totalIn.textContent = `KES ${formatKes(data.totals.inbound)}`;
+    if (totalOut && data.totals) totalOut.textContent = `KES ${formatKes(data.totals.outbound)}`;
+    if (totalNet && data.totals) totalNet.textContent = `KES ${formatKes(data.totals.net)}`;
+    if (ledgerPageLabel) {
+      ledgerPageLabel.textContent = `Page ${data.page} of ${Math.max(data.num_pages || 1, 1)}`;
+    }
+    if (ledgerPagination) {
+      ledgerPagination.hidden = (data.num_pages || 1) <= 1;
+    }
+    if (ledgerPrev) ledgerPrev.disabled = !data.has_previous;
+    if (ledgerNext) ledgerNext.disabled = !data.has_next;
+    ledgerPage = data.page || 1;
+    if (ledgerHint) {
+      const q = (data.query || "").trim();
+      ledgerHint.textContent = q
+        ? `${data.count} match${data.count === 1 ? "" : "es"} · live updates`
+        : "Updates live — no refresh needed.";
+    }
+  };
+
+  const fetchLedger = async () => {
+    if (!ledgerApiUrl || !ledgerTbody || ledgerFetchInFlight) return;
+    ledgerFetchInFlight = true;
+    try {
+      const params = new URLSearchParams({ poll: "ledger", page: String(ledgerPage) });
+      if (ledgerQuery) params.set("q", ledgerQuery);
+      const response = await fetch(`${ledgerApiUrl}?${params}`, {
+        headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      applyLedgerPayload(data);
+    } catch (_err) {
+      /* keep table */
+    } finally {
+      ledgerFetchInFlight = false;
+    }
+  };
+
+  const scheduleLedgerPoll = () => {
+    if (ledgerPollTimer) window.clearInterval(ledgerPollTimer);
+    ledgerPollTimer = window.setInterval(fetchLedger, 5000);
+  };
+
+  if (ledgerSearch) {
+    let debounce = null;
+    ledgerSearch.addEventListener("input", () => {
+      window.clearTimeout(debounce);
+      debounce = window.setTimeout(() => {
+        ledgerQuery = ledgerSearch.value.trim();
+        ledgerPage = 1;
+        fetchLedger();
+      }, 320);
+    });
+  }
+
+  ledgerPrev?.addEventListener("click", () => {
+    if (ledgerPage > 1) {
+      ledgerPage -= 1;
+      fetchLedger();
+    }
+  });
+  ledgerNext?.addEventListener("click", () => {
+    ledgerPage += 1;
+    fetchLedger();
+  });
+
+  if (ledgerApiUrl && ledgerTbody) {
+    scheduleLedgerPoll();
+  }
+
+  const showWaitModal = (title, status, detail = "") => {
+    if (!waitBackdrop) return;
+    const titleEl = waitBackdrop.querySelector("#automation-daraja-wait-title");
+    if (titleEl && title) titleEl.textContent = title;
+    if (waitStatus) waitStatus.textContent = status;
+    if (waitDetail) waitDetail.textContent = detail;
+    if (waitClose) waitClose.hidden = true;
+    waitBackdrop.hidden = false;
+    document.body.classList.add("modal-open");
+  };
+
+  const hideWaitModal = () => {
+    if (!waitBackdrop) return;
+    waitBackdrop.hidden = true;
+    document.body.classList.remove("modal-open");
+  };
+
+  waitClose?.addEventListener("click", hideWaitModal);
+
+  const pollOperation = (operationId) =>
+    new Promise((resolve, reject) => {
+      if (!ledgerApiUrl) {
+        reject(new Error("Missing poll URL."));
+        return;
+      }
+      let tries = 0;
+      const maxTries = 90;
+      const tick = async () => {
+        tries += 1;
+        try {
+          const params = new URLSearchParams({ poll: "operation", operation_id: String(operationId) });
+          const response = await fetch(`${ledgerApiUrl}?${params}`, {
+            headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+            cache: "no-store",
+          });
+          if (!response.ok) throw new Error("Could not check status.");
+          const data = await response.json();
+          const op = data.operation;
+          if (!op) throw new Error("Invalid response.");
+          if (waitStatus) {
+            waitStatus.textContent = op.summary || op.status_label || "Waiting for Safaricom…";
+          }
+          if (waitDetail) {
+            const parts = [];
+            if (op.destination) parts.push(`To ${op.destination}`);
+            if (op.amount) parts.push(`KES ${formatKes(op.amount)}`);
+            if (op.mpesa_reference) parts.push(`Receipt ${op.mpesa_reference}`);
+            waitDetail.textContent = parts.join(" · ");
+          }
+          if (op.complete) {
+            if (op.success) {
+              if (waitStatus) waitStatus.textContent = op.summary || "Payment completed.";
+              if (waitClose) waitClose.hidden = false;
+              fetchLedger();
+              resolve(op);
+              return;
+            }
+            const msg = op.result_desc || op.summary || "M-Pesa reported a failure.";
+            if (waitStatus) waitStatus.textContent = msg;
+            if (waitClose) waitClose.hidden = false;
+            reject(new Error(msg));
+            return;
+          }
+          if (tries >= maxTries) {
+            if (waitStatus) {
+              waitStatus.textContent = "Still waiting — check Transactions below or try again later.";
+            }
+            if (waitClose) waitClose.hidden = false;
+            fetchLedger();
+            resolve(op);
+            return;
+          }
+          window.setTimeout(tick, 1200);
+        } catch (err) {
+          if (tries >= maxTries) {
+            reject(err);
+            return;
+          }
+          window.setTimeout(tick, 1500);
+        }
+      };
+      window.setTimeout(tick, 800);
+    });
+
+  const manualForm = page.querySelector("[data-manual-b2c-form]");
+  manualForm?.addEventListener("submit", async (event) => {
+    if (!window.fetch) return;
+    event.preventDefault();
+    const submitBtn = manualForm.querySelector('button[type="submit"]');
+    const originalLabel = submitBtn?.textContent;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Sending…";
+    }
+    showWaitModal("Sending via M-Pesa", "Submitting B2C payout…");
+    try {
+      const body = new URLSearchParams(new FormData(manualForm));
+      const response = await fetch(manualForm.action, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRFToken": csrf,
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        const detail =
+          data.detail ||
+          (data.errors && Object.values(data.errors).flat().map((e) => e.message || e).join(" ")) ||
+          "Could not send payout.";
+        hideWaitModal();
+        window.alert(detail);
+        return;
+      }
+      const op = data.operation;
+      showWaitModal(
+        "Waiting for Safaricom",
+        op?.summary || "Queued — waiting for callback…",
+        op?.destination ? `To ${op.destination}` : "",
+      );
+      await pollOperation(op.id);
+    } catch (err) {
+      if (waitBackdrop && !waitBackdrop.hidden && waitClose && !waitClose.hidden) {
+        /* user saw timeout / failure in modal */
+      } else {
+        hideWaitModal();
+        window.alert(err?.message || "Send failed.");
+      }
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = manualForm.dataset.b2cReady !== "1";
+        if (originalLabel) submitBtn.textContent = originalLabel;
+      }
+    }
+  });
+}
+
 function runShellInits() {
   const secondaryInits = [
     initDarajaSetup,
@@ -1099,6 +1386,7 @@ function runShellInits() {
     initHubBalance,
     initUtilityTransfer,
     initAutomations,
+    initAutomationAccountPage,
     initWebPush,
     initEmployeePermissions,
     initAppSettings,

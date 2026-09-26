@@ -4299,6 +4299,38 @@ button.text-link:hover {
   color: var(--mpesa-deep);
 }
 
+.automations-ledger-search {
+  display: block;
+  margin-top: 0.65rem;
+  max-width: 22rem;
+}
+
+.automations-ledger-search .field {
+  width: 100%;
+}
+
+.automations-ledger-live-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+}
+
+.automation-daraja-wait-backdrop:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 120;
+}
+
+.automation-daraja-wait-dialog {
+  max-width: 26rem;
+  width: calc(100% - 2rem);
+}
+
+.automation-daraja-wait-detail {
+  margin: 0.75rem 0 0;
+  min-height: 1.25rem;
+}
+
 .automations-account-payout-panel + .automations-account-card__tools {
   margin-top: 0.35rem;
   padding-top: 0.4rem;

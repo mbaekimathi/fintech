@@ -2,7 +2,8 @@ import logging
 from decimal import Decimal
 
 from django.contrib import messages
-from django.db.models import Sum
+from django.db.models import Q, Sum
+from django.utils import timezone
 from django.http import JsonResponse
 from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
@@ -18,6 +19,7 @@ from core.notifications import (
     notify_money_request_result,
     reprompt_money_request,
 )
+from integrations.callbacks import expire_stale_queues
 from integrations.daraja_client import DarajaError
 from integrations.models import DarajaConfig, DarajaOperation
 from integrations.c2b import (
@@ -39,7 +41,12 @@ from paybill.automation import (
     serialize_collection_monitor_summary,
 )
 from paybill.c2b_forms import C2bSimulateForm
-from paybill.forms import CollectionMonitorForm, CollectionMonitorPayoutForm
+from paybill.forms import (
+    CollectionMonitorForm,
+    CollectionMonitorManualTransferForm,
+    CollectionMonitorPayoutForm,
+)
+from paybill.manual_transfer import execute_manual_monitor_transfer
 from paybill.collection_stk import initiate_monitor_stk_collection
 from paybill.models import CollectionMonitor, CollectionMonitorCredential, LedgerEntry, MoneyRequest
 from paybill.services import (
@@ -97,6 +104,58 @@ def _annotate_ledger_entry(entry: LedgerEntry, lookup: dict[str, MoneyRequest]) 
         entry.destination_account_ref = entry.account_ref or ""
         entry.source_paybill_number = entry.paybill_account.paybill_number
     return entry
+
+
+def _serialize_ledger_entry_api(entry: LedgerEntry) -> dict:
+    if entry.direction == LedgerEntry.Direction.IN:
+        party = entry.payer_phone or entry.payer_name or "—"
+    elif getattr(entry, "initiator_name", ""):
+        party = entry.initiator_name
+    else:
+        party = getattr(entry, "destination_value", "") or "—"
+    amount_fmt = f"{entry.amount:.2f}"
+    if entry.direction == LedgerEntry.Direction.IN:
+        amount_html = f'+ {entry.currency} {amount_fmt}'
+        amount_class = "automation-ledger-in"
+    else:
+        amount_html = f'− {entry.currency} {amount_fmt}'
+        amount_class = "automation-ledger-out"
+    mpesa_ref = entry.mpesa_reference or ""
+    ref_fallback = entry.reference[:18] + ("…" if len(entry.reference) > 18 else "")
+    narrative = entry.narrative or getattr(entry, "expense_reason", "") or "—"
+    return {
+        "when": timezone.localtime(entry.posted_at).strftime("%d %b %Y %H:%M"),
+        "direction": entry.direction,
+        "direction_label": "In" if entry.direction == LedgerEntry.Direction.IN else "Out",
+        "mpesa_reference": mpesa_ref,
+        "reference": entry.reference,
+        "party": party,
+        "account_ref": entry.account_ref or "—",
+        "amount": amount_fmt,
+        "currency": entry.currency,
+        "amount_class": amount_class,
+        "status": entry.status,
+        "status_label": entry.get_status_display(),
+        "narrative": narrative,
+    }
+
+
+def _serialize_daraja_operation_poll(op: DarajaOperation) -> dict:
+    complete = op.status != DarajaOperation.Status.QUEUED
+    return {
+        "id": op.pk,
+        "kind": op.kind,
+        "kind_label": op.get_kind_display(),
+        "destination": op.destination or "",
+        "amount": str(op.amount) if op.amount is not None else "",
+        "status": op.status,
+        "status_label": op.get_status_display(),
+        "summary": op.summary or op.result_desc or "Waiting for Safaricom…",
+        "result_desc": op.result_desc or "",
+        "mpesa_reference": op.mpesa_reference or "",
+        "complete": complete,
+        "success": op.status == DarajaOperation.Status.SUCCESS,
+    }
 
 
 class TransactionListView(RoleRequiredMixin, ListView):
@@ -475,12 +534,57 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
             is_active=True,
         )
 
+    def _manual_transfer_form(self, monitor: CollectionMonitor, data=None):
+        if data is not None:
+            return CollectionMonitorManualTransferForm(data, monitor=monitor)
+        return CollectionMonitorManualTransferForm(monitor=monitor)
+
+    def _ledger_poll_payload(self, request, monitor: CollectionMonitor) -> dict:
+        q = (request.GET.get("q") or "").strip()
+        qs = monitor_ledger_queryset(monitor)
+        if q:
+            qs = qs.filter(
+                Q(reference__icontains=q)
+                | Q(mpesa_reference__icontains=q)
+                | Q(account_ref__icontains=q)
+                | Q(payer_phone__icontains=q)
+                | Q(payer_name__icontains=q)
+                | Q(narrative__icontains=q)
+                | Q(expense_reason__icontains=q)
+            )
+        paginator = Paginator(qs, 30)
+        ledger_page = paginator.get_page(request.GET.get("page"))
+        lookup = money_request_by_ledger_reference()
+        entries = [
+            _serialize_ledger_entry_api(_annotate_ledger_entry(entry, lookup))
+            for entry in ledger_page.object_list
+        ]
+        totals = monitor_ledger_totals(monitor)
+        return {
+            "ok": True,
+            "entries": entries,
+            "totals": {
+                "inbound": str(totals["inbound"]),
+                "outbound": str(totals["outbound"]),
+                "net": str(totals["net"]),
+            },
+            "page": ledger_page.number,
+            "num_pages": paginator.num_pages,
+            "has_previous": ledger_page.has_previous(),
+            "has_next": ledger_page.has_next(),
+            "previous_page": ledger_page.previous_page_number() if ledger_page.has_previous() else None,
+            "next_page": ledger_page.next_page_number() if ledger_page.has_next() else None,
+            "query": q,
+            "count": paginator.count,
+        }
+
     def _render_automation_account(
         self,
         request,
         monitor: CollectionMonitor,
         *,
         api_key_context: dict | None = None,
+        manual_transfer_form: CollectionMonitorManualTransferForm | None = None,
     ):
         config = DarajaConfig.load()
         pk = monitor.pk
@@ -501,11 +605,13 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
                 "balance_ready": config.balance_ready,
                 "poll_url": reverse("paybill:automation-account", kwargs={"pk": pk}) + "?poll=balances",
                 "post_url": reverse("paybill:automation-account", kwargs={"pk": pk}),
+                "account_api_url": reverse("paybill:automation-account", kwargs={"pk": pk}),
                 "hub_url": reverse("paybill:automations"),
                 "ledger_entries": ledger_entries,
                 "ledger_page": ledger_page,
                 "ledger_totals": ledger_totals,
                 "payout_form": self._payout_form(monitor),
+                "manual_transfer_form": manual_transfer_form or self._manual_transfer_form(monitor),
                 "b2c_ready": config.b2c_ready,
                 "b2b_ready": config.b2b_ready,
                 **api_ctx,
@@ -515,7 +621,8 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
     def get(self, request, pk, *args, **kwargs):
         monitor = self._monitor(pk)
         config = DarajaConfig.load()
-        if request.GET.get("poll") == "balances":
+        poll = (request.GET.get("poll") or "").strip().lower()
+        if poll == "balances":
             payload = {
                 "ok": True,
                 "balance_ready": bool(config.balance_ready),
@@ -524,6 +631,19 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
                 ],
             }
             return JsonResponse(payload)
+
+        if poll == "ledger":
+            return JsonResponse(self._ledger_poll_payload(request, monitor))
+
+        if poll == "operation":
+            expire_stale_queues()
+            op_id = request.GET.get("operation_id")
+            if not op_id:
+                return JsonResponse({"ok": False, "detail": "Missing operation_id."}, status=400)
+            op = DarajaOperation.objects.filter(pk=op_id, collection_monitor=monitor).first()
+            if op is None:
+                return JsonResponse({"ok": False, "detail": "Operation not found."}, status=404)
+            return JsonResponse({"ok": True, "operation": _serialize_daraja_operation_poll(op)})
 
         return self._render_automation_account(request, monitor)
 
@@ -555,6 +675,62 @@ class AutomationAccountView(CollectionAutomationMixin, RoleRequiredMixin, View):
             else:
                 messages.success(request, "Client auto-send is off for this account.")
             return redirect(f"{account_url}#client-payout")
+
+        if intent == "manual-transfer":
+            form = self._manual_transfer_form(monitor, data=request.POST)
+            if not form.is_valid():
+                if wants_json:
+                    return JsonResponse(
+                        {"ok": False, "errors": form.errors.get_json_data()},
+                        status=400,
+                    )
+                messages.error(request, "Fix the manual transfer fields.")
+                return self._render_automation_account(
+                    request,
+                    monitor,
+                    manual_transfer_form=form,
+                )
+            try:
+                operation = execute_manual_monitor_transfer(
+                    monitor,
+                    amount=form.cleaned_data["amount"],
+                    destination=form.cleaned_data["destination"],
+                    request=request,
+                    created_by=request.user,
+                )
+            except DarajaError as exc:
+                if wants_json:
+                    return JsonResponse({"ok": False, "detail": str(exc)}, status=400)
+                messages.error(request, str(exc))
+                return self._render_automation_account(
+                    request,
+                    monitor,
+                    manual_transfer_form=form,
+                )
+            write_audit(
+                request,
+                "collection_monitor.manual_transfer",
+                object_type="daraja_operation",
+                object_id=operation.pk,
+                detail={
+                    "monitor": monitor.collection_code,
+                    "amount": str(form.cleaned_data["amount"]),
+                    "destination": form.cleaned_data["destination"],
+                },
+            )
+            if wants_json:
+                return JsonResponse(
+                    {
+                        "ok": True,
+                        "operation": _serialize_daraja_operation_poll(operation),
+                    }
+                )
+            messages.success(
+                request,
+                f"B2C payout queued — KES {form.cleaned_data['amount']:,.2f}. "
+                "Status updates when Safaricom responds.",
+            )
+            return redirect(f"{account_url}#manual-transfer")
 
         if intent == "issue-credential":
             _cred, raw_key = CollectionMonitorCredential.issue(monitor)

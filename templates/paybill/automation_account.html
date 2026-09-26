@@ -267,6 +267,57 @@
             </form>
           </div>
 
+          <div class="automations-account-payout-panel automations-account-manual-transfer" id="manual-transfer">
+            <form
+              method="post"
+              action="{{ post_url }}"
+              class="automations-account-payout-form automations-account-manual-transfer-form"
+              data-manual-b2c-form
+              data-b2c-ready="{% if b2c_ready %}1{% else %}0{% endif %}"
+            >
+              {% csrf_token %}
+              <input type="hidden" name="intent" value="manual-transfer">
+
+              <div class="automations-account-payout-head">
+                <div>
+                  <p class="automations-account-payout-title">Manual B2C send</p>
+                  <p class="automations-account-payout-sub muted">
+                    Pay a phone number now — enter amount and number (or use saved phone payout above).
+                  </p>
+                </div>
+              </div>
+
+              <div class="automations-account-payout-grid automations-account-manual-transfer-grid">
+                <label class="field-block">
+                  <span class="field-label">{{ manual_transfer_form.amount.label }}</span>
+                  {{ manual_transfer_form.amount }}
+                </label>
+                <label class="field-block">
+                  <span class="field-label">{{ manual_transfer_form.destination.label }}</span>
+                  {{ manual_transfer_form.destination }}
+                </label>
+              </div>
+
+              {% if manual_transfer_form.non_field_errors or manual_transfer_form.errors %}
+                <p class="field-error automations-account-payout-error">
+                  {{ manual_transfer_form.non_field_errors|join:", " }}
+                  {{ manual_transfer_form.amount.errors|join:", " }}
+                  {{ manual_transfer_form.destination.errors|join:", " }}
+                </p>
+              {% endif %}
+
+              {% if not b2c_ready %}
+                <p class="automations-account-payout-hint muted">
+                  Enable <a class="text-link" href="{% url 'core:daraja' %}#payouts">B2C on Daraja</a> to send to phone.
+                </p>
+              {% endif %}
+
+              <div class="automations-account-payout-foot">
+                <button type="submit" class="btn btn-primary btn-small" {% if not b2c_ready %}disabled{% endif %}>Send to phone</button>
+              </div>
+            </form>
+          </div>
+
           <div class="automations-account-card__tools">
             <form
               method="post"
@@ -317,7 +368,11 @@
       </div>
     </section>
 
-    <section class="panel panel-collections automations-account-ledger">
+    <section
+      class="panel panel-collections automations-account-ledger"
+      data-automation-ledger
+      data-ledger-api-url="{{ account_api_url }}"
+    >
       <div class="panel-head panel-head-compact">
         <div>
           <h2>Transactions</h2>
@@ -328,19 +383,31 @@
               Tagged <code>{{ row.collection_code }}</code>
             {% endif %}
           </p>
+          <label class="automations-ledger-search">
+            <span class="sr-only">Search transactions</span>
+            <input
+              type="search"
+              class="field field-compact"
+              data-ledger-search
+              placeholder="Search ref, phone, amount, narrative…"
+              autocomplete="off"
+              spellcheck="false"
+            >
+          </label>
+          <p class="muted automations-ledger-live-hint" data-ledger-hint aria-live="polite">Updates live — no refresh needed.</p>
         </div>
         <div class="automation-ledger-stats" aria-label="Totals">
           <div class="automation-ledger-stat">
             <span class="automation-stat-label">In</span>
-            <strong class="automation-ledger-in">KES {{ ledger_totals.inbound|floatformat:2 }}</strong>
+            <strong class="automation-ledger-in" data-ledger-total-in>KES {{ ledger_totals.inbound|floatformat:2 }}</strong>
           </div>
           <div class="automation-ledger-stat">
             <span class="automation-stat-label">Out</span>
-            <strong class="automation-ledger-out">KES {{ ledger_totals.outbound|floatformat:2 }}</strong>
+            <strong class="automation-ledger-out" data-ledger-total-out>KES {{ ledger_totals.outbound|floatformat:2 }}</strong>
           </div>
           <div class="automation-ledger-stat">
             <span class="automation-stat-label">Net</span>
-            <strong>KES {{ ledger_totals.net|floatformat:2 }}</strong>
+            <strong data-ledger-total-net>KES {{ ledger_totals.net|floatformat:2 }}</strong>
           </div>
         </div>
       </div>
@@ -359,7 +426,7 @@
               <th scope="col">Narrative</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody data-ledger-tbody>
             {% for entry in ledger_entries %}
               <tr>
                 <td data-label="When">{{ entry.posted_at|date:"d M Y H:i" }}</td>
@@ -410,18 +477,38 @@
         </table>
       </div>
 
-      {% if ledger_page.paginator.num_pages > 1 %}
-        <nav class="pagination toolbar" aria-label="Transaction pages">
-          {% if ledger_page.has_previous %}
-            <a class="btn btn-ghost btn-small" href="?page={{ ledger_page.previous_page_number }}">Previous</a>
-          {% endif %}
-          <span class="muted">Page {{ ledger_page.number }} of {{ ledger_page.paginator.num_pages }}</span>
-          {% if ledger_page.has_next %}
-            <a class="btn btn-ghost btn-small" href="?page={{ ledger_page.next_page_number }}">Next</a>
-          {% endif %}
-        </nav>
-      {% endif %}
+      <nav class="pagination toolbar" aria-label="Transaction pages" data-ledger-pagination {% if ledger_page.paginator.num_pages <= 1 %}hidden{% endif %}>
+        <button type="button" class="btn btn-ghost btn-small" data-ledger-prev {% if not ledger_page.has_previous %}disabled{% endif %}>Previous</button>
+        <span class="muted" data-ledger-page-label>Page {{ ledger_page.number }} of {{ ledger_page.paginator.num_pages }}</span>
+        <button type="button" class="btn btn-ghost btn-small" data-ledger-next {% if not ledger_page.has_next %}disabled{% endif %}>Next</button>
+      </nav>
     </section>
+
+    <div
+      class="detail-backdrop automation-daraja-wait-backdrop"
+      data-daraja-wait-backdrop
+      hidden
+      role="presentation"
+    >
+      <div
+        class="detail-dialog automation-daraja-wait-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="automation-daraja-wait-title"
+        aria-live="polite"
+      >
+        <header class="approval-dialog__head approval-dialog__head--compact">
+          <h2 id="automation-daraja-wait-title">Sending via M-Pesa</h2>
+        </header>
+        <p class="integration-banner is-on integration-banner-compact" data-daraja-wait-status>
+          Queued — waiting for Safaricom callback…
+        </p>
+        <p class="muted automation-daraja-wait-detail" data-daraja-wait-detail></p>
+        <div class="automations-account-payout-foot">
+          <button type="button" class="btn btn-primary btn-small" data-daraja-wait-close hidden>Close</button>
+        </div>
+      </div>
+    </div>
 
     {% include "partials/automation_apikey_modal.html" %}
   </div>

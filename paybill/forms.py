@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 
 from django import forms
 
@@ -334,3 +335,64 @@ class CollectionMonitorPayoutForm(forms.ModelForm):
         if commit:
             instance.save()
         return instance
+
+
+class CollectionMonitorManualTransferForm(forms.Form):
+    amount = forms.DecimalField(
+        label="Amount (KES)",
+        min_value=Decimal("1"),
+        decimal_places=2,
+        max_digits=12,
+        widget=forms.NumberInput(
+            attrs={**FIELD, "min": "1", "step": "1", "inputmode": "decimal", "id": "id_manual_transfer_amount"}
+        ),
+    )
+    destination = forms.CharField(
+        label="Phone",
+        max_length=20,
+        required=False,
+        widget=forms.TextInput(
+            attrs={
+                **FIELD,
+                "autocomplete": "off",
+                "placeholder": "07XX XXX XXX (optional if saved above)",
+                "inputmode": "tel",
+                "id": "id_manual_transfer_destination",
+            }
+        ),
+    )
+
+    def __init__(self, *args, monitor: CollectionMonitor | None = None, **kwargs):
+        self.monitor = monitor
+        super().__init__(*args, **kwargs)
+        if monitor and not self.data:
+            if monitor.auto_payout_destination_type == MoneyRequest.DestinationType.PHONE:
+                dest = (monitor.auto_payout_destination or monitor.auto_payout_phone or "").strip()
+                if dest.startswith("254") and len(dest) == 12:
+                    dest = "0" + dest[3:]
+                if dest:
+                    self.fields["destination"].initial = dest
+
+    def _default_phone(self) -> str:
+        if not self.monitor:
+            return ""
+        if self.monitor.auto_payout_destination_type != MoneyRequest.DestinationType.PHONE:
+            return ""
+        return (self.monitor.auto_payout_destination or self.monitor.auto_payout_phone or "").strip()
+
+    def clean(self):
+        from paybill.auto_payout import normalize_client_phone
+
+        cleaned = super().clean()
+        destination = (cleaned.get("destination") or "").strip() or self._default_phone()
+        if not destination:
+            self.add_error(
+                "destination",
+                "Enter a phone number, or save a phone client destination in payout rules above.",
+            )
+            return cleaned
+        try:
+            cleaned["destination"] = normalize_client_phone(destination)
+        except Exception as exc:
+            self.add_error("destination", str(exc))
+        return cleaned
