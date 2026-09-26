@@ -47,9 +47,9 @@ APPROVAL_STK_LIPA_CHARGE = os.getenv("APPROVAL_STK_LIPA_CHARGE", "0").strip().lo
     "yes",
     "on",
 }
-# When hub PIN approval (STK) is on, send M-Pesa STK to the reviewer's registered phone (KES 1 verify PIN).
-# Set 0 only if approvers must use the in-app 6-digit password with no phone prompt.
-APPROVAL_STK_PHONE_PROMPT = os.getenv("APPROVAL_STK_PHONE_PROMPT", "1").strip().lower() in {
+# When 1, hub PIN approval sends a Lipa STK charge to the reviewer's phone (legacy; looks like "pay").
+# Default 0: approvers use the in-app 6-digit approval password; hub paybill sends the payout — no M-Pesa charge.
+APPROVAL_STK_PHONE_PROMPT = os.getenv("APPROVAL_STK_PHONE_PROMPT", "0").strip().lower() in {
     "1",
     "true",
     "yes",

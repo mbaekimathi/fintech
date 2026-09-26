@@ -42,8 +42,8 @@ if ! grep -q '^APPROVAL_STK_LIPA_CHARGE=' .env 2>/dev/null; then
   echo "Added APPROVAL_STK_LIPA_CHARGE=0 to .env (no legacy Lipa-only flag)."
 fi
 if ! grep -q '^APPROVAL_STK_PHONE_PROMPT=' .env 2>/dev/null; then
-  echo 'APPROVAL_STK_PHONE_PROMPT=1' >> .env
-  echo "Added APPROVAL_STK_PHONE_PROMPT=1 to .env (M-Pesa STK on reviewer phone when hub PIN approval is on)."
+  echo 'APPROVAL_STK_PHONE_PROMPT=0' >> .env
+  echo "Added APPROVAL_STK_PHONE_PROMPT=0 to .env (approve via app password; no M-Pesa charge on reviewer phone)."
 fi
 
 python manage.py migrate --noinput

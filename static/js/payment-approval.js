@@ -1148,12 +1148,11 @@
       }
     };
 
-    const pickChannel = (manual = false) => {
+    const pickChannel = () => {
       if (!ch.app && !ch.stk) return "none";
-      if (phoneStkPrompt(config) && ch.stk && stkReady(config, ch)) {
-        if (!ch.app || !appReady(config, ch) || manual) return "stk";
-      }
       if (paybillPinAuth(config)) return "app";
+      if (ch.app && appReady(config, ch)) return "app";
+      if (phoneStkPrompt(config) && ch.stk && stkReady(config, ch)) return "stk";
       if (appReady(config, ch)) return "app";
       if (ch.stk && stkReady(config, ch)) return "stk";
       return ch.app ? "app" : "stk";
@@ -1181,7 +1180,7 @@
       pendingForm = form;
       approvalPin = "";
 
-      const channel = pickChannel(manual);
+      const channel = pickChannel();
 
       if (channel === "app") {
         if (paybillPinAuth(config)) {

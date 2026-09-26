@@ -28,14 +28,14 @@ def approval_stk_lipa_charge_enabled() -> bool:
 
 def approval_phone_stk_enabled() -> bool:
     """
-    When True and hub PIN approval is on, send an M-Pesa STK push to the reviewer's phone
-    so they enter their M-Pesa PIN (Safaricom verify; small auth charge via Lipa STK).
+    When True, send a Lipa STK push to the reviewer's phone (legacy; looks like a payment).
+    Default is False: reviewers authorize with the in-app 6-digit approval password only.
     """
     if not stk_pin_approval_required():
         return False
     if approval_stk_lipa_charge_enabled():
         return True
-    return bool(getattr(django_settings, "APPROVAL_STK_PHONE_PROMPT", True))
+    return bool(getattr(django_settings, "APPROVAL_STK_PHONE_PROMPT", False))
 
 
 def app_approval_required() -> bool:
