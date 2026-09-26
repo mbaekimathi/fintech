@@ -863,6 +863,7 @@ let paymentApprovalApi = {
   beginApprovalFlow: () => {},
 };
 let approvalBooted = false;
+let approvalFlowReady = false;
 
 function getApprovalDismissed() {
   try {
@@ -1193,10 +1194,10 @@ function renderNotificationList(config, notifications, csrf) {
         <input type="hidden" name="next" value="${next}">
       `;
       const approveBtn = document.createElement("button");
-      approveBtn.type = needsApproval ? "button" : "submit";
+      approveBtn.type = "button";
       approveBtn.className = "btn btn-primary btn-small";
       approveBtn.textContent = "Approve & send";
-      if (needsApproval) approveBtn.setAttribute("data-approval-trigger", "");
+      approveBtn.setAttribute("data-approval-trigger", "");
       approveForm.appendChild(approveBtn);
       actions.appendChild(approveForm);
 
@@ -1680,6 +1681,7 @@ function initPaymentApproval(config) {
     if (event.target === stkBackdrop) cancelFlow();
   });
 
+  approvalFlowReady = true;
   return { config, csrf, beginApprovalFlow, isActive: () => approvalActive };
 }
 
@@ -1808,11 +1810,15 @@ function triggerApprovalFromForm(form, event, runtime) {
     form.submit();
     return;
   }
-  if (begin === paymentApprovalApi.beginApprovalFlow) {
+  if (!approvalFlowReady) {
     window.alert("Approval prompts failed to start. Hard-refresh the page (Ctrl+F5) and try again.");
     return;
   }
-  begin(form, { force: true, manual: true });
+  try {
+    begin(form, { force: true, manual: true });
+  } catch (err) {
+    window.alert(err?.message || "Approval failed to start.");
+  }
 }
 
 function initReviewApproval() {
@@ -1827,7 +1833,7 @@ function initReviewApproval() {
     "click",
     (event) => {
       const btn = event.target.closest(
-        "[data-approval-trigger], form[data-approval-form] button[type='submit']",
+        "[data-approval-trigger], form[data-approval-form] .btn-primary.btn-small",
       );
       if (!btn) return;
       const form = btn.closest("form[data-approval-form]");

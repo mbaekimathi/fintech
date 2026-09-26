@@ -125,9 +125,9 @@
                           {% csrf_token %}
                           <input type="hidden" name="intent" value="approve">
                           <button
-                            type="{% if app_approval_required_for_user or stk_pin_approval_required_for_user %}button{% else %}submit{% endif %}"
+                            type="button"
                             class="btn btn-primary btn-small"
-                            {% if app_approval_required_for_user or stk_pin_approval_required_for_user %}data-approval-trigger{% endif %}
+                            data-approval-trigger
                           >Approve &amp; send</button>
                         </form>
                         <form method="post" action="{% url 'paybill:money-request-review' row.pk %}" class="inline-form">
