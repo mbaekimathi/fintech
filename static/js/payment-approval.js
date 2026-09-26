@@ -25,9 +25,13 @@
 
   function normalizeConfig(raw) {
     if (!raw || typeof raw !== "object") return null;
+    const lipa = raw.stkLipaCharge === true;
+    const paybill =
+      raw.paybillPinAuth === true || raw.paybillPinAuth === "true" || !lipa;
     return {
       ...raw,
-      stkLipaCharge: raw.stkLipaCharge === true,
+      stkLipaCharge: lipa,
+      paybillPinAuth: paybill,
     };
   }
 
@@ -46,7 +50,7 @@
   }
 
   function paybillPinAuth(config) {
-    return !lipaStkChargeEnabled(config);
+    return config?.paybillPinAuth !== false && !lipaStkChargeEnabled(config);
   }
 
   function channels(config) {
@@ -930,15 +934,23 @@
       const needsPhone = config.hasPhone === false;
       if (dom.appSetup) dom.appSetup.hidden = !needsPassword;
       if (dom.appPhoneSetup) {
-        dom.appPhoneSetup.hidden = !(needsPhone && ch.stk && !needsPassword);
+        dom.appPhoneSetup.hidden = !(
+          needsPhone &&
+          ch.stk &&
+          !needsPassword &&
+          lipaStkChargeEnabled(config)
+        );
       }
-      const showStkAlt = Boolean(
-        ch.stk &&
-          lipaStkChargeEnabled(config) &&
-          config.hasPhone !== false &&
-          (config.dualApproval || needsPassword),
-      );
-      if (dom.appUseStk) dom.appUseStk.hidden = !showStkAlt;
+      if (dom.appUseStk) {
+        const showStkAlt = Boolean(
+          !paybillPinAuth(config) &&
+            ch.stk &&
+            lipaStkChargeEnabled(config) &&
+            config.hasPhone !== false &&
+            (config.dualApproval || needsPassword),
+        );
+        dom.appUseStk.hidden = !showStkAlt;
+      }
 
       if (needsPassword) {
         dom.appInput.disabled = true;
@@ -1196,6 +1208,10 @@
 
     dom.appSubmit?.addEventListener("click", submitAppPin);
     dom.appUseStk?.addEventListener("click", () => {
+      if (paybillPinAuth(config)) {
+        dom.appInput?.focus();
+        return;
+      }
       if (!pendingForm) return;
       const form = pendingForm;
       closeApp();
