@@ -1005,6 +1005,7 @@ function formatRelativeTime(isoOrLabel) {
 function renderPendingRequestsTable(config, pendingRows, csrf) {
   const tbody = document.querySelector("[data-pending-requests-tbody]");
   if (!tbody) return;
+  if (paymentApprovalApi.isActive()) return;
 
   const canReview = tbody.getAttribute("data-can-review") === "1";
   const needsApproval =
@@ -1682,6 +1683,7 @@ function initPaymentApproval(config) {
   });
 
   approvalFlowReady = true;
+  window.__approvalFlowReady = true;
   return { config, csrf, beginApprovalFlow, isActive: () => approvalActive };
 }
 
@@ -1723,6 +1725,7 @@ function initApprovalLiveCheck(config, approvalRuntime = null) {
   };
 
   let pollTimer = null;
+  let pendingPollBootstrapped = false;
   const pollDelay = () =>
     isUserInApp()
       ? Number(config.pollIntervalMs) || 3000
@@ -1746,28 +1749,31 @@ function initApprovalLiveCheck(config, approvalRuntime = null) {
 
       updateNotifyCount(data.unread_count || 0);
       renderNotificationList(config, data.notifications, csrf);
-      renderPendingRequestsTable(config, data.pending, csrf);
 
       const pending = Array.isArray(data.pending) ? data.pending : [];
       const activeIds = new Set(pending.map((row) => String(row.money_request_id)));
       syncAutoPromptStarted(activeIds);
 
+      if (!pendingPollBootstrapped) {
+        pendingPollBootstrapped = true;
+        const seen = getAutoPromptStarted();
+        pending.forEach((row) => seen.add(String(row.money_request_id)));
+        saveAutoPromptStarted(seen);
+        renderPendingRequestsTable(config, data.pending, csrf);
+        return;
+      }
+
+      renderPendingRequestsTable(config, data.pending, csrf);
+
       if (!config.autoPrompt || !approvalRequired(config)) return;
 
       const dismissed = getApprovalDismissed();
       const autoStarted = getAutoPromptStarted();
-      const item =
-        pending.find(
-          (row) =>
-            row.is_unread !== false &&
-            !isPendingDismissed(row, dismissed) &&
-            !autoStarted.has(String(row.money_request_id)),
-        ) ||
-        pending.find(
-          (row) =>
-            !isPendingDismissed(row, dismissed) &&
-            !autoStarted.has(String(row.money_request_id)),
-        );
+      const item = pending.find(
+        (row) =>
+          !isPendingDismissed(row, dismissed) &&
+          !autoStarted.has(String(row.money_request_id)),
+      );
       if (!item) return;
 
       const form = buildApprovalForm(item);
@@ -1846,6 +1852,8 @@ function initReviewApproval() {
   window.nexusApproval = {
     ready: true,
     config,
+    isActive: () =>
+      (runtime?.isActive || paymentApprovalApi.isActive)(),
     beginApprovalFlow: runtime?.beginApprovalFlow || paymentApprovalApi.beginApprovalFlow,
     triggerFromButton(button, event) {
       const form = button?.closest?.("form[data-approval-form]");
@@ -1853,6 +1861,33 @@ function initReviewApproval() {
       triggerApprovalFromForm(form, event, runtime);
     },
   };
+  window.__nexusApprovalRuntime = runtime;
+}
+
+function installGlobalApprovalClickHandler() {
+  if (document.documentElement.dataset.approvalClickInstalled) return;
+  document.documentElement.dataset.approvalClickInstalled = "1";
+  document.addEventListener(
+    "click",
+    (event) => {
+      const btn = event.target.closest(
+        "[data-approval-trigger], form[data-approval-form] .btn-primary",
+      );
+      if (!btn) return;
+      const form = btn.closest("form[data-approval-form]");
+      if (!form) return;
+      if (window.nexusApproval?.ready) return;
+      const config = parseApprovalConfig();
+      if (!config) {
+        event.preventDefault();
+        event.stopPropagation();
+        window.alert("Approval is still loading. Wait a moment and try again.");
+        return;
+      }
+      triggerApprovalFromForm(form, event, window.__nexusApprovalRuntime || null);
+    },
+    true,
+  );
 }
 
 function initEmployeePermissions() {
@@ -1902,7 +1937,12 @@ function initEmployeePermissions() {
 }
 
 function runShellInits() {
-  initReviewApproval();
+  installGlobalApprovalClickHandler();
+  try {
+    initReviewApproval();
+  } catch (err) {
+    console.error("initReviewApproval failed", err);
+  }
   const secondaryInits = [
     initDarajaSetup,
     initDarajaTests,

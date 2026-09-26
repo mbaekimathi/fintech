@@ -1852,6 +1852,11 @@ a:hover {
   font-size: 0.88rem;
 }
 
+.pin-approval-backdrop,
+.stk-approval-backdrop {
+  z-index: 200;
+}
+
 .detail-backdrop {
   position: fixed;
   inset: 0;
