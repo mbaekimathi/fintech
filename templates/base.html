@@ -183,7 +183,7 @@
         "hubApp": {% if app_approval_required %}true{% else %}false{% endif %},
         "hubStk": {% if stk_pin_approval_required %}true{% else %}false{% endif %},
         "stkInitiateUrl": "{% url 'core:approval-stk-initiate' %}",
-        "stkPollUrl": "{{ approval_stk_poll_url_base|escapejs }}",
+        "stkPollUrl": "{% url 'core:approval-stk-poll' pk=0 %}",
         "pendingPollUrl": "{% url 'core:approval-pending-poll' %}",
         "notificationsReadUrl": "{% url 'core:notifications-read' %}",
         "transactionsUrl": "{% url 'paybill:transactions' %}",

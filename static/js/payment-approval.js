@@ -427,6 +427,20 @@
     return false;
   }
 
+  function buildStkPollUrl(config, operationId) {
+    const id = String(operationId ?? "").trim();
+    if (!/^\d+$/.test(id)) return "";
+    let tpl = (config?.stkPollUrl || "").trim();
+    if (!tpl && config?.stkInitiateUrl) {
+      tpl = String(config.stkInitiateUrl).replace(/\/?$/, "/0/");
+    }
+    if (!tpl) return "";
+    if (tpl.includes("/0/")) return tpl.replace("/0/", `/${id}/`);
+    if (/\/0\/?$/.test(tpl)) return tpl.replace(/\/0\/?$/, `/${id}/`);
+    const base = tpl.endsWith("/") ? tpl : `${tpl}/`;
+    return `${base}${id}/`;
+  }
+
   function profileIncompleteAlert(config) {
     const ch = channels(config);
     if (!approvalRequired(config)) return false;
@@ -732,16 +746,25 @@
       target.submit();
     };
 
+    const offerAppPinAfterStkFailure = (message) => {
+      if (!canUseAppPinAlt()) return false;
+      if (dom.stkError) {
+        dom.stkError.textContent =
+          message ||
+          "M-Pesa did not confirm this approval. Enter your approval password below instead.";
+        dom.stkError.hidden = false;
+      }
+      showStkPinEntry();
+      return true;
+    };
+
     const pollStk = (operationId) =>
       new Promise((resolve, reject) => {
-        const pollBase = (config.stkPollUrl || "").trim();
-        if (!pollBase) {
+        const pollUrl = buildStkPollUrl(config, operationId);
+        if (!pollUrl) {
           reject(new Error("Missing STK poll URL. Refresh the page and try again."));
           return;
         }
-        const pollUrl = pollBase.endsWith("/")
-          ? `${pollBase}${operationId}/`
-          : `${pollBase}/${operationId}/`;
         let httpFailStreak = 0;
         const MAX_HTTP_FAILS = 8;
 
@@ -754,40 +777,45 @@
         const tick = async () => {
           try {
             const response = await fetch(pollUrl, {
-              headers: { "X-Requested-With": "XMLHttpRequest" },
+              headers: { "X-Requested-With": "XMLHttpRequest", Accept: "application/json" },
               cache: "no-store",
               credentials: "same-origin",
             });
+            const contentType = response.headers.get("content-type") || "";
+            let data = null;
+            if (contentType.includes("application/json")) {
+              data = await response.json();
+            } else if (!response.ok) {
+              throw new Error(
+                response.status === 403 || response.status === 401
+                  ? "Session expired or access denied. Refresh the page, sign in, and try again."
+                  : `Could not check STK status (HTTP ${response.status}).`,
+              );
+            }
+
             if (!response.ok) {
-              httpFailStreak += 1;
-              let detail = "";
-              try {
-                const errBody = await response.json();
-                detail = errBody.detail || errBody.error || "";
-              } catch (_parseErr) {
-                detail = "";
+              if (data?.complete) {
+                finish(false, data.detail || data.reason || "M-Pesa approval failed.");
+                return;
               }
+              httpFailStreak += 1;
+              const detail = data?.detail || data?.error || "";
               if (httpFailStreak >= MAX_HTTP_FAILS) {
                 finish(
                   false,
                   detail ||
-                    `Could not check STK status (HTTP ${response.status}). Refresh and try again, or use your approval password.`,
+                    `Could not check STK status (HTTP ${response.status}). Use your approval password instead.`,
                 );
               } else if (dom.stkStatus) {
-                dom.stkStatus.textContent =
-                  detail ||
-                  "Temporary error checking M-Pesa — retrying…";
+                dom.stkStatus.textContent = detail || "Temporary error checking M-Pesa — retrying…";
               }
               syncStkUseAppButton();
               return;
             }
+
             httpFailStreak = 0;
-            const data = await response.json();
             if (!data?.ok) {
-              httpFailStreak += 1;
-              if (httpFailStreak >= MAX_HTTP_FAILS) {
-                finish(false, data?.detail || "Could not check STK status.");
-              }
+              finish(false, data?.detail || "Could not check STK status.");
               return;
             }
             applyStkPoll(data);
@@ -809,7 +837,7 @@
               finish(
                 false,
                 err.message ||
-                  "Could not check STK status. Check your connection or use your approval password.",
+                  "Could not check STK status. Use your approval password instead.",
               );
             } else if (dom.stkStatus) {
               dom.stkStatus.textContent = "Connection issue — retrying M-Pesa status…";
@@ -960,17 +988,21 @@
         await postApprove(form, operationId);
       } catch (err) {
         stopStkPoll();
+        const failMsg = err.message || "PIN approval failed.";
         applyStkPoll({
           phase: "failed",
           headline: "M-Pesa did not approve this payment",
-          summary: err.message || "PIN approval failed.",
-          reason: err.message || "PIN approval failed.",
+          summary: failMsg,
+          reason: failMsg,
           complete: true,
           success: false,
         });
         active = true;
         pendingForm = form;
         if (visible) showEl(dom.stkBackdrop);
+        if (offerAppPinAfterStkFailure(failMsg)) {
+          return;
+        }
       }
     };
 

@@ -787,17 +787,64 @@ class StkApprovalInitiateView(RoleRequiredMixin, View):
 class StkApprovalPollView(RoleRequiredMixin, View):
     required_activity = "review_requests"
 
+    def handle_no_permission(self):
+        if self.request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "detail": "You do not have permission to check this approval.",
+                    "complete": True,
+                    "success": False,
+                },
+                status=403,
+            )
+        return super().handle_no_permission()
+
     def get(self, request, pk, *args, **kwargs):
         from integrations.models import DarajaOperation
 
-        operation = get_object_or_404(
-            DarajaOperation,
-            pk=pk,
-            kind=DarajaOperation.Kind.STK,
-            created_by=request.user,
+        if not user_requires_stk_on_approval(request.user):
+            return JsonResponse(
+                {"ok": False, "detail": "PIN approval is not required.", "complete": True, "success": False},
+                status=400,
+            )
+
+        operation = (
+            DarajaOperation.objects.filter(
+                pk=pk,
+                kind=DarajaOperation.Kind.STK,
+                created_by=request.user,
+            )
+            .select_related("created_by")
+            .first()
         )
-        operation, query_error = poll_stk_approval(operation)
-        return JsonResponse(stk_approval_poll_payload(operation, query_error=query_error))
+        if operation is None:
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "detail": "That STK approval session was not found. Send a new prompt or use your approval password.",
+                    "complete": True,
+                    "success": False,
+                },
+                status=404,
+            )
+
+        try:
+            operation, query_error = poll_stk_approval(operation)
+            return JsonResponse(stk_approval_poll_payload(operation, query_error=query_error))
+        except Exception as exc:
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "complete": False,
+                    "success": False,
+                    "phase": "waiting",
+                    "headline": "Checking M-Pesa status…",
+                    "summary": "Could not refresh STK status.",
+                    "reason": str(exc),
+                    "query_error": str(exc),
+                }
+            )
 
 
 class DarajaSetupView(RoleRequiredMixin, UpdateView):
