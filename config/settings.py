@@ -55,8 +55,8 @@ APPROVAL_STK_PHONE_PROMPT = os.getenv("APPROVAL_STK_PHONE_PROMPT", "0").strip().
     "yes",
     "on",
 }
-# When hub PIN-on-approve is on: text a one-time 6-digit code to the reviewer's profile phone (no M-Pesa pay STK).
-APPROVAL_SMS_OTP = os.getenv("APPROVAL_SMS_OTP", "1").strip().lower() in {
+# Optional: text a one-time code instead of the hub approval password (set 0 to use password only).
+APPROVAL_SMS_OTP = os.getenv("APPROVAL_SMS_OTP", "0").strip().lower() in {
     "1",
     "true",
     "yes",
@@ -67,6 +67,20 @@ SMS_PROVIDER = (os.getenv("SMS_PROVIDER", "console") or "console").strip().lower
 AFRICASTALKING_USERNAME = (os.getenv("AFRICASTALKING_USERNAME") or "").strip()
 AFRICASTALKING_API_KEY = (os.getenv("AFRICASTALKING_API_KEY") or "").strip()
 PRODUCT_SMS_NAME = (os.getenv("PRODUCT_SMS_NAME") or "NEXUS").strip()
+# Signed /approve/guest/… links: enter hub approval password without logging in.
+APPROVAL_GUEST_LINK = os.getenv("APPROVAL_GUEST_LINK", "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+APPROVAL_GUEST_LINK_TTL_HOURS = int(os.getenv("APPROVAL_GUEST_LINK_TTL_HOURS", "48") or "48")
+APPROVAL_GUEST_LINK_SMS = os.getenv("APPROVAL_GUEST_LINK_SMS", "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 INSTALLED_APPS = [
     "django.contrib.admin",

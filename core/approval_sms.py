@@ -100,7 +100,27 @@ def _send_sms_message(*, to_msisdn: str, message: str) -> None:
     raise DarajaError(f"Unknown SMS_PROVIDER: {provider}")
 
 
-def send_approval_sms_otp(user, money_request_id: int) -> dict:
+def _active_challenge(user, money_request_id: int):
+    now = timezone.now()
+    return (
+        ApprovalSmsChallenge.objects.filter(
+            user=user,
+            money_request_id=money_request_id,
+            consumed_at__isnull=True,
+            expires_at__gte=now,
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+
+def send_approval_sms_otp(
+    user,
+    money_request_id: int,
+    *,
+    force: bool = False,
+    money_request=None,
+) -> dict:
     if not approval_sms_otp_enabled():
         raise DarajaError("SMS approval codes are not enabled.")
     if not user_requires_stk_on_approval(user):
@@ -111,6 +131,16 @@ def send_approval_sms_otp(user, money_request_id: int) -> dict:
         raise DarajaError("Add your phone number on Profile before approving with SMS.")
 
     msisdn = kenya_msisdn(phone)
+    if not force:
+        existing = _active_challenge(user, money_request_id)
+        if existing:
+            remaining = int((existing.expires_at - timezone.now()).total_seconds())
+            return {
+                "masked_phone": mask_phone(existing.phone),
+                "expires_in_seconds": max(remaining, 0),
+                "already_sent": True,
+            }
+
     window_start = timezone.now() - SEND_WINDOW
     recent = ApprovalSmsChallenge.objects.filter(
         user=user,
@@ -137,16 +167,44 @@ def send_approval_sms_otp(user, money_request_id: int) -> dict:
     )
 
     product = getattr(django_settings, "PRODUCT_SMS_NAME", "NEXUS")
+    amount_bit = ""
+    if money_request is not None:
+        amount_bit = f" KES {money_request.amount:,.2f}"
     message = (
-        f"{product} approval code: {code}. Valid {int(ttl.total_seconds() // 60)} min. "
-        "Enter it in the app to approve the payment. Do not share."
+        f"{product}{amount_bit} approval code: {code}. Valid {int(ttl.total_seconds() // 60)} min. "
+        "Open NEXUS and enter this code to approve and send. Do not share."
     )
     _send_sms_message(to_msisdn=msisdn, message=message)
 
     return {
         "masked_phone": mask_phone(msisdn),
         "expires_in_seconds": int(ttl.total_seconds()),
+        "already_sent": False,
     }
+
+
+def send_approval_sms_on_notify(user, money_request) -> bool:
+    """Text a one-time approval code when a money-request notification is created."""
+    if not approval_sms_otp_enabled() or not user_requires_stk_on_approval(user):
+        return False
+    if not (user.phone or "").strip():
+        logger.info(
+            "Skipping approval SMS for user %s (no phone) on money request %s",
+            user.pk,
+            money_request.pk,
+        )
+        return False
+    try:
+        send_approval_sms_otp(user, money_request.pk, money_request=money_request)
+        return True
+    except DarajaError as exc:
+        logger.warning(
+            "Approval SMS on notify failed for user %s money request %s: %s",
+            user.pk,
+            money_request.pk,
+            exc,
+        )
+        return False
 
 
 def verify_approval_sms_otp(user, money_request_id: int, raw_code: str) -> bool:

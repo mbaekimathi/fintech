@@ -3,6 +3,7 @@ from django.urls import path
 from core.views import (
     AppSettingsView,
     DeployHealthView,
+    GuestApprovalView,
     ApprovalSmsSendView,
     PendingApprovalPollView,
     StkApprovalInitiateView,
@@ -29,6 +30,7 @@ app_name = "core"
 
 urlpatterns = [
     path("health/deploy/", DeployHealthView.as_view(), name="deploy-health"),
+    path("approve/guest/<str:token>/", GuestApprovalView.as_view(), name="guest-approval"),
     path("", DashboardView.as_view(), name="dashboard"),
     path(
         "money-requests/lookup/",

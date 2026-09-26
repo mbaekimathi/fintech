@@ -2,7 +2,7 @@ from django.contrib import messages
 from django.conf import settings as django_settings
 from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.timesince import timesince
@@ -25,6 +25,8 @@ from core.approval import (
     stk_approval_poll_payload,
     user_requires_stk_on_approval,
 )
+from core.approval_gate import authorize_payout_approval
+from core.approval_link import request_proxy_for_user, resolve_guest_token
 from core.approval_sms import approval_sms_otp_enabled, send_approval_sms_otp
 from core.approval_poll import pending_approval_queue_for_user
 from core.models import AppSettings, Notification, PushSubscription
@@ -74,6 +76,151 @@ from paybill.services import (
     reject_money_request,
 )
 from core.static_health import deploy_static_report
+
+
+class GuestApprovalView(View):
+    """Approve a pending payout with hub password — no login session required."""
+
+    def _money_request_context(self, money_request: MoneyRequest) -> dict:
+        return {
+            "amount": money_request.amount,
+            "amount_label": f"{money_request.amount:,.2f}",
+            "destination": money_request.destination,
+            "destination_type": money_request.get_destination_type_display(),
+            "account_ref": money_request.account_ref or "",
+            "reason": money_request.reason or "",
+            "requester_name": (
+                money_request.requester.get_full_name() or money_request.requester.staff_code
+            ),
+            "source_paybill": money_request.source_paybill.paybill_number,
+        }
+
+    def get(self, request, token, *args, **kwargs):
+        try:
+            row = resolve_guest_token(token)
+        except ValueError as exc:
+            return render(
+                request,
+                "core/guest_approval.html",
+                {
+                    "error": str(exc),
+                    "token": token,
+                    "asset_version": getattr(django_settings, "ASSET_VERSION", ""),
+                },
+                status=400,
+            )
+        money_request = get_object_or_404(MoneyRequest, pk=row.money_request_id)
+        if money_request.status != MoneyRequest.Status.PENDING:
+            return render(
+                request,
+                "core/guest_approval.html",
+                {
+                    "error": "This payment is no longer pending.",
+                    "token": token,
+                    "asset_version": getattr(django_settings, "ASSET_VERSION", ""),
+                },
+                status=410,
+            )
+        return render(
+            request,
+            "core/guest_approval.html",
+            {
+                "token": token,
+                "reviewer": row.user,
+                "money_request": money_request,
+                "asset_version": getattr(django_settings, "ASSET_VERSION", ""),
+                **self._money_request_context(money_request),
+            },
+        )
+
+    def post(self, request, token, *args, **kwargs):
+        try:
+            row = resolve_guest_token(token)
+        except ValueError as exc:
+            return render(
+                request,
+                "core/guest_approval.html",
+                {"error": str(exc), "token": token},
+                status=400,
+            )
+        money_request = get_object_or_404(MoneyRequest, pk=row.money_request_id)
+        if money_request.status != MoneyRequest.Status.PENDING:
+            return render(
+                request,
+                "core/guest_approval.html",
+                {
+                    "error": "This payment is no longer pending.",
+                    "token": token,
+                },
+                status=410,
+            )
+
+        intent = (request.POST.get("intent") or "approve").strip().lower()
+        if intent != "approve":
+            return render(
+                request,
+                "core/guest_approval.html",
+                {
+                    "token": token,
+                    "reviewer": row.user,
+                    "money_request": money_request,
+                    "pin_error": "Choose approve to continue.",
+                    **self._money_request_context(money_request),
+                },
+                status=400,
+            )
+
+        proxy = request_proxy_for_user(row.user, request.POST)
+        if not authorize_payout_approval(proxy, money_request=money_request, next_url=""):
+            return render(
+                request,
+                "core/guest_approval.html",
+                {
+                    "token": token,
+                    "reviewer": row.user,
+                    "money_request": money_request,
+                    "pin_error": "Enter your correct 6-digit hub approval password.",
+                    **self._money_request_context(money_request),
+                },
+                status=403,
+            )
+
+        try:
+            money_request, operation = approve_and_transfer(proxy, money_request)
+        except (ValueError, DarajaError) as exc:
+            return render(
+                request,
+                "core/guest_approval.html",
+                {
+                    "token": token,
+                    "reviewer": row.user,
+                    "money_request": money_request,
+                    "pin_error": str(exc),
+                    **self._money_request_context(money_request),
+                },
+                status=400,
+            )
+
+        row.consumed_at = timezone.now()
+        row.save(update_fields=["consumed_at"])
+        mark_money_request_notifications_read(money_request)
+        if money_request.status in {
+            MoneyRequest.Status.PAID,
+            MoneyRequest.Status.APPROVED,
+            MoneyRequest.Status.FAILED,
+        }:
+            notify_money_request_result(money_request, actor=row.user)
+
+        return render(
+            request,
+            "core/guest_approval.html",
+            {
+                "success": True,
+                "money_request": money_request,
+                "operation": operation,
+                **self._money_request_context(money_request),
+            },
+        )
 
 
 class DeployHealthView(View):
@@ -775,18 +922,31 @@ class ApprovalSmsSendView(RoleRequiredMixin, View):
         if money_request.status != MoneyRequest.Status.PENDING:
             return JsonResponse({"ok": False, "detail": "That request is no longer pending."}, status=409)
 
+        force = request.POST.get("force") in {"1", "true", "on"}
         try:
-            meta = send_approval_sms_otp(request.user, money_request.pk)
+            meta = send_approval_sms_otp(
+                request.user,
+                money_request.pk,
+                force=force,
+                money_request=money_request,
+            )
         except DarajaError as exc:
             return JsonResponse({"ok": False, "detail": str(exc)}, status=400)
 
+        already = meta.get("already_sent")
+        summary = (
+            f"A code was already sent to {meta['masked_phone']}. Enter it below to approve and send."
+            if already
+            else f"We sent a 6-digit code to {meta['masked_phone']}. Enter it below to approve and send."
+        )
         return JsonResponse(
             {
                 "ok": True,
                 "mode": "sms_otp",
                 "masked_phone": meta["masked_phone"],
                 "expires_in_seconds": meta["expires_in_seconds"],
-                "summary": f"We sent a 6-digit code to {meta['masked_phone']}. Enter it below to approve and send.",
+                "already_sent": bool(already),
+                "summary": summary,
             }
         )
 

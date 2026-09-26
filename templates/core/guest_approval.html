@@ -1,0 +1,89 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c1624">
+  <title>Approve payment · NEXUS</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v={{ asset_version }}">
+</head>
+<body class="app-body guest-approval-page">
+  <main class="guest-approval">
+    <header class="guest-approval__head">
+      <p class="page-eyebrow">NEXUS</p>
+      <h1 class="page-title">Approve payment</h1>
+      <p class="muted">No login required — use your hub approval password for this link only.</p>
+    </header>
+
+    {% if error %}
+      <section class="panel guest-approval__panel">
+        <p class="approval-alert approval-alert--error">{{ error }}</p>
+        <p class="muted">Sign in to the workspace if you need to review from the full app.</p>
+      </section>
+    {% elif success %}
+      <section class="panel guest-approval__panel guest-approval__panel--ok">
+        <h2>Payment approved</h2>
+        <p>KES {{ amount_label }} is being sent from paybill {{ source_paybill }} to {{ destination_type }} · {{ destination }}.</p>
+        <p class="muted">You can close this page.</p>
+      </section>
+    {% else %}
+      <section class="panel guest-approval__panel">
+        <dl class="approval-request-detail__grid guest-approval__details">
+          <div class="approval-request-detail__row">
+            <dt>Requested by</dt>
+            <dd>{{ requester_name }}</dd>
+          </div>
+          <div class="approval-request-detail__row">
+            <dt>Destination</dt>
+            <dd>{{ destination_type }} · {{ destination }}{% if account_ref %} / {{ account_ref }}{% endif %}</dd>
+          </div>
+          {% if reason %}
+          <div class="approval-request-detail__row">
+            <dt>Reason</dt>
+            <dd>{{ reason }}</dd>
+          </div>
+          {% endif %}
+          <div class="approval-request-detail__row approval-request-detail__row--split">
+            <div>
+              <dt>Amount</dt>
+              <dd class="approval-request-detail__amount">KES {{ amount_label }}</dd>
+            </div>
+            <div>
+              <dt>From paybill</dt>
+              <dd>{{ source_paybill }}</dd>
+            </div>
+          </div>
+        </dl>
+
+        {% if pin_error %}
+          <p class="approval-alert approval-alert--error">{{ pin_error }}</p>
+        {% endif %}
+
+        <form method="post" class="guest-approval__form">
+          {% csrf_token %}
+          <input type="hidden" name="intent" value="approve">
+          <label class="approval-pin-field label">
+            <span class="approval-pin-field__label">6-digit hub approval password</span>
+            <div class="approval-pin-field__wrap">
+              <input
+                type="password"
+                name="approval_pin"
+                class="pin-field approval-pin-input"
+                inputmode="numeric"
+                maxlength="6"
+                pattern="\d{6}"
+                autocomplete="current-password"
+                placeholder="••••••"
+                required
+                autofocus
+              >
+            </div>
+          </label>
+          <button type="submit" class="btn btn-primary guest-approval__submit">Approve &amp; send</button>
+        </form>
+      </section>
+    {% endif %}
+  </main>
+</body>
+</html>

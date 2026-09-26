@@ -839,11 +839,15 @@
       input.value = value;
     };
 
-    const postApprove = async (form, stkOperationId = "") => {
+    const postApprove = async (form, stkOperationId = "", { keepUi = false } = {}) => {
       attachHidden(form, "approval_pin", approvalPin);
       attachHidden(form, "stk_approval_operation_id", stkOperationId);
       const target = form;
-      reset();
+      if (!keepUi) {
+        reset();
+      } else {
+        active = true;
+      }
 
       const submitBtn = target.querySelector(
         "button[type='submit'], button[data-approval-trigger]",
@@ -982,7 +986,7 @@
         stkPollTimer = window.setInterval(tick, STK_POLL_MS);
       });
 
-    const sendApprovalSms = async (form) => {
+    const sendApprovalSms = async (form, { force = false } = {}) => {
       const moneyRequestId = form.getAttribute("data-money-request-id");
       if (!moneyRequestId || !config.smsSendUrl) {
         window.alert("SMS approval is not configured on this page.");
@@ -991,6 +995,7 @@
       if (dom.appSubmit) dom.appSubmit.disabled = true;
       try {
         const body = new URLSearchParams({ money_request_id: moneyRequestId });
+        if (force) body.set("force", "1");
         const response = await fetch(config.smsSendUrl, {
           method: "POST",
           headers: {
@@ -1083,7 +1088,11 @@
 
       if (dom.appFieldLabel) {
         dom.appFieldLabel.textContent =
-          "6-digit app password (hub paybill — not M-Pesa PIN)";
+          "6-digit hub approval password (not M-Pesa PIN)";
+      }
+      if (dom.appSubtitle && paybillPinAuth(config)) {
+        dom.appSubtitle.textContent =
+          "Enter your 6-digit hub approval password. If it is valid, this payment will be sent from the hub paybill.";
       }
       if (paybillPinAuth(config)) {
         loadPaybillAuthSummary(form);
@@ -1338,8 +1347,17 @@
       }
       approvalPin = pin;
       const form = pendingForm;
-      closeApp();
-      postApprove(form);
+      if (dom.appError) dom.appError.hidden = true;
+      if (dom.appSubtitle) {
+        dom.appSubtitle.textContent =
+          "Password accepted — sending approved payment from hub paybill…";
+      }
+      if (dom.appSubmit) {
+        dom.appSubmit.disabled = true;
+        dom.appSubmit.textContent = "Sending…";
+      }
+      if (dom.appInput) dom.appInput.disabled = true;
+      postApprove(form, "", { keepUi: true });
     };
 
     document.addEventListener(
@@ -1375,7 +1393,7 @@
 
     dom.appSubmit?.addEventListener("click", submitAppPin);
     dom.appResendSms?.addEventListener("click", () => {
-      if (pendingForm) sendApprovalSms(pendingForm);
+      if (pendingForm) sendApprovalSms(pendingForm, { force: true });
     });
     dom.appUseStk?.addEventListener("click", () => {
       if (paybillPinAuth(config)) {

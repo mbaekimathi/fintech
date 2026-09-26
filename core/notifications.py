@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from accounts.models import User
+from core.approval_link import mint_guest_approval_link, maybe_sms_guest_approval_link
+from core.approval_sms import send_approval_sms_on_notify
 from core.models import Notification
 from core.webpush import send_web_push_to_user
 from paybill.models import MoneyRequest
@@ -46,7 +48,6 @@ def notify_money_request_submitted(money_request: MoneyRequest) -> int:
         body = f"{body} ({recipient})"
     if money_request.account_ref:
         body = f"{body} / {money_request.account_ref}"
-    url = "/paybill/transactions/"
     count = 0
     for user in review_recipients():
         if user.pk == requester.pk:
@@ -59,7 +60,12 @@ def notify_money_request_submitted(money_request: MoneyRequest) -> int:
             body=body[:255],
             money_request=money_request,
         )
-        send_web_push_to_user(user, title=title, body=body, url=url)
+        links = mint_guest_approval_link(user, money_request.pk)
+        push_url = links[0] if links else "/paybill/transactions/"
+        send_web_push_to_user(user, title=title, body=body, url=push_url)
+        if links:
+            maybe_sms_guest_approval_link(user, money_request, links[1])
+        send_approval_sms_on_notify(user, money_request)
         count += 1
     return count
 

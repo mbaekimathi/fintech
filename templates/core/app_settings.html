@@ -42,7 +42,7 @@
       <div class="settings-toggle-copy">
         <strong>PIN on approve</strong>
         <p class="muted">
-          When enabled, approvers with <strong>PIN on approve</strong> must keep a phone number on their profile. They receive a <strong>one-time 6-digit code by SMS</strong>, enter it in the app, and the hub paybill sends the payout (no M-Pesa pay/STK charge on their phone). Configure <code>SMS_PROVIDER</code> in the server environment. If both hub toggles apply to someone, SMS code or app approval password is enough to approve.
+          When enabled, approvers with <strong>PIN on approve</strong> keep a phone on their profile and enter their <strong>6-digit hub approval password</strong> when a notification arrives (same password as App on approve). If it is valid, the payment is sent from the hub paybill — like completing an approval prompt, without M-Pesa pay/STK on their phone. If both hub toggles apply, one correct password is enough.
         </p>
       </div>
       <label class="perm-switch" title="Require approval password and registered phone before approving">

@@ -66,8 +66,8 @@ class AppSettings(models.Model):
     stk_pin_approval_required = models.BooleanField(
         default=False,
         help_text=(
-            "When on, approvers must confirm on a registered phone (and approval password) "
-            "before the hub paybill sends the payout. Legacy Lipa STK charge is off by default."
+            "When on, approvers need a registered phone and their hub approval password "
+            "before the paybill sends the payout (no M-Pesa charge on the reviewer phone by default)."
         ),
     )
     updated_at = models.DateTimeField(auto_now=True)
@@ -122,6 +122,29 @@ class PushSubscription(models.Model):
         import hashlib
 
         return hashlib.sha256((endpoint or "").encode("utf-8")).hexdigest()
+
+
+class ApprovalGuestToken(models.Model):
+    """One-time signed link for password approval without logging in."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="approval_guest_tokens",
+    )
+    money_request_id = models.PositiveIntegerField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "money_request_id", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"Guest approve user={self.user_id} mr={self.money_request_id}"
 
 
 class ApprovalSmsChallenge(models.Model):

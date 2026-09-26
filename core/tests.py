@@ -327,6 +327,140 @@ class NotificationFlowTests(TestCase):
             ).exists()
         )
 
+    @override_settings(
+        APPROVAL_SMS_OTP=True,
+        APPROVAL_STK_PHONE_PROMPT=False,
+        SMS_PROVIDER="console",
+    )
+    def test_money_request_sends_approval_sms_when_notification_created(self):
+        settings = AppSettings.load()
+        settings.stk_pin_approval_required = True
+        settings.save(update_fields=["stk_pin_approval_required"])
+        sync_permissions_from_role(self.it_support, reset=True)
+        perms = EmployeePermissions.objects.get(user=self.it_support)
+        perms.stk_pin_approval_prompt = True
+        perms.save(update_fields=["stk_pin_approval_prompt", "updated_at"])
+        self.it_support.phone = "0712345678"
+        self.it_support.save(update_fields=["phone"])
+
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("250.00"),
+            reason="Notify SMS",
+            status=MoneyRequest.Status.PENDING,
+        )
+        with patch("core.notifications.send_web_push_to_user"):
+            from core.notifications import notify_money_request_submitted
+
+            notify_money_request_submitted(req)
+
+        from core.models import ApprovalSmsChallenge
+
+        self.assertTrue(
+            ApprovalSmsChallenge.objects.filter(
+                user=self.it_support,
+                money_request_id=req.pk,
+            ).exists()
+        )
+
+    @override_settings(
+        APPROVAL_SMS_OTP=True,
+        APPROVAL_STK_PHONE_PROMPT=False,
+        SMS_PROVIDER="console",
+    )
+    def test_money_request_sends_approval_sms_when_notification_created(self):
+        settings = AppSettings.load()
+        settings.stk_pin_approval_required = True
+        settings.save(update_fields=["stk_pin_approval_required"])
+        sync_permissions_from_role(self.it_support, reset=True)
+        perms = EmployeePermissions.objects.get(user=self.it_support)
+        perms.stk_pin_approval_prompt = True
+        perms.save(update_fields=["stk_pin_approval_prompt", "updated_at"])
+        self.it_support.phone = "0712345678"
+        self.it_support.save(update_fields=["phone"])
+
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("250.00"),
+            reason="Notify SMS",
+            status=MoneyRequest.Status.PENDING,
+        )
+        with patch("core.notifications.send_web_push_to_user"):
+            from core.notifications import notify_money_request_submitted
+
+            notify_money_request_submitted(req)
+
+        from core.models import ApprovalSmsChallenge
+
+        self.assertTrue(
+            ApprovalSmsChallenge.objects.filter(
+                user=self.it_support,
+                money_request_id=req.pk,
+            ).exists()
+        )
+
+    @override_settings(APPROVAL_GUEST_LINK=True, APPROVAL_SMS_OTP=False)
+    def test_guest_approval_link_accepts_hub_password_without_login(self):
+        settings = AppSettings.load()
+        settings.app_approval_required = True
+        settings.stk_pin_approval_required = True
+        settings.save(update_fields=["app_approval_required", "stk_pin_approval_required"])
+        sync_permissions_from_role(self.it_support, reset=True)
+        perms = EmployeePermissions.objects.get(user=self.it_support)
+        perms.pin_approval_prompt = True
+        perms.stk_pin_approval_prompt = True
+        perms.save(
+            update_fields=["pin_approval_prompt", "stk_pin_approval_prompt", "updated_at"]
+        )
+        self.it_support.set_approval_password("778899")
+        self.it_support.phone = "0712345678"
+        self.it_support.save(update_fields=["approval_password", "phone"])
+
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("300.00"),
+            reason="Guest link",
+            status=MoneyRequest.Status.PENDING,
+        )
+        from core.approval_link import mint_guest_approval_link
+
+        path, _full = mint_guest_approval_link(self.it_support, req.pk)
+        token = path.strip("/").split("/")[-1]
+
+        page = self.client.get(f"/approve/guest/{token}/")
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "hub approval password")
+
+        ack = {
+            "ResponseCode": "0",
+            "ResponseDescription": "Accept the service request successfully.",
+            "ConversationID": "AG_GUEST_1",
+            "OriginatorConversationID": "ORIG_GUEST_1",
+        }
+        with patch("integrations.daraja_client.DarajaClient.access_token", return_value="token"):
+            with patch("integrations.daraja_client._json_request") as mock_req:
+                mock_req.return_value = (200, ack)
+                approved = self.client.post(
+                    f"/approve/guest/{token}/",
+                    {"intent": "approve", "approval_pin": "778899"},
+                )
+        self.assertEqual(approved.status_code, 200)
+        self.assertContains(approved, "Payment approved")
+        req.refresh_from_db()
+        self.assertEqual(req.status, MoneyRequest.Status.APPROVED)
+
 
 class WebPushTests(TestCase):
     def setUp(self):
