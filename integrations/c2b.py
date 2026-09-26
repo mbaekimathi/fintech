@@ -63,11 +63,11 @@ def resolve_monitor_by_collection_ref(bill_ref: str) -> CollectionMonitor | None
     ref = (bill_ref or "").strip()
     if not ref:
         return None
-    return (
-        CollectionMonitor.objects.filter(is_active=True, collection_code=ref)
-        .select_related("paybill_account")
-        .first()
-    )
+    qs = CollectionMonitor.objects.filter(is_active=True).select_related("paybill_account")
+    hit = qs.filter(collection_code__iexact=ref).first()
+    if hit:
+        return hit
+    return qs.filter(account_ref__iexact=ref).first()
 
 
 def resolve_c2b_paybill_account(shortcode: str) -> PaybillAccount | None:
@@ -201,6 +201,9 @@ def post_c2b_ledger(payload: dict) -> LedgerEntry | None:
     raw_payload = {"c2b": payload if isinstance(payload, dict) else data, "source": "daraja_c2b"}
 
     if existing is not None and existing.status == LedgerEntry.Status.COMPLETED:
+        from paybill.auto_payout import schedule_auto_payout_inbound
+
+        schedule_auto_payout_inbound(monitor, existing)
         return existing
 
     if existing is not None:
@@ -226,10 +229,9 @@ def post_c2b_ledger(payload: dict) -> LedgerEntry | None:
                 "raw_payload",
             ]
         )
-        if monitor is not None:
-            from paybill.auto_payout import schedule_auto_payout_inbound
+        from paybill.auto_payout import schedule_auto_payout_inbound
 
-            schedule_auto_payout_inbound(monitor, existing)
+        schedule_auto_payout_inbound(monitor, existing)
         return existing
 
     entry = LedgerEntry.objects.create(
@@ -246,10 +248,9 @@ def post_c2b_ledger(payload: dict) -> LedgerEntry | None:
         narrative=f"{tx_type} · {shortcode}"[:255],
         raw_payload=raw_payload,
     )
-    if monitor is not None:
-        from paybill.auto_payout import schedule_auto_payout_inbound
+    from paybill.auto_payout import schedule_auto_payout_inbound
 
-        schedule_auto_payout_inbound(monitor, entry)
+    schedule_auto_payout_inbound(monitor, entry)
     return entry
 
 

@@ -1,11 +1,12 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.urls import reverse
 
-from integrations.c2b import post_c2b_ledger, validate_c2b_payment
+from integrations.c2b import post_c2b_ledger, resolve_monitor_by_collection_ref, validate_c2b_payment
 from paybill.automation import monitor_ledger_queryset, monitor_ledger_totals
-from paybill.models import CollectionMonitor, LedgerEntry, PaybillAccount
+from paybill.models import CollectionMonitor, LedgerEntry, MoneyRequest, PaybillAccount
 
 
 class C2bCallbackTests(TestCase):
@@ -65,6 +66,34 @@ class C2bCallbackTests(TestCase):
         self.assertEqual(entry.amount, Decimal("250.00"))
         self.assertEqual(entry.direction, LedgerEntry.Direction.IN)
         self.assertEqual(entry.paybill_account_id, self.account.pk)
+
+    def test_resolve_monitor_by_collection_code_or_account_ref(self):
+        monitor = CollectionMonitor.objects.get(label="Shop")
+        code = monitor.collection_code
+        self.assertEqual(resolve_monitor_by_collection_ref(code), monitor)
+        monitor.account_ref = "CLIENT-ACC"
+        monitor.save(update_fields=["account_ref"])
+        self.assertEqual(resolve_monitor_by_collection_ref("CLIENT-ACC"), monitor)
+
+    @patch("paybill.auto_payout.maybe_auto_payout_inbound")
+    def test_c2b_with_collection_code_schedules_auto_payout(self, mock_payout):
+        monitor = CollectionMonitor.objects.get(label="Shop")
+        monitor.auto_payout_enabled = True
+        monitor.auto_payout_destination = "254712345678"
+        monitor.auto_payout_phone = "254712345678"
+        monitor.auto_payout_destination_type = MoneyRequest.DestinationType.PHONE
+        monitor.save()
+        payload = {
+            "TransID": "QAB-COL-CODE",
+            "TransAmount": "10.00",
+            "BusinessShortCode": "174379",
+            "BillRefNumber": monitor.collection_code,
+            "MSISDN": "254708374149",
+        }
+        with self.captureOnCommitCallbacks(execute=True):
+            entry = post_c2b_ledger(payload)
+        self.assertIsNotNone(entry)
+        mock_payout.assert_called_once()
 
     def test_confirmation_api(self):
         url = reverse("integrations:daraja-c2b-confirmation")

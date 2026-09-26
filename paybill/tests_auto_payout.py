@@ -9,6 +9,8 @@ from paybill.auto_payout import (
     continue_auto_payout_chain,
     maybe_auto_payout_inbound,
     payout_destination_requires_utility,
+    resolve_monitor_for_inbound,
+    schedule_auto_payout_inbound,
     should_move_utility_first,
 )
 from paybill.forms import CollectionMonitorPayoutForm
@@ -271,3 +273,50 @@ class AutoPayoutTriggerTests(TestCase):
         self.assertIsNotNone(op)
         client.utility_to_working.assert_called_once()
         client.b2b_send.assert_not_called()
+
+    @patch("paybill.auto_payout.callback_urls")
+    @patch("paybill.auto_payout.DarajaClient")
+    @patch("paybill.auto_payout.DarajaConfig.load")
+    def test_paybill_phone_auto_utility_when_b2b_ready_even_if_flag_off(
+        self, mock_load, mock_client_cls, mock_urls
+    ):
+        mock_urls.return_value = {"result_url": "https://hub.test/daraja/result/", "timeout_url": ""}
+        self.monitor.auto_payout_utility_first = False
+        self.monitor.save(update_fields=["auto_payout_utility_first"])
+        config = mock_load.return_value
+        config.b2b_ready = True
+        config.b2c_ready = True
+        client = mock_client_cls.return_value
+        client.utility_to_working.return_value = (
+            {"ResponseDescription": "Accepted"},
+            {"Amount": "100"},
+            "600996",
+        )
+        op = maybe_auto_payout_inbound(self.monitor, self.entry)
+        self.assertIsNotNone(op)
+        self.assertEqual(op.kind, DarajaOperation.Kind.B2B)
+        client.utility_to_working.assert_called_once()
+        client.b2c_send.assert_not_called()
+
+    def test_resolve_monitor_from_ledger_collection_code(self):
+        self.entry.account_ref = self.monitor.collection_code
+        self.entry.save(update_fields=["account_ref"])
+        self.assertEqual(resolve_monitor_for_inbound(self.entry), self.monitor)
+
+    @patch("paybill.auto_payout.callback_urls")
+    @patch("paybill.auto_payout.DarajaClient")
+    @patch("paybill.auto_payout.DarajaConfig.load")
+    @patch("paybill.auto_payout.maybe_auto_payout_inbound")
+    def test_schedule_resolves_monitor_when_c2b_had_no_bill_match(
+        self, mock_maybe, mock_load, mock_client_cls, mock_urls
+    ):
+        mock_urls.return_value = {"result_url": "https://hub.test/daraja/result/", "timeout_url": ""}
+        mock_load.return_value.b2c_ready = True
+        self.entry.account_ref = self.monitor.collection_code
+        self.entry.save(update_fields=["account_ref"])
+        with self.captureOnCommitCallbacks(execute=True):
+            schedule_auto_payout_inbound(None, self.entry)
+        mock_maybe.assert_called_once()
+        called_monitor, called_entry = mock_maybe.call_args[0]
+        self.assertEqual(called_monitor.pk, self.monitor.pk)
+        self.assertEqual(called_entry.pk, self.entry.pk)

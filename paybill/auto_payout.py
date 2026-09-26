@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from django.db import transaction
 
+from integrations.callbacks import expire_stale_queues
 from integrations.daraja import callback_urls
 from integrations.daraja_client import DarajaClient, DarajaError, kenya_msisdn
 from integrations.models import DarajaConfig, DarajaOperation
@@ -64,6 +65,31 @@ def should_move_utility_first(monitor: CollectionMonitor) -> bool:
     return payout_destination_requires_utility(monitor)
 
 
+def resolve_monitor_for_inbound(entry: LedgerEntry) -> CollectionMonitor | None:
+    """Match collection account from ledger row (C2B bill ref, STK tag, or sole paybill monitor)."""
+    ref = (entry.account_ref or "").strip()
+    if ref:
+        qs = CollectionMonitor.objects.filter(is_active=True).select_related("paybill_account")
+        hit = qs.filter(collection_code__iexact=ref).first()
+        if hit:
+            return hit
+        hit = qs.filter(account_ref__iexact=ref).first()
+        if hit:
+            return hit
+
+    if entry.paybill_account_id:
+        scoped = CollectionMonitor.objects.filter(
+            is_active=True,
+            paybill_account_id=entry.paybill_account_id,
+        )
+        enabled = scoped.filter(auto_payout_enabled=True)
+        if enabled.count() == 1:
+            return enabled.first()
+        if scoped.count() == 1:
+            return scoped.first()
+    return None
+
+
 def auto_payout_is_enabled(monitor: CollectionMonitor) -> bool:
     if not monitor.auto_payout_enabled:
         return False
@@ -96,6 +122,8 @@ def _payout_already_queued(ledger_entry_id: int) -> bool:
             continue
         if op.status in _RETRYABLE_STATUSES:
             continue
+        if op.status == DarajaOperation.Status.QUEUED and not op.is_fresh_queue():
+            continue
         return True
     return False
 
@@ -108,6 +136,8 @@ def _utility_step_pending(ledger_entry_id: int) -> bool:
         if op.status == DarajaOperation.Status.SUCCESS:
             return False
         if op.status in _RETRYABLE_STATUSES:
+            continue
+        if op.status == DarajaOperation.Status.QUEUED and not op.is_fresh_queue():
             continue
         return True
     return False
@@ -146,6 +176,8 @@ def execute_auto_payout_transfer(
     if _payout_already_queued(entry.pk):
         return None
 
+    expire_stale_queues()
+
     config = DarajaConfig.load()
     urls = callback_urls()
     result_url = urls.get("result_url") or (config.result_url or "").strip()
@@ -159,6 +191,17 @@ def execute_auto_payout_transfer(
 
     dest_type = monitor.auto_payout_destination_type or MoneyRequest.DestinationType.PHONE
     wants_utility = should_move_utility_first(monitor) and not skip_utility
+    if (
+        not skip_utility
+        and not wants_utility
+        and dest_type == MoneyRequest.DestinationType.PHONE
+        and collection_credits_utility_float(monitor)
+        and not _utility_step_succeeded(entry.pk)
+        and not _utility_step_pending(entry.pk)
+        and config.b2b_ready
+    ):
+        # Paybill/till collections land in utility; move to working before B2C even if the checkbox is off.
+        wants_utility = True
 
     if wants_utility and _utility_step_succeeded(entry.pk):
         wants_utility = False
@@ -296,20 +339,28 @@ def maybe_auto_payout_inbound(
     return execute_auto_payout_transfer(monitor, entry)
 
 
-def schedule_auto_payout_inbound(monitor: CollectionMonitor, entry: LedgerEntry) -> None:
-    if not auto_payout_is_enabled(monitor):
-        return
+def schedule_auto_payout_inbound(
+    monitor: CollectionMonitor | None,
+    entry: LedgerEntry,
+) -> None:
     if entry.direction != LedgerEntry.Direction.IN:
         return
     if entry.status != LedgerEntry.Status.COMPLETED:
         return
-    monitor_id = monitor.pk
+    monitor_id = monitor.pk if monitor is not None else None
     entry_id = entry.pk
 
     def _run() -> None:
-        fresh_monitor = CollectionMonitor.objects.filter(pk=monitor_id, is_active=True).first()
         fresh_entry = LedgerEntry.objects.filter(pk=entry_id).first()
-        if fresh_monitor and fresh_entry:
-            maybe_auto_payout_inbound(fresh_monitor, fresh_entry)
+        if not fresh_entry:
+            return
+        fresh_monitor = None
+        if monitor_id:
+            fresh_monitor = CollectionMonitor.objects.filter(pk=monitor_id, is_active=True).first()
+        if fresh_monitor is None:
+            fresh_monitor = resolve_monitor_for_inbound(fresh_entry)
+        if fresh_monitor is None or not auto_payout_is_enabled(fresh_monitor):
+            return
+        maybe_auto_payout_inbound(fresh_monitor, fresh_entry)
 
     transaction.on_commit(_run)
