@@ -40,6 +40,13 @@ if DEBUG:
 
 # Public HTTPS origin Safaricom can reach. Defaults to the hosted site.
 DARAJA_PUBLIC_BASE_URL = (os.getenv("DARAJA_PUBLIC_BASE_URL") or "https://fin.richcom.co.ke").strip().rstrip("/")
+# When False (default), approval does not Lipa-charge the approver's phone; hub paybill sends the payout after app PIN.
+APPROVAL_STK_LIPA_CHARGE = os.getenv("APPROVAL_STK_LIPA_CHARGE", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 INSTALLED_APPS = [
     "django.contrib.admin",

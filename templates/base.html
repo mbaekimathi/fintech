@@ -193,6 +193,7 @@
         "hasApprovalPassword": {% if reviewer_has_approval_password %}true{% else %}false{% endif %},
         "hasPhone": {% if reviewer_has_phone %}true{% else %}false{% endif %},
         "dualApproval": {% if dual_approval_required %}true{% else %}false{% endif %},
+        "stkLipaCharge": {% if approval_stk_lipa_charge %}true{% else %}false{% endif %},
         "profileUrl": "{{ profile_url|escapejs }}"
       }
     </script>

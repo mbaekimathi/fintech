@@ -200,12 +200,21 @@ class DarajaClient:
             "then try again. Optional: set DARAJA_PUBLIC_BASE_URL in .env to your ngrok https URL."
         )
 
-    def stk_push(self, *, phone: str, amount, account_ref: str, callback_url: str) -> dict:
+    def stk_push(
+        self,
+        *,
+        phone: str,
+        amount,
+        account_ref: str,
+        callback_url: str,
+        transaction_desc: str | None = None,
+        transaction_type: str | None = None,
+    ) -> dict:
         if not self.config.stk_ready:
             raise DarajaError("STK is not ready. Save passkey, shortcode, and callback URL on Daraja setup.")
         msisdn = kenya_msisdn(phone)
         shortcode = (self.config.shortcode or "").strip()
-        tx_type = self.config.stk_transaction_type or "CustomerPayBillOnline"
+        tx_type = transaction_type or self.config.stk_transaction_type or "CustomerPayBillOnline"
         party_b = (self.config.till_number or shortcode).strip() if tx_type == "CustomerBuyGoodsOnline" else shortcode
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         payload = {
@@ -219,7 +228,7 @@ class DarajaClient:
             "PhoneNumber": msisdn,
             "CallBackURL": self._callback(self.config.stk_callback_url, callback_url),
             "AccountReference": (account_ref or self.config.stk_account_reference or "NEXUS")[:12],
-            "TransactionDesc": (self.config.stk_transaction_desc or "Payment")[:13],
+            "TransactionDesc": (transaction_desc or self.config.stk_transaction_desc or "Payment")[:13],
         }
         return self._post("/mpesa/stkpush/v1/processrequest", payload), payload
 

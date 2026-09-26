@@ -13,7 +13,7 @@
   role="presentation"
 >
   <div
-    class="detail-dialog transfer-detail-dialog"
+    class="detail-dialog transfer-detail-dialog modal-vivid"
     role="dialog"
     aria-modal="true"
     :aria-labelledby="transferDetail ? 'transfer-detail-title' : null"
@@ -25,6 +25,13 @@
   >
     <template x-if="transferDetail">
       <div class="transfer-detail-shell modal-sheet-body">
+        <div class="modal-chrome" aria-hidden="true">
+          <span class="modal-chrome__orb modal-chrome__orb--a"></span>
+          <span class="modal-chrome__orb modal-chrome__orb--b"></span>
+          <span class="modal-chrome__orb modal-chrome__orb--c"></span>
+          <span class="modal-chrome__stripe"></span>
+        </div>
+        <div class="modal-chrome-content">
         <header class="transfer-detail__head">
           <div class="transfer-detail__brand">
             <span class="approval-dialog__badge approval-dialog__badge--app">
@@ -56,7 +63,7 @@
         </div>
 
         <div class="transfer-detail-grid">
-          <div class="transfer-detail-item" x-show="transferDetail.when">
+          <div class="transfer-detail-item transfer-detail-item--tone-a" x-show="transferDetail.when">
             <span class="transfer-detail-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
             </span>
@@ -65,7 +72,7 @@
               <p class="transfer-detail-item__value" x-text="transferDetail.when"></p>
             </div>
           </div>
-          <div class="transfer-detail-item" x-show="transferDetail.reference">
+          <div class="transfer-detail-item transfer-detail-item--tone-b" x-show="transferDetail.reference">
             <span class="transfer-detail-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 7h10v10H7z"/><path d="M7 11h10M11 7v4"/></svg>
             </span>
@@ -83,7 +90,7 @@
               <p class="transfer-detail-item__value mono" x-text="transferDetail.mpesaReference"></p>
             </div>
           </div>
-          <div class="transfer-detail-item" x-show="transferDetail.initiator">
+          <div class="transfer-detail-item transfer-detail-item--tone-c" x-show="transferDetail.initiator">
             <span class="transfer-detail-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6"/></svg>
             </span>
@@ -95,7 +102,7 @@
               </p>
             </div>
           </div>
-          <div class="transfer-detail-item" x-show="transferDetail.category">
+          <div class="transfer-detail-item transfer-detail-item--tone-d" x-show="transferDetail.category">
             <span class="transfer-detail-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
             </span>
@@ -104,7 +111,7 @@
               <p class="transfer-detail-item__value" x-text="transferDetail.category"></p>
             </div>
           </div>
-          <div class="transfer-detail-item" x-show="transferDetail.destination">
+          <div class="transfer-detail-item transfer-detail-item--tone-e" x-show="transferDetail.destination">
             <span class="transfer-detail-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
             </span>
@@ -113,7 +120,7 @@
               <p class="transfer-detail-item__value" x-text="transferDetail.destination"></p>
             </div>
           </div>
-          <div class="transfer-detail-item" x-show="transferDetail.source">
+          <div class="transfer-detail-item transfer-detail-item--tone-f" x-show="transferDetail.source">
             <span class="transfer-detail-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
             </span>
@@ -135,8 +142,9 @@
         </div>
 
         <footer class="transfer-detail__foot">
-          <button type="button" class="btn btn-primary" @click="transferDetail = null">Done</button>
+          <button type="button" class="btn btn-primary approval-btn-primary transfer-detail-done" @click="transferDetail = null">Done</button>
         </footer>
+        </div>
       </div>
     </template>
   </div>

@@ -17,7 +17,9 @@ from accounts.models import User
 from accounts.utils import write_audit
 from core.approval import (
     approval_ok,
+    approval_stk_lipa_charge_enabled,
     initiate_stk_approval,
+    payout_authorization_message,
     poll_stk_approval,
     stk_approval_poll_payload,
     user_requires_stk_on_approval,
@@ -754,6 +756,19 @@ class StkApprovalInitiateView(RoleRequiredMixin, View):
         if money_request.status != MoneyRequest.Status.PENDING:
             return JsonResponse({"ok": False, "detail": "That request is no longer pending."}, status=409)
 
+        if not approval_stk_lipa_charge_enabled():
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "mode": "paybill_payout",
+                    "summary": payout_authorization_message(money_request),
+                    "amount_label": f"{money_request.amount:,.2f}",
+                    "destination": money_request.destination,
+                    "destination_type": money_request.get_destination_type_display(),
+                    "source_paybill": money_request.source_paybill.paybill_number,
+                }
+            )
+
         try:
             operation = initiate_stk_approval(request, money_request)
         except DarajaError as exc:
@@ -762,6 +777,7 @@ class StkApprovalInitiateView(RoleRequiredMixin, View):
         return JsonResponse(
             {
                 "ok": True,
+                "mode": "lipa_stk",
                 "operation_id": operation.pk,
                 "summary": operation.summary or operation.result_desc or "STK prompt sent.",
             }

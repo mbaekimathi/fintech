@@ -65,7 +65,10 @@ class AppSettings(models.Model):
     )
     stk_pin_approval_required = models.BooleanField(
         default=False,
-        help_text="When on, approvers must complete an M-Pesa STK PIN prompt on their phone before a payment is sent.",
+        help_text=(
+            "When on, approvers must confirm on a registered phone (and approval password) "
+            "before the hub paybill sends the payout. Legacy Lipa STK charge is off by default."
+        ),
     )
     updated_at = models.DateTimeField(auto_now=True)
 

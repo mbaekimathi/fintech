@@ -9,6 +9,7 @@ from django.contrib import messages
 from paybill.models import MoneyRequest
 
 from core.approval import (
+    approval_stk_lipa_charge_enabled,
     user_requires_app_on_approval,
     user_requires_stk_on_approval,
     verify_approval_pin,
@@ -97,10 +98,16 @@ def _app_only_ok(request) -> bool:
 
 
 def _stk_only_ok(request, money_request: MoneyRequest) -> bool:
-    if _stk_verified_on_request(request, money_request):
-        return True
-    messages.error(request, "Complete the M-Pesa PIN prompt on your phone to approve this payment.")
-    return False
+    if approval_stk_lipa_charge_enabled():
+        if _stk_verified_on_request(request, money_request):
+            return True
+        messages.error(request, "Complete the M-Pesa PIN prompt on your phone to approve this payment.")
+        return False
+    # Default: STK approval means phone on profile + app PIN, then hub paybill sends the payout.
+    if not (request.user.phone or "").strip():
+        messages.error(request, "Add your phone number on Profile before approving payments.")
+        return False
+    return _app_only_ok(request)
 
 
 def authorize_payout_approval(

@@ -5,12 +5,19 @@
   role="presentation"
 >
   <div
-    class="detail-dialog approval-dialog pin-approval-dialog"
+    class="detail-dialog approval-dialog pin-approval-dialog modal-vivid"
     role="dialog"
     aria-modal="true"
     aria-labelledby="pin-approval-title"
     data-pin-approval-dialog
   >
+    <div class="modal-chrome" aria-hidden="true">
+      <span class="modal-chrome__orb modal-chrome__orb--a"></span>
+      <span class="modal-chrome__orb modal-chrome__orb--b"></span>
+      <span class="modal-chrome__orb modal-chrome__orb--c"></span>
+      <span class="modal-chrome__stripe"></span>
+    </div>
+    <div class="modal-chrome-content">
     <header class="approval-dialog__head">
       <div class="approval-dialog__brand">
         <span class="approval-dialog__badge approval-dialog__badge--app" aria-hidden="true">
@@ -29,6 +36,16 @@
       <h2 id="pin-approval-title" class="approval-dialog__title">Enter your approval password</h2>
       <p class="approval-dialog__subtitle">Your 6-digit password confirms this payout before it is sent.</p>
     </header>
+
+    <div class="approval-dialog__hero approval-dialog__hero--lock" aria-hidden="true">
+      <div class="approval-hero-ring approval-hero-ring--outer approval-hero-ring--violet"></div>
+      <div class="approval-hero-icon approval-hero-icon--lock">
+        <svg viewBox="0 0 48 48" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="14" y="22" width="20" height="18" rx="3"/>
+          <path d="M18 22v-6a6 6 0 0 1 12 0v6"/>
+        </svg>
+      </div>
+    </div>
 
     <div class="approval-summary-card" data-pin-approval-detail-wrap hidden>
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -86,5 +103,6 @@
         Approve &amp; send
       </button>
     </footer>
+    </div>
   </div>
 </div>

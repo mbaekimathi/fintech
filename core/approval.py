@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings as django_settings
 from django.contrib import messages
 from django.utils import timezone
 
@@ -18,6 +19,11 @@ from paybill.models import MoneyRequest
 APPROVAL_STK_AMOUNT = Decimal("1")
 APPROVAL_STK_REF_PREFIX = "APMR"
 APPROVAL_STK_TTL = timedelta(minutes=10)
+
+
+def approval_stk_lipa_charge_enabled() -> bool:
+    """When True, STK approval sends a small Lipa na M-Pesa charge to verify PIN (legacy)."""
+    return bool(getattr(django_settings, "APPROVAL_STK_LIPA_CHARGE", False))
 
 
 def app_approval_required() -> bool:
@@ -74,8 +80,26 @@ def _redact(payload: dict) -> dict:
     return data
 
 
+def payout_authorization_message(money_request: MoneyRequest) -> str:
+    dest = money_request.get_destination_type_display()
+    detail = money_request.destination
+    if money_request.account_ref:
+        detail = f"{detail} / {money_request.account_ref}"
+    paybill = money_request.source_paybill.paybill_number
+    return (
+        f"After you confirm, KES {money_request.amount:,.2f} will be sent from "
+        f"paybill {paybill} to {dest} · {detail}."
+    )
+
+
 def initiate_stk_approval(request, money_request: MoneyRequest) -> DarajaOperation:
-    """Send an STK push to the approver's phone (same flow as Daraja test STK)."""
+    """Optional Lipa STK (KES 1) to verify PIN; default is paybill payout auth via app password."""
+    if not approval_stk_lipa_charge_enabled():
+        raise DarajaError(
+            "Approval uses your app password to authorize the paybill payout. "
+            "Enter it in the app — your phone is not charged via M-Pesa for this step."
+        )
+
     phone = (request.user.phone or "").strip()
     if not phone:
         raise DarajaError("Add your phone number to your profile before PIN approval.")
@@ -93,6 +117,8 @@ def initiate_stk_approval(request, money_request: MoneyRequest) -> DarajaOperati
         amount=APPROVAL_STK_AMOUNT,
         account_ref=account_ref,
         callback_url=callback_url,
+        transaction_desc="AuthOnly",
+        transaction_type="CustomerPayBillOnline",
     )
     return DarajaOperation.objects.create(
         kind=DarajaOperation.Kind.STK,

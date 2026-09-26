@@ -172,10 +172,14 @@ def apply_stk_callback(payload: dict) -> DarajaOperation | None:
     if code in {"0", "00"}:
         operation.status = DarajaOperation.Status.SUCCESS
         receipt = operation.capture_mpesa_reference(receipt, items=items)
-        operation.summary = f"Paid KES {amount} · {receipt}".strip(" ·")
         from core.approval import is_approval_stk_operation
 
-        if not is_approval_stk_operation(operation):
+        if is_approval_stk_operation(operation):
+            operation.summary = (
+                operation.result_desc or "M-Pesa PIN verified for approval."
+            )[:255]
+        else:
+            operation.summary = f"Paid KES {amount} · {receipt}".strip(" ·")
             _post_ledger(operation, amount=amount, phone=phone, receipt=receipt, inbound=True)
     else:
         operation.status = DarajaOperation.Status.FAILED

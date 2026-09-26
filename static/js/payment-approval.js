@@ -431,7 +431,11 @@
     const ch = channels(config);
     if (!approvalRequired(config)) return false;
     const needs = [];
-    if (ch.app && config?.hasApprovalPassword === false) {
+    const stkAuthorizesPaybill = ch.stk && config?.stkLipaCharge === false;
+    if (
+      (ch.app || stkAuthorizesPaybill) &&
+      config?.hasApprovalPassword === false
+    ) {
       needs.push("a 6-digit approval password on Profile");
     }
     if (ch.stk && config?.hasPhone === false) {
@@ -477,9 +481,71 @@
       stkSuccessReason: document.querySelector("[data-stk-approval-success-reason]"),
       stkFailReason: document.querySelector("[data-stk-approval-fail-reason]"),
       stkRetry: document.querySelector("[data-stk-approval-retry]"),
+      stkPinPanel: document.querySelector("[data-stk-approval-pin-panel]"),
+      stkPinInput: document.querySelector("[data-stk-approval-pin-input]"),
+      stkPinError: document.querySelector("[data-stk-approval-pin-error]"),
+      stkPinSubmit: document.querySelector("[data-stk-approval-pin-submit]"),
+      stkBackStk: document.querySelector("[data-stk-approval-back-stk]"),
+      stkTitle: document.getElementById("stk-approval-title"),
     };
 
     const STK_POLL_MS = 1500;
+
+    const canUseAppPinAlt = () => ch.app && appReady(config, ch);
+
+    const syncStkUseAppButton = () => {
+      if (!dom.stkUseApp) return;
+      const show = canUseAppPinAlt() && dom.stkDialog?.getAttribute("data-stk-approval-view") !== "pin";
+      dom.stkUseApp.hidden = !show;
+    };
+
+    const hideStkPinEntry = () => {
+      if (dom.stkDialog) dom.stkDialog.setAttribute("data-stk-approval-view", "stk");
+      if (dom.stkPinPanel) hideEl(dom.stkPinPanel);
+      if (dom.stkPinInput) {
+        dom.stkPinInput.value = "";
+        dom.stkPinInput.disabled = false;
+      }
+      if (dom.stkPinError) dom.stkPinError.hidden = true;
+      if (dom.stkPinSubmit) dom.stkPinSubmit.hidden = true;
+      if (dom.stkBackStk) dom.stkBackStk.hidden = true;
+      if (dom.stkUseApp) {
+        dom.stkUseApp.setAttribute("aria-expanded", "false");
+      }
+      syncStkUseAppButton();
+    };
+
+    const showStkPinEntry = () => {
+      if (!pendingForm) return;
+      active = true;
+      if (!canUseAppPinAlt()) {
+        openApp(pendingForm);
+        return;
+      }
+      stopStkPoll();
+      setStkState("idle");
+      resetStkOutcomes();
+      if (dom.stkDialog) dom.stkDialog.setAttribute("data-stk-approval-view", "pin");
+      if (dom.stkTitle) dom.stkTitle.textContent = "Enter your approval password";
+      if (dom.stkMessage) {
+        dom.stkMessage.textContent =
+          "Your 6-digit password authorizes the hub paybill payout — no M-Pesa charge on your phone.";
+      }
+      if (dom.stkPinPanel) showEl(dom.stkPinPanel);
+      if (dom.stkPinSubmit) showEl(dom.stkPinSubmit);
+      if (dom.stkBackStk && config.stkLipaCharge !== false) showEl(dom.stkBackStk);
+      if (dom.stkUseApp) {
+        dom.stkUseApp.hidden = true;
+        dom.stkUseApp.setAttribute("aria-expanded", "true");
+      }
+      if (dom.stkRetry) dom.stkRetry.hidden = true;
+      if (dom.stkError) {
+        dom.stkError.hidden = true;
+        dom.stkError.textContent = "";
+      }
+      showEl(dom.stkBackdrop);
+      window.requestAnimationFrame(() => dom.stkPinInput?.focus());
+    };
 
     const setStkState = (state) => {
       if (dom.stkDialog) dom.stkDialog.setAttribute("data-approval-state", state || "idle");
@@ -531,6 +597,7 @@
           dom.stkError.hidden = false;
         }
         if (dom.stkRetry) dom.stkRetry.hidden = false;
+        syncStkUseAppButton();
       } else if (dom.stkError && !data.complete) {
         dom.stkError.hidden = true;
         dom.stkError.textContent = "";
@@ -592,6 +659,7 @@
       }
       if (dom.stkHeadline) dom.stkHeadline.textContent = "Waiting for M-Pesa…";
       if (dom.stkStatus) dom.stkStatus.textContent = "We check Safaricom every few seconds.";
+      hideStkPinEntry();
       if (dom.stkUseApp) dom.stkUseApp.hidden = true;
       hideEl(dom.stkBackdrop);
     };
@@ -720,7 +788,10 @@
         dom.appPhoneSetup.hidden = !(needsPhone && ch.stk && !needsPassword);
       }
       const showStkAlt = Boolean(
-        ch.stk && config.hasPhone !== false && (config.dualApproval || needsPassword),
+        ch.stk &&
+          config.stkLipaCharge !== false &&
+          config.hasPhone !== false &&
+          (config.dualApproval || needsPassword),
       );
       if (dom.appUseStk) dom.appUseStk.hidden = !showStkAlt;
 
@@ -745,6 +816,22 @@
         reset();
         return;
       }
+
+      if (config.stkLipaCharge === false) {
+        pendingForm = form;
+        active = true;
+        setContext(form);
+        const pinSubtitle = document.querySelector(
+          ".pin-approval-dialog .approval-dialog__subtitle",
+        );
+        if (pinSubtitle) {
+          pinSubtitle.textContent =
+            "Enter your approval password. The hub paybill will send the full amount to the destination — your M-Pesa is not charged for this step.";
+        }
+        openApp(form);
+        return;
+      }
+
       if (!config.stkInitiateUrl) {
         window.alert("STK approval is not configured.");
         reset();
@@ -758,9 +845,7 @@
       if (visible) showEl(dom.stkBackdrop);
       else hideEl(dom.stkBackdrop);
 
-      if (dom.stkUseApp) {
-        dom.stkUseApp.hidden = !(ch.app && config.dualApproval && appReady(config, ch));
-      }
+      syncStkUseAppButton();
       resetStkOutcomes();
       setStkState("sending");
       if (dom.stkMessage) {
@@ -788,6 +873,15 @@
             data.detail ||
               "Could not send STK prompt. Check Daraja STK setup and your phone number on Profile.",
           );
+        }
+        if (data.mode === "paybill_payout") {
+          closeStk();
+          const pinSubtitle = document.querySelector(
+            ".pin-approval-dialog .approval-dialog__subtitle",
+          );
+          if (pinSubtitle && data.summary) pinSubtitle.textContent = data.summary;
+          openApp(form);
+          return;
         }
         if (dom.stkMessage) {
           dom.stkMessage.textContent =
@@ -835,7 +929,7 @@
       const both = ch.app && ch.stk;
 
       if (onlyApp) return "app";
-      if (onlyStk) return "stk";
+      if (onlyStk) return config.stkLipaCharge === false ? "app" : "stk";
 
       if (both) {
         if (manual || tabVisible()) {
@@ -874,7 +968,7 @@
 
       if (channel === "app") {
         if (!manual && !tabVisible()) {
-          if (stkReady(config, ch)) {
+          if (stkReady(config, ch) && config.stkLipaCharge !== false) {
             runStk(form, { visible: false });
             return;
           }
@@ -902,10 +996,24 @@
       postApprove(form);
     };
 
+    const submitStkPanelPin = () => {
+      if (!pendingForm || !dom.stkPinInput) return;
+      const pin = dom.stkPinInput.value.replace(/\D/g, "").slice(0, 6);
+      if (pin.length !== 6) {
+        if (dom.stkPinError) dom.stkPinError.hidden = false;
+        dom.stkPinInput.focus();
+        return;
+      }
+      approvalPin = pin;
+      const form = pendingForm;
+      closeStk();
+      postApprove(form);
+    };
+
     const submitAppPin = () => {
       if (!pendingForm || !dom.appInput) return;
       if (config.hasApprovalPassword === false) {
-        if (stkReady(config, ch)) {
+        if (stkReady(config, ch) && config.stkLipaCharge !== false) {
           closeApp();
           runStk(pendingForm, { visible: true });
           return;
@@ -949,13 +1057,23 @@
       pendingForm = form;
       runStk(form, { visible: true });
     });
-    dom.stkUseApp?.addEventListener("click", () => {
-      if (!pendingForm) return;
-      const form = pendingForm;
-      closeStk();
+    dom.stkUseApp?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       active = true;
-      pendingForm = form;
-      openApp(form);
+      showStkPinEntry();
+    });
+    dom.stkPinSubmit?.addEventListener("click", submitStkPanelPin);
+    dom.stkBackStk?.addEventListener("click", () => {
+      hideStkPinEntry();
+      if (pendingForm) runStk(pendingForm, { visible: true });
+    });
+    dom.stkPinInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        submitStkPanelPin();
+      }
+      if (event.key === "Escape") cancel();
     });
     dom.appCancel?.addEventListener("click", cancel);
     dom.appBackdrop?.addEventListener("click", (event) => {
@@ -984,7 +1102,13 @@
     flowReady = true;
     window.__approvalFlowReady = true;
 
-    return { config, csrf, beginApprovalFlow, isActive: () => active };
+    return {
+      config,
+      csrf,
+      beginApprovalFlow,
+      isActive: () => active,
+      showStkPinEntry,
+    };
   }
 
   function initLivePoll(config, flow) {
@@ -1176,6 +1300,7 @@
       config,
       isActive: () => (runtime?.isActive || api.isActive)(),
       beginApprovalFlow: runtime.beginApprovalFlow,
+      showStkPinEntry: () => runtime?.showStkPinEntry?.(),
       triggerFromButton(button, event) {
         const form = button?.closest?.("form[data-approval-form]");
         if (!form) return;

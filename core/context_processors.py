@@ -4,6 +4,7 @@ from accounts.role_urls import get_current_role_slug, role_to_slug, workspace_ur
 from django.urls import reverse
 from django.conf import settings as django_settings
 
+from core.approval import approval_stk_lipa_charge_enabled
 from core.models import AppSettings
 from core.notifications import unread_notification_count, user_notifications
 from core.webpush import vapid_public_key, webpush_enabled
@@ -69,6 +70,7 @@ def shell(request):
     dual_approval_required = False
     reviewer_approval_personal_off = False
     reviewer_approval_profile_incomplete = False
+    approval_stk_lipa_charge = False
     if user and user.is_authenticated and not user.is_pending:
         current = getattr(getattr(request, "resolver_match", None), "view_name", "")
         sections = _section_items(user)
@@ -93,9 +95,15 @@ def shell(request):
             and not app_approval_required_for_user
             and not stk_pin_approval_required_for_user
         )
+        approval_stk_lipa_charge = approval_stk_lipa_charge_enabled()
         reviewer_approval_profile_incomplete = (
             (app_approval_required_for_user and not reviewer_has_approval_password)
             or (stk_pin_approval_required_for_user and not reviewer_has_phone)
+            or (
+                stk_pin_approval_required_for_user
+                and not approval_stk_lipa_charge_enabled()
+                and not reviewer_has_approval_password
+            )
         )
         # Dashboard is the hub: show every section the role can open.
         # Other pages keep only their own section link. System settings and
@@ -154,6 +162,7 @@ def shell(request):
         "reviewer_approval_personal_off": reviewer_approval_personal_off,
         "reviewer_approval_profile_incomplete": reviewer_approval_profile_incomplete,
         "profile_url": profile_url,
+        "approval_stk_lipa_charge": approval_stk_lipa_charge,
         "webpush_enabled": webpush_enabled(),
         "webpush_vapid_public_key": vapid_public_key() if webpush_enabled() else "",
         "asset_version": getattr(django_settings, "ASSET_VERSION", ""),

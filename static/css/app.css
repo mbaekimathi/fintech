@@ -37,6 +37,22 @@
   --mpesa-deep: #1e7b1e;
   --mpesa-soft: rgba(46, 171, 46, 0.14);
   --mpesa-glow: rgba(46, 171, 46, 0.35);
+  --violet: #6366f1;
+  --violet-deep: #4338ca;
+  --violet-soft: rgba(99, 102, 241, 0.16);
+  --sky: #0ea5e9;
+  --sky-soft: rgba(14, 165, 233, 0.14);
+  --coral: #f97316;
+  --coral-soft: rgba(249, 115, 22, 0.12);
+  --gold: #ca8a04;
+  --modal-stripe: linear-gradient(
+    90deg,
+    var(--accent),
+    var(--violet),
+    var(--mpesa),
+    var(--sky),
+    var(--accent)
+  );
 }
 
 *,
@@ -1849,6 +1865,30 @@ a:hover {
     color-mix(in srgb, var(--accent-soft) 55%, transparent) 0%,
     transparent 100%
   );
+}
+
+.approval-stk-pin-panel {
+  margin: 0 1.2rem 0.75rem;
+}
+
+.approval-stk-pin-panel .approval-pin-field {
+  margin: 0;
+}
+
+.stk-approval-dialog[data-stk-approval-view="pin"] .approval-dialog__hero,
+.stk-approval-dialog[data-stk-approval-view="pin"] .approval-status,
+.stk-approval-dialog[data-stk-approval-view="pin"] .approval-outcome,
+.stk-approval-dialog[data-stk-approval-view="pin"] [data-stk-approval-error]:not([hidden]) {
+  display: none !important;
+}
+
+.stk-approval-dialog[data-stk-approval-view="pin"] .approval-stk-pin-panel:not([hidden]) {
+  display: block;
+  animation: approval-backdrop-in 0.28s var(--ease) both;
+}
+
+.stk-approval-dialog[data-stk-approval-view="pin"] #stk-approval-title {
+  font-size: 1.15rem;
 }
 
 .stk-approval-dialog .approval-dialog__head {
@@ -3767,6 +3807,414 @@ a:hover {
   }
 }
 
+/* ----- Vivid modals & transactions ----- */
+.approval-backdrop:not([hidden]),
+.transfer-detail-backdrop {
+  background: linear-gradient(
+    145deg,
+    rgba(12, 22, 36, 0.82) 0%,
+    rgba(13, 115, 119, 0.45) 45%,
+    rgba(99, 102, 241, 0.35) 100%
+  );
+}
+
+.modal-vivid {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    0 28px 70px rgba(12, 22, 36, 0.28),
+    0 0 0 1px rgba(99, 102, 241, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(247, 249, 252, 0.95) 55%,
+    rgba(236, 253, 245, 0.4) 100%
+  );
+}
+
+.modal-chrome {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.modal-chrome-content {
+  position: relative;
+  z-index: 1;
+}
+
+.modal-chrome__stripe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background: var(--modal-stripe);
+  background-size: 200% 100%;
+  animation: modal-stripe-shift 5s linear infinite;
+}
+
+.modal-chrome__orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(42px);
+  opacity: 0.5;
+  animation: modal-orb-drift 14s ease-in-out infinite;
+}
+
+.modal-chrome__orb--a {
+  width: 11rem;
+  height: 11rem;
+  top: -3.5rem;
+  right: -2.5rem;
+  background: var(--violet);
+}
+
+.modal-chrome__orb--b {
+  width: 9rem;
+  height: 9rem;
+  bottom: 15%;
+  left: -3rem;
+  background: var(--mpesa);
+  animation-delay: -5s;
+}
+
+.modal-chrome__orb--c {
+  width: 7rem;
+  height: 7rem;
+  top: 42%;
+  right: -2rem;
+  background: var(--sky);
+  animation-delay: -9s;
+}
+
+.stk-approval-dialog .modal-chrome__orb--a {
+  background: #22c55e;
+}
+
+.stk-approval-dialog .modal-chrome__orb--b {
+  background: #4ade80;
+}
+
+.stk-approval-dialog .modal-chrome__orb--c {
+  background: var(--accent);
+}
+
+.pin-approval-dialog .modal-chrome__orb--a {
+  background: var(--violet);
+}
+
+.pin-approval-dialog .modal-chrome__orb--b {
+  background: var(--accent);
+}
+
+.transfer-detail-dialog .modal-chrome__orb--a {
+  background: var(--sky);
+}
+
+.transfer-detail-dialog .modal-chrome__orb--b {
+  background: var(--violet);
+}
+
+.transfer-detail-dialog .modal-chrome__orb--c {
+  background: var(--mpesa);
+}
+
+@keyframes modal-stripe-shift {
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes modal-orb-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(10px, -8px) scale(1.08);
+  }
+}
+
+.approval-dialog__head,
+.transfer-detail__head {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.75) 0%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
+.approval-dialog__badge--mpesa {
+  color: #15803d;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(134, 239, 172, 0.35));
+  box-shadow: 0 2px 10px rgba(34, 197, 94, 0.2);
+}
+
+.approval-dialog__badge--app {
+  color: var(--violet-deep);
+  background: linear-gradient(135deg, var(--violet-soft), rgba(13, 115, 119, 0.12));
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.18);
+}
+
+.approval-dialog__title,
+.transfer-detail__title {
+  background: linear-gradient(120deg, var(--ink) 30%, var(--accent-deep) 70%, var(--violet-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.approval-dialog__hero--lock {
+  height: 6.5rem;
+}
+
+.approval-hero-ring--violet {
+  width: 5.5rem;
+  height: 5.5rem;
+  border-color: rgba(99, 102, 241, 0.45);
+  opacity: 1;
+  animation: approval-ring-pulse 2.4s var(--ease) infinite;
+}
+
+.approval-hero-icon--lock {
+  color: var(--violet-deep);
+  background: linear-gradient(145deg, #fff, var(--violet-soft));
+  box-shadow:
+    0 8px 24px rgba(99, 102, 241, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  animation: approval-phone-float 3s ease-in-out infinite;
+}
+
+.approval-summary-card {
+  margin-inline: 1.2rem;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), var(--violet-soft));
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.1);
+}
+
+.approval-status {
+  border: 1px solid rgba(46, 171, 46, 0.25);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(134, 239, 172, 0.15));
+}
+
+.approval-live-pill {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(134, 239, 172, 0.35));
+  box-shadow: 0 0 16px rgba(34, 197, 94, 0.25);
+}
+
+.approval-outcome--success {
+  border: 1px solid rgba(6, 118, 71, 0.35);
+  background: linear-gradient(135deg, var(--ok-soft), rgba(134, 239, 172, 0.35));
+  box-shadow: 0 8px 24px rgba(6, 118, 71, 0.12);
+}
+
+.approval-outcome--fail {
+  border: 1px solid rgba(180, 35, 24, 0.3);
+  background: linear-gradient(135deg, var(--danger-soft), rgba(254, 202, 202, 0.5));
+}
+
+.approval-pin-field__wrap {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--raised), var(--raised)) padding-box,
+    linear-gradient(120deg, var(--violet), var(--accent), var(--mpesa)) border-box;
+  box-shadow: 0 8px 28px rgba(99, 102, 241, 0.15);
+}
+
+.approval-btn-primary,
+.transfer-detail-done {
+  border: none;
+  color: #fff;
+  background: linear-gradient(135deg, #0d7377 0%, #0891b2 40%, #6366f1 100%);
+  background-size: 200% 200%;
+  animation: approval-btn-shimmer 4s ease infinite;
+  box-shadow:
+    0 10px 28px rgba(13, 115, 119, 0.35),
+    0 4px 12px rgba(99, 102, 241, 0.25);
+}
+
+.approval-btn-primary:hover,
+.transfer-detail-done:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+@keyframes approval-btn-shimmer {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.approval-dialog__foot,
+.transfer-detail__foot {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(236, 253, 245, 0.35));
+  border-top: 1px solid rgba(99, 102, 241, 0.12);
+}
+
+.transfer-detail__amount {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.12) 0%,
+    rgba(13, 115, 119, 0.1) 45%,
+    rgba(46, 171, 46, 0.12) 100%
+  );
+  box-shadow: 0 12px 32px rgba(99, 102, 241, 0.14);
+}
+
+.transfer-detail__amount::after {
+  content: "";
+  position: absolute;
+  inset: -50% -50%;
+  background: conic-gradient(from 90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: transfer-amount-sheen 6s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes transfer-amount-sheen {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.transfer-detail__amount-value {
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(120deg, var(--accent-deep), var(--violet-deep), var(--mpesa-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.transfer-detail-item {
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(12, 22, 36, 0.06);
+}
+
+.transfer-detail-item--tone-a .transfer-detail-item__icon {
+  color: var(--violet-deep);
+  background: linear-gradient(145deg, #e0e7ff, #c7d2fe);
+}
+
+.transfer-detail-item--tone-b .transfer-detail-item__icon {
+  color: #0369a1;
+  background: linear-gradient(145deg, #e0f2fe, #bae6fd);
+}
+
+.transfer-detail-item--tone-c .transfer-detail-item__icon {
+  color: var(--accent-deep);
+  background: linear-gradient(145deg, #ccfbf1, #99f6e4);
+}
+
+.transfer-detail-item--tone-d .transfer-detail-item__icon {
+  color: var(--gold);
+  background: linear-gradient(145deg, #fef9c3, #fde047);
+}
+
+.transfer-detail-item--tone-e .transfer-detail-item__icon {
+  color: var(--coral);
+  background: linear-gradient(145deg, #ffedd5, #fdba74);
+}
+
+.transfer-detail-item--tone-f .transfer-detail-item__icon {
+  color: var(--mpesa-deep);
+  background: linear-gradient(145deg, #dcfce7, #86efac);
+}
+
+.transfer-detail-item .transfer-detail-item__icon--mpesa {
+  color: var(--mpesa-deep);
+  background: linear-gradient(145deg, #dcfce7, #4ade80);
+}
+
+.transfer-detail-reason {
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  background: linear-gradient(135deg, #fff7ed, #ffedd5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.transactions-page .page-intro {
+  padding: 1.1rem 1.15rem;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--violet) 18%, var(--line));
+  background: linear-gradient(
+    125deg,
+    rgba(99, 102, 241, 0.08) 0%,
+    rgba(255, 255, 255, 0.9) 40%,
+    rgba(46, 171, 46, 0.06) 100%
+  );
+  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.08);
+}
+
+.transactions-page .metric-strip {
+  padding: 0.85rem 1.1rem;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  background: linear-gradient(135deg, #0d7377 0%, #14b8a6 50%, #6366f1 100%);
+  box-shadow: 0 12px 28px rgba(13, 115, 119, 0.35);
+}
+
+.transactions-page .metric-strip .stat-value {
+  color: #fff;
+}
+
+.transactions-page .metric-strip .stat-label {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.transactions-page .panel {
+  border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--line));
+  box-shadow: 0 8px 28px rgba(12, 22, 36, 0.06);
+}
+
+.transactions-page .row-view-btn {
+  border-color: color-mix(in srgb, var(--violet) 35%, var(--line));
+  color: var(--violet-deep);
+  background: linear-gradient(145deg, #fff, var(--violet-soft));
+}
+
+.transactions-page .row-view-btn:hover {
+  color: var(--violet-deep);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.25);
+}
+
+@media (max-width: 640px) {
+  .ledger-table--cards tbody tr {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--violet) 15%, var(--line));
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(236, 253, 245, 0.35));
+    box-shadow: 0 10px 24px rgba(99, 102, 241, 0.1);
+  }
+
+  .ledger-table--cards tbody tr::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    background: linear-gradient(180deg, var(--violet), var(--accent), var(--mpesa));
+  }
+
+  .ledger-table--cards tbody td::before {
+    color: var(--violet-deep);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -3774,5 +4222,14 @@ a:hover {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .approval-dialog__title,
+  .transfer-detail__title,
+  .transfer-detail__amount-value {
+    color: var(--ink);
+    background: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
   }
 }
