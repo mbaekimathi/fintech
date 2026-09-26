@@ -233,7 +233,10 @@ class DarajaClient:
         return self._post("/mpesa/stkpush/v1/processrequest", payload), payload
 
     def stk_query(self, checkout_request_id: str) -> dict:
+        """STK Push Query — transaction state is in ResultCode, not only ResponseCode."""
         shortcode = (self.config.shortcode or "").strip()
+        if not shortcode or not (self.config.passkey or "").strip():
+            raise DarajaError("STK is not ready. Save shortcode and passkey on Daraja STK setup.")
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         payload = {
             "BusinessShortCode": shortcode,
@@ -241,7 +244,20 @@ class DarajaClient:
             "Timestamp": timestamp,
             "CheckoutRequestID": checkout_request_id,
         }
-        return self._post("/mpesa/stkpushquery/v1/query", payload)
+        status, body = _json_request(
+            self.base_url + "/mpesa/stkpushquery/v1/query",
+            headers={
+                "Authorization": f"Bearer {self.access_token()}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            payload=payload,
+        )
+        if status >= 400:
+            raise DarajaError(_error_message(body if isinstance(body, dict) else {}, context="stk"), body)
+        if not isinstance(body, dict):
+            raise DarajaError("Safaricom returned an invalid STK query response.")
+        return body
 
     def account_balance(self, *, result_url: str, timeout_url: str, identifier: str | None = None):
         if not self.config.balance_ready:

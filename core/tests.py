@@ -1105,6 +1105,47 @@ class AppSettingsTests(TestCase):
             stk_before,
         )
 
+    @override_settings(APPROVAL_STK_LIPA_CHARGE=True)
+    def test_stk_approval_poll_survives_daraja_query_error(self):
+        settings = AppSettings.load()
+        settings.stk_pin_approval_required = True
+        settings.save(update_fields=["stk_pin_approval_required"])
+        self._enable_stk_only_approval(self.it_support)
+
+        req = MoneyRequest.objects.create(
+            requester=self.employee,
+            source_paybill=self.paybill,
+            category=MoneyRequest.Category.TRAVEL,
+            destination_type=MoneyRequest.DestinationType.PHONE,
+            destination="0712345678",
+            amount=Decimal("50.00"),
+            reason="Test",
+            status=MoneyRequest.Status.PENDING,
+        )
+        stk_op = DarajaOperation.objects.create(
+            kind=DarajaOperation.Kind.STK,
+            status=DarajaOperation.Status.QUEUED,
+            destination="254712345678",
+            amount=Decimal("1.00"),
+            account_ref=approval_stk_account_ref(req.pk),
+            checkout_request_id="ws_CO_approval_poll_test",
+            summary="Check your phone",
+            created_by=self.it_support,
+        )
+        self.client.force_login(self.it_support)
+        from integrations.daraja_client import DarajaError
+
+        with patch("core.approval.DarajaClient.stk_query", side_effect=DarajaError("Invalid Access Token")):
+            response = self.client.get(
+                self._url(User.Role.IT_SUPPORT, "core:approval-stk-poll", pk=stk_op.pk),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("Invalid Access Token", payload.get("query_error", ""))
+        self.assertFalse(payload["complete"])
+
     @override_settings(APPROVAL_STK_LIPA_CHARGE=False)
     def test_stk_only_reviewer_approves_with_app_pin_not_stk_operation(self):
         settings = AppSettings.load()

@@ -734,11 +734,17 @@
 
     const pollStk = (operationId) =>
       new Promise((resolve, reject) => {
-        if (!config.stkPollUrl) {
-          reject(new Error("Missing STK poll URL."));
+        const pollBase = (config.stkPollUrl || "").trim();
+        if (!pollBase) {
+          reject(new Error("Missing STK poll URL. Refresh the page and try again."));
           return;
         }
-        const pollUrl = `${config.stkPollUrl}${operationId}/`;
+        const pollUrl = pollBase.endsWith("/")
+          ? `${pollBase}${operationId}/`
+          : `${pollBase}/${operationId}/`;
+        let httpFailStreak = 0;
+        const MAX_HTTP_FAILS = 8;
+
         const finish = (ok, message) => {
           stopStkPoll();
           if (ok) resolve(operationId);
@@ -750,10 +756,45 @@
             const response = await fetch(pollUrl, {
               headers: { "X-Requested-With": "XMLHttpRequest" },
               cache: "no-store",
+              credentials: "same-origin",
             });
-            if (!response.ok) throw new Error("Could not check STK status.");
+            if (!response.ok) {
+              httpFailStreak += 1;
+              let detail = "";
+              try {
+                const errBody = await response.json();
+                detail = errBody.detail || errBody.error || "";
+              } catch (_parseErr) {
+                detail = "";
+              }
+              if (httpFailStreak >= MAX_HTTP_FAILS) {
+                finish(
+                  false,
+                  detail ||
+                    `Could not check STK status (HTTP ${response.status}). Refresh and try again, or use your approval password.`,
+                );
+              } else if (dom.stkStatus) {
+                dom.stkStatus.textContent =
+                  detail ||
+                  "Temporary error checking M-Pesa — retrying…";
+              }
+              syncStkUseAppButton();
+              return;
+            }
+            httpFailStreak = 0;
             const data = await response.json();
+            if (!data?.ok) {
+              httpFailStreak += 1;
+              if (httpFailStreak >= MAX_HTTP_FAILS) {
+                finish(false, data?.detail || "Could not check STK status.");
+              }
+              return;
+            }
             applyStkPoll(data);
+            if (data.query_error && !data.complete && dom.stkStatus) {
+              dom.stkStatus.textContent = `${data.query_error} (retrying…)`;
+            }
+            syncStkUseAppButton();
             if (data.complete) {
               finish(
                 Boolean(data.success),
@@ -763,7 +804,17 @@
               );
             }
           } catch (err) {
-            finish(false, err.message || "Could not check STK status.");
+            httpFailStreak += 1;
+            if (httpFailStreak >= MAX_HTTP_FAILS) {
+              finish(
+                false,
+                err.message ||
+                  "Could not check STK status. Check your connection or use your approval password.",
+              );
+            } else if (dom.stkStatus) {
+              dom.stkStatus.textContent = "Connection issue — retrying M-Pesa status…";
+            }
+            syncStkUseAppButton();
           }
         };
 

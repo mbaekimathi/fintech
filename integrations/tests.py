@@ -726,3 +726,27 @@ class StkQueryApplyTests(TestCase):
         operation.refresh_from_db()
         self.assertEqual(operation.status, DarajaOperation.Status.FAILED)
         self.assertIn("cancelled", operation.summary.lower())
+
+    def test_stk_query_client_returns_result_body_without_response_code_gate(self):
+        from unittest.mock import patch
+
+        from integrations.daraja_client import DarajaClient
+        from integrations.models import DarajaConfig
+
+        config = DarajaConfig.load()
+        config.shortcode = "174379"
+        config.passkey = "test-passkey"
+        config.consumer_key = "key"
+        config.consumer_secret = "secret"
+        config.save()
+        client = DarajaClient(config)
+        body = {
+            "ResponseCode": "0",
+            "ResponseDescription": "Accept the service request successfully.",
+            "ResultCode": "4999",
+            "ResultDesc": "The transaction is still under processing.",
+        }
+        with patch.object(client, "access_token", return_value="token"):
+            with patch("integrations.daraja_client._json_request", return_value=(200, body)):
+                result = client.stk_query("ws_CO_test")
+        self.assertEqual(result["ResultCode"], "4999")

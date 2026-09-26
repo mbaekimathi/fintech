@@ -136,7 +136,7 @@ def shell(request):
         header_notifications = list(user_notifications(user))
         unread_count = unread_notification_count(user)
         can_review_money_requests = user.can_review_requests()
-        if can_review_money_requests and get_current_role_slug():
+        if can_review_money_requests:
             approval_stk_poll_url_base = reverse(
                 "core:approval-stk-poll",
                 kwargs={"pk": 0},

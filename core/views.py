@@ -796,8 +796,8 @@ class StkApprovalPollView(RoleRequiredMixin, View):
             kind=DarajaOperation.Kind.STK,
             created_by=request.user,
         )
-        operation = poll_stk_approval(operation)
-        return JsonResponse(stk_approval_poll_payload(operation))
+        operation, query_error = poll_stk_approval(operation)
+        return JsonResponse(stk_approval_poll_payload(operation, query_error=query_error))
 
 
 class DarajaSetupView(RoleRequiredMixin, UpdateView):

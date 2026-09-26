@@ -132,19 +132,26 @@ def initiate_stk_approval(request, money_request: MoneyRequest) -> DarajaOperati
     )
 
 
-def poll_stk_approval(operation: DarajaOperation) -> DarajaOperation:
+def poll_stk_approval(operation: DarajaOperation) -> tuple[DarajaOperation, str]:
     """Query Safaricom for STK status when still queued (same as Daraja test refresh)."""
+    query_error = ""
     if (
         operation.status == DarajaOperation.Status.QUEUED
         and operation.checkout_request_id
         and is_approval_stk_operation(operation)
     ):
-        body = DarajaClient(DarajaConfig.load()).stk_query(operation.checkout_request_id)
-        apply_stk_query(operation, body)
-    return operation
+        try:
+            body = DarajaClient(DarajaConfig.load()).stk_query(operation.checkout_request_id)
+            apply_stk_query(operation, body)
+        except DarajaError as exc:
+            query_error = str(exc)
+            operation.refresh_from_db()
+    else:
+        operation.refresh_from_db()
+    return operation, query_error
 
 
-def stk_approval_poll_payload(operation: DarajaOperation) -> dict:
+def stk_approval_poll_payload(operation: DarajaOperation, *, query_error: str = "") -> dict:
     """JSON for live STK approval polling in the browser."""
     complete = operation.status in TERMINAL_STATUSES
     success = operation.status == DarajaOperation.Status.SUCCESS
@@ -164,7 +171,7 @@ def stk_approval_poll_payload(operation: DarajaOperation) -> dict:
         phase = "waiting"
         headline = "Enter your M-Pesa PIN on your phone"
 
-    return {
+    payload = {
         "ok": True,
         "status": operation.status,
         "status_label": operation.get_status_display(),
@@ -176,6 +183,12 @@ def stk_approval_poll_payload(operation: DarajaOperation) -> dict:
         "complete": complete,
         "success": success,
     }
+    if query_error:
+        payload["query_error"] = query_error
+        if not complete:
+            payload["summary"] = query_error
+            payload["reason"] = query_error
+    return payload
 
 
 def verify_stk_approval(user, operation_id, money_request: MoneyRequest) -> bool:
