@@ -44,8 +44,8 @@ def collection_credits_utility_float(monitor: CollectionMonitor) -> bool:
 
 
 def should_move_utility_first(monitor: CollectionMonitor) -> bool:
-    """Move utility→working before paying out (required for paybill/till collection accounts)."""
-    return bool(monitor.auto_payout_utility_first or collection_credits_utility_float(monitor))
+    """When True, queue utility→working before B2B/B2C (saved on the collection account)."""
+    return bool(monitor.auto_payout_utility_first)
 
 
 def auto_payout_is_enabled(monitor: CollectionMonitor) -> bool:
@@ -97,6 +97,13 @@ def _utility_step_pending(ledger_entry_id: int) -> bool:
     return False
 
 
+def _utility_step_succeeded(ledger_entry_id: int) -> bool:
+    for op in _auto_payout_ops_for_ledger(ledger_entry_id):
+        if _chain_phase(op) == "utility" and op.status == DarajaOperation.Status.SUCCESS:
+            return True
+    return False
+
+
 def _chain_payload(*, monitor: CollectionMonitor, entry: LedgerEntry, phase: str) -> dict:
     return {
         "phase": phase,
@@ -134,43 +141,66 @@ def execute_auto_payout_transfer(
         )
         return None
 
-    move_utility = should_move_utility_first(monitor) and not skip_utility
-    if move_utility:
+    dest_type = monitor.auto_payout_destination_type or MoneyRequest.DestinationType.PHONE
+    wants_utility = should_move_utility_first(monitor) and not skip_utility
+
+    if wants_utility and _utility_step_succeeded(entry.pk):
+        wants_utility = False
+    elif wants_utility:
         if _utility_step_pending(entry.pk):
             return None
         if not config.b2b_ready:
-            logger.warning(
-                "Auto payout utility step skipped for ledger %s: B2B/balance not ready on Daraja setup",
-                entry.pk,
-            )
-            return None
-        client = DarajaClient(config)
-        try:
-            body, payload, shortcode = client.utility_to_working(
-                amount=entry.amount,
-                result_url=result_url,
-                timeout_url=timeout_url,
-            )
-        except DarajaError as exc:
-            logger.warning("Auto payout utility step failed for ledger %s: %s", entry.pk, exc)
-            return None
-        meta = {
-            "auto_payout_ledger_id": entry.pk,
-            "auto_payout_chain": _chain_payload(monitor=monitor, entry=entry, phase="utility"),
-        }
-        with transaction.atomic():
-            return DarajaOperation.objects.create(
-                kind=DarajaOperation.Kind.B2B,
-                destination=shortcode,
-                amount=entry.amount,
-                account_ref="UTILITY-WORKING",
-                request_payload={**_redact(payload), **meta},
-                summary=body.get("ResponseDescription") or "Utility→working (auto payout step 1).",
-                collection_monitor=monitor,
-                **_ack_fields(body),
-            )
+            if dest_type == MoneyRequest.DestinationType.PHONE and config.b2c_ready:
+                logger.info(
+                    "Auto payout ledger %s: B2B not ready — sending B2C from working float (utility move off).",
+                    entry.pk,
+                )
+                wants_utility = False
+            else:
+                logger.warning(
+                    "Auto payout skipped for ledger %s: utility move needs B2B on Daraja setup",
+                    entry.pk,
+                )
+                return None
+        else:
+            client = DarajaClient(config)
+            try:
+                body, payload, shortcode = client.utility_to_working(
+                    amount=entry.amount,
+                    result_url=result_url,
+                    timeout_url=timeout_url,
+                )
+            except DarajaError as exc:
+                if dest_type == MoneyRequest.DestinationType.PHONE and config.b2c_ready:
+                    logger.warning(
+                        "Utility move failed for ledger %s (%s); trying B2C from working float.",
+                        entry.pk,
+                        exc,
+                    )
+                    wants_utility = False
+                else:
+                    logger.warning("Auto payout utility step failed for ledger %s: %s", entry.pk, exc)
+                    return None
+            else:
+                meta = {
+                    "auto_payout_ledger_id": entry.pk,
+                    "auto_payout_chain": _chain_payload(monitor=monitor, entry=entry, phase="utility"),
+                }
+                with transaction.atomic():
+                    return DarajaOperation.objects.create(
+                        kind=DarajaOperation.Kind.B2B,
+                        destination=shortcode,
+                        amount=entry.amount,
+                        account_ref="UTILITY-WORKING",
+                        request_payload={**_redact(payload), **meta},
+                        summary=body.get("ResponseDescription") or "Utility→working (auto payout step 1).",
+                        collection_monitor=monitor,
+                        **_ack_fields(body),
+                    )
 
-    dest_type = monitor.auto_payout_destination_type or MoneyRequest.DestinationType.PHONE
+    if wants_utility:
+        return None
+
     raw_dest = monitor_payout_destination(monitor)
     client = DarajaClient(config)
 

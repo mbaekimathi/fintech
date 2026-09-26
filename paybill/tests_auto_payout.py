@@ -83,6 +83,7 @@ class AutoPayoutTriggerTests(TestCase):
             paybill_account=self.account,
             collection_code="COLAUTO99999",
             auto_payout_enabled=True,
+            auto_payout_utility_first=True,
             auto_payout_destination_type=MoneyRequest.DestinationType.PHONE,
             auto_payout_destination="254712345678",
             auto_payout_phone="254712345678",
@@ -157,6 +158,65 @@ class AutoPayoutTriggerTests(TestCase):
             request_payload__auto_payout_ledger_id=self.entry.pk,
         ).first()
         self.assertIsNotNone(payout)
+
+    @patch("paybill.auto_payout.callback_urls")
+    @patch("paybill.auto_payout.DarajaClient")
+    @patch("paybill.auto_payout.DarajaConfig.load")
+    def test_phone_payout_without_utility_flag_sends_b2c_directly(self, mock_load, mock_client_cls, mock_urls):
+        mock_urls.return_value = {"result_url": "https://hub.test/daraja/result/", "timeout_url": "https://hub.test/daraja/timeout/"}
+        self.monitor.auto_payout_utility_first = False
+        self.monitor.save(update_fields=["auto_payout_utility_first"])
+        config = mock_load.return_value
+        config.b2c_ready = True
+        config.b2b_ready = False
+        client = mock_client_cls.return_value
+        client.b2c_send.return_value = (
+            {"ResponseDescription": "Accepted"},
+            {"Amount": "100"},
+            "254712345678",
+        )
+
+        op = maybe_auto_payout_inbound(self.monitor, self.entry)
+        self.assertIsNotNone(op)
+        self.assertEqual(op.kind, DarajaOperation.Kind.B2C)
+        client.b2c_send.assert_called_once()
+        client.utility_to_working.assert_not_called()
+
+    @patch("paybill.auto_payout.callback_urls")
+    @patch("paybill.auto_payout.DarajaClient")
+    @patch("paybill.auto_payout.DarajaConfig.load")
+    def test_after_utility_success_inbound_retry_sends_b2c(self, mock_load, mock_client_cls, mock_urls):
+        mock_urls.return_value = {"result_url": "https://hub.test/daraja/result/", "timeout_url": "https://hub.test/daraja/timeout/"}
+        config = mock_load.return_value
+        config.b2c_ready = True
+        client = mock_client_cls.return_value
+        client.b2c_send.return_value = (
+            {"ResponseDescription": "Accepted"},
+            {"Amount": "100"},
+            "254712345678",
+        )
+        DarajaOperation.objects.create(
+            kind=DarajaOperation.Kind.B2B,
+            status=DarajaOperation.Status.SUCCESS,
+            destination="600996",
+            amount=Decimal("100.00"),
+            account_ref="UTILITY-WORKING",
+            collection_monitor=self.monitor,
+            request_payload={
+                "auto_payout_ledger_id": self.entry.pk,
+                "auto_payout_chain": {
+                    "phase": "utility",
+                    "monitor_id": self.monitor.pk,
+                    "ledger_entry_id": self.entry.pk,
+                },
+            },
+            summary="Utility moved",
+        )
+
+        op = maybe_auto_payout_inbound(self.monitor, self.entry)
+        self.assertIsNotNone(op)
+        self.assertEqual(op.kind, DarajaOperation.Kind.B2C)
+        client.b2c_send.assert_called_once()
 
     def test_skips_when_disabled(self):
         self.monitor.auto_payout_enabled = False
