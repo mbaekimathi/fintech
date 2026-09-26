@@ -117,7 +117,7 @@
           <div class="flash flash-error">{{ approval_password_form.non_field_errors|join:" " }}</div>
         {% endif %}
         <div class="form-grid">
-          {% if approval_password_form.old_approval_password %}
+          {% if has_approval_password %}
             {% include "partials/labeled_field.html" with field=approval_password_form.old_approval_password secret=True %}
           {% endif %}
           {% include "partials/labeled_field.html" with field=approval_password_form.new_approval_password1 secret=True %}

@@ -311,6 +311,15 @@ class ProfileApprovalPasswordTests(TestCase):
         self.reviewer.refresh_from_db()
         self.assertTrue(self.reviewer.check_approval_password("990011"))
 
+    def test_change_approval_password_shows_old_password_field_before_submit(self):
+        self.reviewer.set_approval_password("778899")
+        self.reviewer.save(update_fields=["approval_password"])
+        self.client.force_login(self.reviewer)
+        response = self.client.get(self._url("accounts:profile"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="old_approval_password"')
+        self.assertContains(response, "Old approval password")
+
     def test_reveal_login_password_after_verification(self):
         self.client.force_login(self.reviewer)
         bad = self.client.post(

@@ -276,7 +276,7 @@ class ProfilePasswordForm(forms.Form):
 class ProfileApprovalPasswordForm(forms.Form):
     old_approval_password = forms.CharField(
         label="Old approval password",
-        required=True,
+        required=False,
         min_length=6,
         max_length=6,
         widget=PIN_WIDGET,
